@@ -1,0 +1,18 @@
+[Desktop Entry]
+Actions=tirar-dock;desinstalar;
+StartupNotify=true
+Type=Application
+Name=NextCloud
+Comment=Nextcloud Desktop
+Exec=nextcloud %u
+Icon=nextcloud
+Terminal=false
+Categories=Network;
+
+[Desktop Action tirar-dock]
+Name=Tirar do Dock
+Exec=/usr/local/bin/tarsila-dock-item.sh remove /usr/share/tarsila/applications/nextcloud-tarsila.desktop
+
+[Desktop Action desinstalar]
+Name=Desinstalar
+Exec=/usr/local/bin/tarsila-app-uninstall.sh /usr/share/tarsila/applications/nextcloud-tarsila.desktop

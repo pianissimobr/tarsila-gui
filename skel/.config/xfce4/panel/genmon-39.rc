@@ -1,0 +1,6 @@
+Command=/usr/local/bin/tarsila-dot3.sh
+UseLabel=0
+UpdatePeriod=10000
+Text=(genmon)
+Font=Open Sans 10
+

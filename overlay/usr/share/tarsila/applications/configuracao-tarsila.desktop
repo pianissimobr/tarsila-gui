@@ -1,0 +1,10 @@
+[Desktop Entry]
+StartupNotify=true
+Type=Application
+Name=Configuração
+Comment=Painel de configuração Tarsila
+Exec=tarsila-config
+Icon=/usr/share/tarsila/icons/configuracao.png
+Terminal=false
+Categories=Settings;
+StartupWMClass=tarsila-config

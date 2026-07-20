@@ -1,0 +1,9 @@
+[Desktop Entry]
+StartupNotify=true
+Type=Application
+Name=Lixeira
+Comment=Itens excluídos
+Exec=thunar trash:///
+Icon=user-trash
+Terminal=false
+Categories=System;

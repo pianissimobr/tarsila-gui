@@ -1,0 +1,10 @@
+[Added Associations]
+text/html=tarsila-chromium.desktop;
+application/x-shellscript=org.xfce.mousepad.desktop;
+text/x-python3=org.xfce.mousepad.desktop;
+application/x-desktop=org.xfce.mousepad.desktop;
+text/markdown=org.xfce.mousepad.desktop;
+application/x-executable=org.xfce.mousepad.desktop;
+
+[Default Applications]
+application/x-executable=org.xfce.mousepad.desktop

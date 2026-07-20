@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Autenticação de administrador
+Comment=Mostra a janela de senha quando um ajuste do sistema exige privilégio (hora automática, atualizações, etc.)
+Exec=lxpolkit
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-tema="claro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tarsila Store</title>
+<link rel="stylesheet" href="css/store.css">
+</head>
+<body>
+
+<!-- ══════════ NAVBAR ══════════ -->
+<header class="nav" id="nav">
+  <div class="nav-left">
+    <a class="brand" href="#/" aria-label="Tarsila Store — início">
+      <img class="brand-icone" src="icons/tarsila-store-64.png" alt="">
+      <span class="brand-name">TARSILA<b>store</b></span>
+    </a>
+    <nav class="nav-links" aria-label="Seções">
+      <a href="#/" data-route="home">Início</a>
+      <a href="#/apps" data-route="apps">Aplicativos</a>
+      <a href="#/jogos" data-route="jogos">Jogos</a>
+      <a href="#/leves" data-route="leves">Superleves</a>
+    </nav>
+  </div>
+  <div class="nav-right">
+    <button class="tema-btn" id="tema-toggle" aria-label="Alternar tema claro/escuro">🌙</button>
+    <div class="search-box">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 14h-.8l-.3-.3a6.5 6.5 0 1 0-.7.7l.3.3v.8l5 5 1.5-1.5-5-5zm-6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z" fill="currentColor"/></svg>
+      <input id="search" type="search" placeholder="Buscar app ou jogo  ( / )" aria-label="Buscar">
+    </div>
+  </div>
+</header>
+
+<!-- ══════════ VIEW: HOME ══════════ -->
+<main id="view-home" class="view">
+  <section class="hero" id="hero" aria-live="polite">
+    <div class="hero-art" id="hero-art"></div>
+    <div class="hero-scrim"></div>
+    <div class="hero-content">
+      <p class="eyebrow" id="hero-eyebrow">Destaque</p>
+      <h1 id="hero-title">Tarsila Store</h1>
+      <div class="hero-meta" id="hero-meta"></div>
+      <p class="hero-desc" id="hero-desc"></p>
+      <div class="hero-actions">
+        <button class="btn btn-sol" id="hero-install">▶&nbsp; Instalar agora</button>
+        <button class="btn btn-ghost" id="hero-details">Mais informações</button>
+      </div>
+    </div>
+    <div class="hero-dots" id="hero-dots" role="tablist" aria-label="Destaques"></div>
+  </section>
+  <div id="rails-home"></div>
+</main>
+
+<!-- ══════════ VIEW: GRID (apps / jogos / leves / busca) ══════════ -->
+<main id="view-grid" class="view" hidden>
+  <div class="grid-head">
+    <h1 id="grid-title"></h1>
+    <p id="grid-sub" class="grid-sub"></p>
+    <div id="grid-filters" class="chips" role="toolbar" aria-label="Filtros"></div>
+  </div>
+  <div id="grid" class="grid"></div>
+  <p id="grid-empty" class="empty" hidden>Nada encontrado com esse nome.<br>Tente outra palavra — ou navegue pelas categorias no menu.</p>
+</main>
+
+<!-- ══════════ MODAL DE DETALHES ══════════ -->
+<div class="modal-wrap" id="modal" hidden>
+  <div class="modal-backdrop" data-close></div>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-title">
+    <button class="modal-x" data-close aria-label="Fechar">✕</button>
+    <div class="modal-art" id="m-art"></div>
+    <div class="modal-body">
+      <p class="eyebrow" id="m-cat"></p>
+      <h2 id="m-title"></h2>
+      <div class="hero-meta" id="m-meta"></div>
+      <p id="m-desc"></p>
+      <p class="m-quote" id="m-quote" hidden></p>
+      <p class="m-status" id="m-status"></p>
+      <div class="m-actions">
+        <button class="btn btn-sol" id="m-install"></button>
+        <button class="btn btn-ghost" id="m-copy">Copiar comando</button>
+        <a class="btn btn-ghost" id="m-site" target="_blank" rel="noopener" hidden>Site oficial</a>
+      </div>
+      <p class="m-cmd"><code id="m-cmd"></code></p>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<footer class="foot">
+  <span>Tarsila OS · dando vida nova a computadores esquecidos</span>
+  <span id="foot-count"></span>
+</footer>
+
+<script src="catalog/catalog-apps.js"></script>
+<script src="catalog/catalog-jogos.js"></script>
+<script src="js/store.js"></script>
+</body>
+</html>

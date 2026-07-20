@@ -1,0 +1,6 @@
+Command=/usr/local/bin/tarsila-spacer-right.sh
+UseLabel=0
+UpdatePeriod=60000
+Text=(genmon)
+Font=Open Sans 10
+
