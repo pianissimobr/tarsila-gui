@@ -1,4 +1,8 @@
 #!/bin/bash
+# Sessoes sem xfce4-panel (Openbox/polybar): nada a acordar (polybar e
+# event-driven via xprop). Evita o dialog "Falha ao enviar mensagem D-Bus".
+[ -f "${XDG_RUNTIME_DIR:-/tmp}/tarsila-openbox.session" ] && exit 0
+case "${XDG_CURRENT_DESKTOP:-}" in *Openbox*) exit 0 ;; esac
 # Forca a re-execucao imediata dos plugins genmon do top bar, via
 # plugin-event do xfce4-panel. Chamado pelos scripts que CAUSAM uma
 # mudanca de estado (tarsila-goto1/2/3, tarsila-title, tarsila-wincount).

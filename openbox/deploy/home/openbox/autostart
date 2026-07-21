@@ -5,6 +5,10 @@
 # xfsettingsd, dunst no lugar do xfce4-notifyd, polybar no lugar do
 # xfce4-panel, feh/wallpaper-apply no lugar do xfdesktop).
 
+# marcador: identifica a sessao Openbox p/ os scripts compartilhados do XFCE
+# (guard robusto contra chamadas a xfce4-panel; nao depende de env)
+touch "${XDG_RUNTIME_DIR:-/tmp}/tarsila-openbox.session"
+
 # tema GTK/ícones/fonte/cursor
 xsettingsd -c "$HOME/.config/xsettingsd/xsettingsd.conf" &
 
@@ -27,10 +31,15 @@ devilspie2 &
 # daemon residente: contagem/sons/renice + alimenta o estado do top bar
 /usr/local/bin/tarsila-monitor.sh &
 
+# vigia de decoracao: tira a barra de titulo da janela quando maximizada
+# (titulo/botoes ficam na top bar) e devolve ao restaurar
+/usr/local/bin/tarsila-ob-decor.sh &
+
 # cursor de "carregando" até a sessão montar
 /usr/local/bin/tarsila-boot-cursor.sh &
 
-# compositor leve (sem tearing) — DESLIGADO por padrão para economizar
-# ~26MB de RAM. Descomente se quiser transparência/sombras mais suaves no
-# Plank/dunst (custa RAM + carga de GPU):
-# picom -b 2>/dev/null &
+# compositor leve (backend xrender, CPU) — estabiliza Chromium/video na GPU
+# compositor picom (backend xrender/CPU): com glamor OFF nao crasha, e da
+# transparencia/cantos arredondados ao Plank. Sem ele, cantos ficam pretos.
+picom -b --backend xrender --no-use-damage --config /dev/null 2>/dev/null &
+# nao ha tearing a corrigir. Sessao mais leve sem ele.

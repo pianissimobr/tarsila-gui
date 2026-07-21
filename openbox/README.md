@@ -1,71 +1,61 @@
 # Tarsila — camada gráfica leve (Openbox)
 
-Variante **Openbox + polybar** da interface Tarsila, um substituto mais leve
-do XFCE que economiza RAM sem perder as funções essenciais. Roda **em
-coexistência** com a versão XFCE: instala uma sessão separada no lightdm
-("Tarsila (Openbox)"), sem alterar a sessão padrão.
+Variante **Openbox + polybar** da interface Tarsila: substituto mais leve do
+XFCE, **validado em login real** na box de referência (Amlogic S905W2, 2 GB,
+Debian 13). Coexiste com o XFCE (sessão separada), mas na box de referência é
+forçada como padrão via `~/.xsession`.
 
-## Por quê (medido na box de referência: Amlogic S905W2, 2 GB, Debian 13, 768p)
-
-| | XFCE (atual) | Openbox (esta) |
+## Números (box de referência, 768p)
+| | XFCE | Openbox |
 |---|---|---|
-| PSS da sessão do usuário | ~238 MB | **~168 MB** (~142 MB sem compositor) |
-| Top bar | xfce4-panel + ~6 wrappers ~55 MB | **polybar ~13 MB** |
-| RAM usada (sessão carregada) | ~463 MB | **~403 MB** |
-| CPU ocioso da top bar | ~0 % | **0 %** (event-driven) |
+| RAM primeiro login limpo | ~460 MB | **~295–345 MB** |
+| PSS da sessão do usuário | 238 MB | **~95 MB** |
+| Top bar | ~55 MB | **~13 MB** |
+| CPU ocioso | ~0 % | **0 %** |
 
-## O que muda e o que fica
+## O que muda
+- WM: `xfwm4` → **openbox** (tema próprio `Tarsila`: barra cinza, botões
+  ✕/□ à esquerda, título DejaVu Bold). Ao **maximizar**, a barra de título
+  da janela **some** (título/botões vão pra top bar) via `tarsila-ob-decor.sh`.
+- Top bar: `xfce4-panel` → **polybar** (título, ✕/restaurar, som, rede,
+  relógio, energia, e o botão **Limpar Área de Trabalho**).
+- Desktop/wallpaper: `xfdesktop` → **feh**; tema GTK: `xfsettingsd` →
+  **xsettingsd**; notificações: `xfce4-notifyd` → **dunst**.
+- Compositor: **picom** (backend `xrender --no-use-damage`) — dá cantos
+  arredondados ao Plank e renderização confiável; ~0,1 % CPU.
 
-**Substituídos (leves):**
-- WM/compositor: `xfwm4` -> **openbox** (+ `picom` opcional, desligado por padrão)
-- Top bar: `xfce4-panel`+genmon -> **polybar** (título, botões fechar/restaurar,
-  3 bolinhas de workspace, som, rede, relógio, energia)
-- Desktop/wallpaper: `xfdesktop` -> **feh**
-- Tema GTK/ícones/fonte: `xfsettingsd` -> **xsettingsd**
-- Notificações: `xfce4-notifyd` -> **dunst**
+## Botão "Limpar Área de Trabalho" (o coração da UX)
+Substituiu a navegação por "3 bolinhas" (que só fazia sentido pro designer).
+Um botão só-ícone (varinha mágica, pill amarelo) que **aparece apenas quando
+há app aberto**; clique → confirmação central (Cancelar/Limpar); se confirmar,
+**fecha tudo** (educado e depois agressivo) → mesa limpa. Também **libera RAM
+de verdade** (a versão antiga só escondia as janelas). `tarsila-limpar.sh` +
+`polybar/limpar-btn.sh`.
 
-**Reaproveitados sem alteração (o "cérebro" da Tarsila):**
-- `tarsila-monitor` (contagem/sons/renice + estado do top bar)
-- `tarsila-goto{1,2,3}.sh` (workspaces lógicos), state file `tarsila-topbar-state.txt`
-- Plank (dock), devilspie2 (regras de janela), Tarsila Store, appfinder, instalador .deb
+## Estabilidade — leia isto
+A GPU **Mali-G31/Panfrost** segfaulta o Xorg ao abrir janelas com **glamor**
+(aceleração 2D). Por isso o pacote inclui `10-modeset-panfrost.conf` com
+`AccelMethod=none` (2D por software). **Sem isso a sessão cai pro login ao
+abrir apps/vídeo.** Compositor GL não roda nessa GPU (GLX e EGL falham) — daí o
+picom `xrender`. Em GPUs boas, remova o xorg.conf.d e use um backend GL.
 
-A top bar do polybar **lê o mesmo state file** que a versão XFCE: o módulo de
-título é o "líder" (grava MAX/ID), bolinhas e botões são "seguidores".
-Event-driven via `xprop -spy` (sem polling) -> sem regressão de CPU.
+## Reaproveitado do stack Tarsila (com guards p/ não vazar no XFCE)
+`tarsila-monitor`, `tarsila-goto{2,3}`, state file, Plank, devilspie2, Store,
+appfinder. Os scripts compartilhados (`tarsila-monitor.sh`,
+`tarsila-topbar-refresh.sh`, `tarsila-tema-apply.sh`) ganharam guard por
+marcador `$XDG_RUNTIME_DIR/tarsila-openbox.session` para não chamar
+`xfce4-panel` no Openbox (evita o dialog "org.xfce.Panel").
 
 ## Instalação
+```bash
+sudo ./deploy-install.sh <usuario>
+```
+Instala deps, copia arquivos, a fonte de ícones, o xorg.conf.d e o `~/.xsession`
+que força a sessão. Reinicie depois.
 
-Num Debian 13 já com a camada Tarsila (repo raiz) instalada:
-
-    sudo ./deploy-install.sh
-
-Instala dependências (openbox, polybar, dunst, xsettingsd, feh,
-fonts-font-awesome...), copia os arquivos e registra a sessão. **Não** altera a
-sessão padrão -> escolha "Tarsila (Openbox)" no login para testar. Para tornar
-padrão: `echo 'Session=tarsila-openbox' >> ~/.dmrc` do usuário.
-
-## Estrutura
-
-    deploy/usr/local/bin/    tarsila-ob-session, tarsila-ob-bar.sh (gera o config
-                             do polybar a partir do tema+resolução), tarsila-ob-tema-apply.sh,
-                             tarsila-ob-wallpaper-apply.sh, tarsila-ob-power.sh
-    deploy/usr/share/xsessions/tarsila-openbox.desktop
-    deploy/home/openbox/     rc.xml, menu.xml, autostart, environment
-    deploy/home/polybar/     config.ini (template) + módulos (title/dots/buttons/net/sound/power)
-    deploy/home/{dunst,xsettingsd}/
-    prototipo/               tpb-setup.sh -- protótipo original só da top bar
-
-## Temas
-
-`tarsila-ob-tema-apply.sh <padrao|maritimo|escuro|brasileiro|personalizado> [imagem]`
-troca wallpaper (feh) + cor da barra e do texto (polybar) + tema do Plank
-(dconf). Bem mais simples que a versão XFCE: sem recolor de SVG, sem gtk.css,
-sem xfconf -- a cor da barra E do texto é a cor do polybar (TB_BG/TB_FG).
-
-## Pendências (ajustes finos)
-
-- Ícones via Font Awesome 4 (pacote Debian); alguns glyphs são aproximações
-  (rede cabeada usa "plug"). Uma Nerd Font daria paridade visual exata.
-- Escala 4K: geometria da barra adapta por faixa de altura, mas a margem
-  superior do Openbox (rc.xml) é fixa em 34px -- ajustar junto.
-- Módulo de som depende do PipeWire da sessão real (não sobe em teste nu).
+## Pendências
+- Botão Limpar sem tooltip de hover (polybar não suporta sem daemon que gasta
+  CPU) — o amarelo + a confirmação cobrem a descoberta.
+- Pill do botão com ~1-2px de desalinho no canto esquerdo.
+- Cantos arredondados de **janela** não dão nessa GPU (precisa compositor GL).
+- Escala 4K de alguns tamanhos ainda por afinar.

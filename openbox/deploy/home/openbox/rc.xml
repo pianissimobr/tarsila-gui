@@ -18,19 +18,19 @@
     <primaryMonitor>1</primaryMonitor>
   </placement>
   <theme>
-    <name>Bright</name>
-    <titleLayout>LMC</titleLayout>
+    <name>Tarsila</name>
+    <titleLayout>CML</titleLayout>
     <keepBorder>yes</keepBorder>
     <animateIconify>no</animateIconify>
     <font place="ActiveWindow">
-      <name>Sans</name>
-      <size>10</size>
+      <name>DejaVu Sans</name>
+      <size>11</size>
       <weight>bold</weight>
       <slant>normal</slant>
     </font>
     <font place="InactiveWindow">
-      <name>Sans</name>
-      <size>10</size>
+      <name>DejaVu Sans</name>
+      <size>11</size>
       <weight>normal</weight>
       <slant>normal</slant>
     </font>
@@ -60,14 +60,29 @@
     <keybind key="A-F4">
       <action name="Close"/>
     </keybind>
+    <!-- usados pelo tarsila-ob-decor.sh p/ tirar/devolver a barra de titulo
+         ao maximizar/restaurar (nao sao atalhos p/ o usuario) -->
+    <keybind key="W-u"><action name="Undecorate"/></keybind>
+    <keybind key="W-i"><action name="Decorate"/></keybind>
   </keyboard>
   <mouse>
     <dragThreshold>8</dragThreshold>
     <doubleClickTime>200</doubleClickTime>
     <context name="Titlebar">
       <mousebind button="Left" action="Drag"><action name="Move"/></mousebind>
-      <mousebind button="Left" action="DoubleClick"><action name="ToggleMaximize"/></mousebind>
+      <mousebind button="Left" action="DoubleClick"><action name="Execute"><command>/usr/local/bin/tarsila-goto3.sh</command></action></mousebind>
       <mousebind button="Right" action="Press"><action name="ShowMenu"><menu>client-menu</menu></action></mousebind>
+    </context>
+    <context name="Maximize">
+      <mousebind button="Left" action="Click"><action name="Execute"><command>/usr/local/bin/tarsila-goto3.sh</command></action></mousebind>
+      <mousebind button="Middle" action="Click"><action name="ToggleMaximizeVert"/></mousebind>
+      <mousebind button="Right" action="Click"><action name="ToggleMaximizeHorz"/></mousebind>
+    </context>
+    <context name="Close">
+      <mousebind button="Left" action="Click"><action name="Close"/></mousebind>
+    </context>
+    <context name="Iconify">
+      <mousebind button="Left" action="Click"><action name="Iconify"/></mousebind>
     </context>
     <context name="Frame">
       <mousebind button="A-Left" action="Drag"><action name="Move"/></mousebind>

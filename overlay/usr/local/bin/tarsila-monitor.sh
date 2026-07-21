@@ -97,7 +97,7 @@ while true; do
   if [ "$n" != "$prev_n" ]; then
     echo "$n" > "$CACHE.tmp" && mv -f "$CACHE.tmp" "$CACHE"
     for p in genmon-37 genmon-38 genmon-39; do
-      xfce4-panel --plugin-event=$p:refresh:bool:true 2>/dev/null
+      [ -f "${XDG_RUNTIME_DIR:-/tmp}/tarsila-openbox.session" ] || xfce4-panel --plugin-event=$p:refresh:bool:true 2>/dev/null
     done
     prev_n="$n"
   fi

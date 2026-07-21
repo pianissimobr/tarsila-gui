@@ -1,1 +1,4 @@
 export XDG_CURRENT_DESKTOP=Openbox
+# Chromium sem GPU nesta sessao: a GPU Mali/Panfrost derruba o Xorg com
+# video (decode HW quebrado nesta box). --disable-gpu via wrapper.
+export TARSILA_GPU=0

@@ -1,4 +1,7 @@
 #!/bin/bash
+# Em sessao Openbox, delega para a versao que fala com polybar/feh (sem
+# xfconf/xfce4-panel, que geram o dialog "org.xfce.Panel").
+case "${XDG_CURRENT_DESKTOP:-}" in *Openbox*) exec /usr/local/bin/tarsila-ob-tema-apply.sh "$@" ;; esac
 # Aplica um tema visual do Tarsila: papel de parede + cor do top bar +
 # cor do texto do top bar. Roda como o usuario logado (chamado pela
 # pagina Aparencia do Ajustes). Persiste a escolha em ~/.config/tarsila/

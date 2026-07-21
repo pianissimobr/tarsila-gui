@@ -15,9 +15,9 @@ case "$TEMA" in
 esac
 H=$(xrandr --query 2>/dev/null | sed -n 's/.* connected \(primary \)\?[0-9]\+x\([0-9]\+\)+.*/\2/p' | head -1)
 [ -z "$H" ] && H=768
-if   [ "$H" -gt 1600 ]; then TB_HEIGHT=64; TB_FONT=20; TB_ICON=18; TB_DOT=22
-elif [ "$H" -gt 900 ];  then TB_HEIGHT=44; TB_FONT=14; TB_ICON=13; TB_DOT=16
-else                         TB_HEIGHT=34; TB_FONT=11; TB_ICON=11; TB_DOT=13
+if   [ "$H" -gt 1600 ]; then TB_HEIGHT=64; TB_FONT=20; TB_ICON=18; TB_DOT=22; TB_CAP=56
+elif [ "$H" -gt 900 ];  then TB_HEIGHT=44; TB_FONT=14; TB_ICON=13; TB_DOT=16; TB_CAP=38
+else                         TB_HEIGHT=34; TB_FONT=11; TB_ICON=11; TB_DOT=13; TB_CAP=40
 fi
 # cores dos pontos (aceso/apagado) vão por ambiente para o dots.sh
 export TB_FG TB_DIM
@@ -31,6 +31,8 @@ sed -e "s/__HEIGHT__/$TB_HEIGHT/g" \
     -e "s/__DOT__/$TB_DOT/g" \
     -e "s/__BG__/$TB_BG/g" \
     -e "s/__FG__/$TB_FG/g" \
+    -e "s/__CAP__/$TB_CAP/g" \
+    -e "s/__SEP__/$TB_DIM/g" \
     -e "s#__HOME__#$HOME#g" \
     "$TPL" > "$GEN"
 polybar-msg cmd quit >/dev/null 2>&1
