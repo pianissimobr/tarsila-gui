@@ -1,18 +1,9 @@
 [Desktop Entry]
-Actions=tirar-dock;desinstalar;
 StartupNotify=true
 Type=Application
 Name=Agenda
-Comment=Google Agenda
-Exec=chromium --app=https://calendar.google.com/
+Comment=Sua agenda (Google/Nextcloud/Outlook) — nativa e leve
+Exec=tarsila-agenda
 Icon=x-office-calendar
 Terminal=false
 Categories=Office;Calendar;
-
-[Desktop Action tirar-dock]
-Name=Tirar do Dock
-Exec=/usr/local/bin/tarsila-dock-item.sh remove /usr/share/tarsila/applications/agenda-google.desktop
-
-[Desktop Action desinstalar]
-Name=Desinstalar
-Exec=/usr/local/bin/tarsila-app-uninstall.sh /usr/share/tarsila/applications/agenda-google.desktop

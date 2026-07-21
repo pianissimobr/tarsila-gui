@@ -1,0 +1,278 @@
+#!/usr/bin/env python3
+# Tarsila Agenda — visualizador minimal de agenda, SEM web engine.
+# Lê fontes de ~/.config/tarsila/agenda-sources.json:
+#   - URL .ics pública ("endereço secreto em formato iCal" do Google/
+#     Nextcloud/Outlook — só leitura, sem OAuth), OU
+#   - CalDAV (URL + usuário + senha de app, ex. Nextcloud).
+# Expande eventos recorrentes e mostra a lista dos próximos dias.
+# Read-only por enquanto (o leigo sobretudo CONSULTA a agenda).
+import os, json, ssl, threading, datetime, urllib.request, urllib.error
+import gi
+gi.require_version('Gtk', '3.0')
+from gi.repository import Gtk, GLib, Pango
+
+CFG_DIR = os.path.expanduser('~/.config/tarsila')
+CFG = os.path.join(CFG_DIR, 'agenda-sources.json')
+DAYS_AHEAD = 45
+DIAS = ['segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo']
+MESES = ['', 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+         'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
+
+
+def load_sources():
+    try:
+        with open(CFG) as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def save_sources(s):
+    os.makedirs(CFG_DIR, exist_ok=True)
+    with open(CFG, 'w') as f:
+        json.dump(s, f, indent=2, ensure_ascii=False)
+
+
+def _to_local(v):
+    if isinstance(v, datetime.datetime):
+        if v.tzinfo is not None:
+            v = v.astimezone().replace(tzinfo=None)
+        return v, False
+    if isinstance(v, datetime.date):
+        return datetime.datetime(v.year, v.month, v.day), True
+    return None, False
+
+
+def _expand(cal, start, end, srcname):
+    import recurring_ical_events
+    out = []
+    for comp in recurring_ical_events.of(cal).between(start, end):
+        try:
+            ds = comp.get('DTSTART').dt
+            de = comp.get('DTEND').dt if comp.get('DTEND') else ds
+            s, allday = _to_local(ds)
+            e, _ = _to_local(de)
+            if s is None:
+                continue
+            out.append({'start': s, 'end': e, 'allday': allday,
+                        'title': str(comp.get('SUMMARY', '(sem título)')),
+                        'location': str(comp.get('LOCATION', '') or ''),
+                        'srcname': srcname})
+        except Exception as ex:
+            print('agenda: evento ignorado:', ex)
+    return out
+
+
+def fetch_one(src, start, end):
+    import icalendar
+    url = (src.get('url') or '').strip()
+    user = (src.get('user') or '').strip()
+    pw = src.get('pass') or ''
+    name = src.get('name') or url
+    if user:  # CalDAV
+        import caldav
+        client = caldav.DAVClient(url=url, username=user, password=pw)
+        evs = []
+        for c in client.principal().calendars():
+            try:
+                found = c.search(start=start, end=end, event=True)
+            except Exception:
+                found = c.date_search(start, end)
+            cal = icalendar.Calendar()
+            for ev in found:
+                for comp in icalendar.Calendar.from_ical(ev.data).walk():
+                    if comp.name in ('VEVENT', 'VTIMEZONE'):
+                        cal.add_component(comp)
+            evs += _expand(cal, start, end, name)
+        return evs
+    ctx = ssl.create_default_context()
+    req = urllib.request.Request(url, headers={'User-Agent': 'TarsilaAgenda'})
+    with urllib.request.urlopen(req, timeout=25, context=ctx) as r:
+        data = r.read()
+    return _expand(icalendar.Calendar.from_ical(data), start, end, name)
+
+
+def fetch_all(sources):
+    start = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + datetime.timedelta(days=DAYS_AHEAD)
+    evs, errs = [], []
+    for src in sources:
+        try:
+            evs += fetch_one(src, start, end)
+        except Exception as e:
+            errs.append('%s: %s' % (src.get('name') or 'fonte', e))
+    evs.sort(key=lambda x: x['start'])
+    return evs, errs
+
+
+class Agenda(Gtk.Window):
+    def __init__(self):
+        super().__init__(title='Agenda')
+        self.set_default_size(720, 620)
+        try:
+            self.set_wmclass('tarsila-agenda', 'Tarsila-agenda')
+        except Exception:
+            pass
+        self.set_icon_name('internet-mail')  # placeholder; .desktop usa x-office-calendar
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.add(box)
+
+        # toolbar interna (sem HeaderBar, p/ o Openbox decorar igual aos outros)
+        tb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        tb.set_border_width(8)
+        t = Gtk.Label(); t.set_markup('<b>Agenda</b>'); t.set_xalign(0)
+        tb.pack_start(t, True, True, 0)
+        b_ref = Gtk.Button.new_from_icon_name('view-refresh', Gtk.IconSize.BUTTON)
+        b_ref.set_tooltip_text('Atualizar')
+        b_ref.connect('clicked', lambda *_: self.reload())
+        tb.pack_start(b_ref, False, False, 0)
+        b_cfg = Gtk.Button.new_with_label('Configurar')
+        b_cfg.connect('clicked', self.on_config)
+        tb.pack_start(b_cfg, False, False, 0)
+        box.pack_start(tb, False, False, 0)
+        box.pack_start(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL), False, False, 0)
+
+        self.status = Gtk.Label(); self.status.set_xalign(0)
+        self.status.set_margin_start(12); self.status.set_margin_top(6)
+        box.pack_start(self.status, False, False, 0)
+
+        sc = Gtk.ScrolledWindow(); sc.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.list.set_border_width(6)
+        sc.add(self.list)
+        box.pack_start(sc, True, True, 0)
+
+        self.show_all()
+        self.reload()
+
+    def clear_list(self):
+        for c in self.list.get_children():
+            self.list.remove(c)
+
+    def reload(self):
+        sources = load_sources()
+        self.clear_list()
+        if not sources:
+            self.status.set_text('')
+            self.empty_state()
+            return
+        self.status.set_markup('<i>Carregando agenda…</i>')
+        threading.Thread(target=self._bg, args=(sources,), daemon=True).start()
+
+    def _bg(self, sources):
+        evs, errs = fetch_all(sources)
+        GLib.idle_add(self._render, evs, errs)
+
+    def _render(self, evs, errs):
+        self.clear_list()
+        if errs:
+            self.status.set_markup('<span foreground="#b04a3a">Não consegui ler: ' +
+                                   GLib.markup_escape_text('; '.join(errs)) + '</span>')
+        elif not evs:
+            self.status.set_markup('<i>Nada nos próximos %d dias.</i>' % DAYS_AHEAD)
+        else:
+            self.status.set_text('')
+        last_day = None
+        for ev in evs:
+            d = ev['start'].date()
+            if d != last_day:
+                last_day = d
+                hdr = Gtk.Label(); hdr.set_xalign(0)
+                hoje = datetime.date.today()
+                pref = 'Hoje' if d == hoje else ('Amanhã' if d == hoje + datetime.timedelta(days=1)
+                       else '%s, %d de %s' % (DIAS[d.weekday()].capitalize(), d.day, MESES[d.month]))
+                hdr.set_markup('<b>%s</b>' % GLib.markup_escape_text(pref))
+                hdr.set_margin_top(12); hdr.set_margin_bottom(2); hdr.set_margin_start(6)
+                self.list.pack_start(hdr, False, False, 0)
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            row.set_margin_start(10); row.set_margin_top(2); row.set_margin_bottom(2)
+            hora = 'Dia todo' if ev['allday'] else ev['start'].strftime('%H:%M')
+            lh = Gtk.Label(label=hora); lh.set_xalign(0); lh.set_width_chars(9)
+            lh.get_style_context().add_class('dim-label')
+            row.pack_start(lh, False, False, 0)
+            txt = GLib.markup_escape_text(ev['title'])
+            if ev['location']:
+                txt += '  <span foreground="#888">· %s</span>' % GLib.markup_escape_text(ev['location'])
+            lt = Gtk.Label(); lt.set_markup(txt); lt.set_xalign(0); lt.set_line_wrap(True)
+            row.pack_start(lt, True, True, 0)
+            self.list.pack_start(row, False, False, 0)
+        self.list.show_all()
+        return False
+
+    def empty_state(self):
+        b = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        b.set_margin_top(60)
+        i = Gtk.Image.new_from_icon_name('x-office-calendar', Gtk.IconSize.DIALOG)
+        i.set_pixel_size(72)
+        l = Gtk.Label()
+        l.set_markup('<big><b>Nenhuma agenda conectada</b></big>\n\n'
+                     'Clique em <b>Configurar</b> e cole o endereço da sua agenda\n'
+                     '(no Google: Configurações → "Endereço secreto em formato iCal").')
+        l.set_justify(Gtk.Justification.CENTER)
+        b.pack_start(i, False, False, 0)
+        b.pack_start(l, False, False, 0)
+        self.list.pack_start(b, True, True, 0)
+        self.list.show_all()
+
+    def on_config(self, *_):
+        dlg = Gtk.Dialog(title='Configurar agenda', transient_for=self, modal=True)
+        dlg.add_button('Fechar', Gtk.ResponseType.CLOSE)
+        dlg.set_default_size(560, 380)
+        ca = dlg.get_content_area(); ca.set_border_width(12); ca.set_spacing(8)
+
+        sources = load_sources()
+        lst = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        def refresh_list():
+            for c in lst.get_children():
+                lst.remove(c)
+            for idx, s in enumerate(load_sources()):
+                r = Gtk.Box(spacing=8)
+                nm = Gtk.Label(label='• ' + (s.get('name') or s.get('url'))); nm.set_xalign(0)
+                r.pack_start(nm, True, True, 0)
+                rm = Gtk.Button.new_from_icon_name('user-trash', Gtk.IconSize.BUTTON)
+                def _del(_b, i=idx):
+                    ss = load_sources(); del ss[i]; save_sources(ss); refresh_list()
+                rm.connect('clicked', _del)
+                r.pack_start(rm, False, False, 0)
+                lst.pack_start(r, False, False, 0)
+            lst.show_all()
+        ca.pack_start(Gtk.Label(label='Agendas conectadas:', xalign=0), False, False, 0)
+        ca.pack_start(lst, False, False, 0)
+        ca.pack_start(Gtk.Separator(), False, False, 6)
+        ca.pack_start(Gtk.Label(label='Adicionar nova:', xalign=0), False, False, 0)
+
+        grid = Gtk.Grid(row_spacing=6, column_spacing=8)
+        e_name = Gtk.Entry(); e_name.set_placeholder_text('Nome (ex: Meu Google)')
+        e_url = Gtk.Entry(); e_url.set_placeholder_text('URL .ics ou CalDAV')
+        e_user = Gtk.Entry(); e_user.set_placeholder_text('(CalDAV) usuário — deixe vazio p/ .ics')
+        e_pass = Gtk.Entry(); e_pass.set_visibility(False); e_pass.set_placeholder_text('(CalDAV) senha de app')
+        for i, (lab, w) in enumerate([('Nome', e_name), ('URL', e_url), ('Usuário', e_user), ('Senha', e_pass)]):
+            grid.attach(Gtk.Label(label=lab, xalign=1), 0, i, 1, 1)
+            w.set_hexpand(True); grid.attach(w, 1, i, 1, 1)
+        ca.pack_start(grid, False, False, 0)
+        add = Gtk.Button.new_with_label('Adicionar agenda')
+        def _add(*_):
+            u = e_url.get_text().strip()
+            if not u:
+                return
+            ss = load_sources()
+            ss.append({'name': e_name.get_text().strip() or u, 'url': u,
+                       'user': e_user.get_text().strip(), 'pass': e_pass.get_text()})
+            save_sources(ss)
+            e_name.set_text(''); e_url.set_text(''); e_user.set_text(''); e_pass.set_text('')
+            refresh_list()
+        add.connect('clicked', _add)
+        ca.pack_start(add, False, False, 0)
+
+        refresh_list()
+        dlg.show_all()
+        dlg.run()
+        dlg.destroy()
+        self.reload()
+
+
+if __name__ == '__main__':
+    w = Agenda()
+    w.connect('destroy', Gtk.main_quit)
+    Gtk.main()

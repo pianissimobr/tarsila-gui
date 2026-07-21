@@ -1,0 +1,9 @@
+[Desktop Entry]
+StartupNotify=true
+Type=Application
+Name=Notícias
+Comment=Notícias e feeds RSS — nativo e leve
+Exec=tarsila-noticias
+Icon=internet-news-reader
+Terminal=false
+Categories=Network;News;

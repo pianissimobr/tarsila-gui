@@ -1,0 +1,32 @@
+#!/bin/bash
+# Abre uma rede social no navegador com as otimizacoes LEGITIMAS:
+#  - versao MOBILE do site (user-agent de celular = muito mais leve)
+#  - adblock (extensao cinema-ext, a mesma do tarsila-chromium)
+#  - modo APP (janela limpa, tipo PWA)
+#  - MOTOR COMPARTILHADO: Facebook/Instagram/X dividem um perfil (mesma
+#    engine); WhatsApp tem perfil proprio porque o WhatsApp Web BLOQUEIA
+#    user-agent mobile (exige desktop).
+# Nao usa API privada nem modifica os sites -> nao viola ToS.
+NET="$1"
+UA_MOBILE="Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+UA_DESKTOP="Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+case "$NET" in
+  facebook)  URL="https://m.facebook.com/";    UA="$UA_MOBILE";  PROF=redes-mobile ;;
+  instagram) URL="https://www.instagram.com/"; UA="$UA_MOBILE";  PROF=redes-mobile ;;
+  x|twitter) URL="https://x.com/";             UA="$UA_MOBILE";  PROF=redes-mobile ;;
+  whatsapp)  URL="https://web.whatsapp.com/";  UA="$UA_DESKTOP"; PROF=redes-whatsapp ;;
+  *) echo "rede desconhecida: $NET" >&2; exit 1 ;;
+esac
+BIN=""
+for b in chromium chromium-browser /usr/lib/chromium/chromium; do
+  command -v "$b" >/dev/null 2>&1 && { BIN="$b"; break; }
+  [ -x "$b" ] && { BIN="$b"; break; }
+done
+[ -z "$BIN" ] && { echo "chromium nao encontrado" >&2; exit 1; }
+DIR="$HOME/.config/tarsila/redes/$PROF"; mkdir -p "$DIR"
+EXT=""; [ -d /usr/share/tarsila/cinema-ext ] && EXT="--load-extension=/usr/share/tarsila/cinema-ext"
+exec "$BIN" --user-data-dir="$DIR" $EXT \
+  --user-agent="$UA" \
+  --app="$URL" \
+  --no-first-run --no-default-browser-check \
+  --class="tarsila-rede-$NET" >/dev/null 2>&1

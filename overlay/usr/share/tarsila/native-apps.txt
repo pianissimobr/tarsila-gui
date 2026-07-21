@@ -3,3 +3,6 @@ configuracao-tarsila.desktop
 tarsila-store.desktop
 terminal-tarsila.desktop
 lixeira-tarsila.desktop
+email-tarsila.desktop
+noticias-tarsila.desktop
+redes-tarsila.desktop

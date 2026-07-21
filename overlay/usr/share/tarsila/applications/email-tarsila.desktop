@@ -1,0 +1,9 @@
+[Desktop Entry]
+StartupNotify=true
+Type=Application
+Name=E-mail
+Comment=Cliente de e-mail (Claws Mail)
+Exec=claws-mail
+Icon=internet-mail
+Terminal=false
+Categories=Network;Email;

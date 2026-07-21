@@ -1,0 +1,9 @@
+[Desktop Entry]
+StartupNotify=true
+Type=Application
+Name=Redes
+Comment=Redes sociais (Facebook, Instagram, X, WhatsApp) otimizadas
+Exec=tarsila-redes
+Icon=system-users
+Terminal=false
+Categories=Network;
