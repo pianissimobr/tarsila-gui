@@ -1,0 +1,36 @@
+#!/bin/sh
+# Autostart da sessão Tarsila-Openbox. Sobe os mesmos componentes da
+# sessão XFCE que são independentes do ambiente (Plank, devilspie2,
+# tarsila-monitor) + os substitutos leves do XFCE (xsettingsd no lugar do
+# xfsettingsd, dunst no lugar do xfce4-notifyd, polybar no lugar do
+# xfce4-panel, feh/wallpaper-apply no lugar do xfdesktop).
+
+# tema GTK/ícones/fonte/cursor
+xsettingsd -c "$HOME/.config/xsettingsd/xsettingsd.conf" &
+
+# notificações (a Tarsila Store usa notify-send ao concluir instalação)
+dunst &
+
+# agente de autenticação de administrador (polkit)
+lxpolkit &
+
+# papel de parede + adaptação à resolução real da TV (grava geometria da
+# barra em ~/.config/tarsila/ e sobe o polybar no fim)
+/usr/local/bin/tarsila-ob-wallpaper-apply.sh &
+
+# dock (reaplica ordem/tema antes de abrir o Plank)
+( /usr/local/bin/tarsila-dock-apply.sh 2>/dev/null; exec plank ) &
+
+# regras de janela (workspace lógico 2, unmaximize, exceções) — igual XFCE
+devilspie2 &
+
+# daemon residente: contagem/sons/renice + alimenta o estado do top bar
+/usr/local/bin/tarsila-monitor.sh &
+
+# cursor de "carregando" até a sessão montar
+/usr/local/bin/tarsila-boot-cursor.sh &
+
+# compositor leve (sem tearing) — DESLIGADO por padrão para economizar
+# ~26MB de RAM. Descomente se quiser transparência/sombras mais suaves no
+# Plank/dunst (custa RAM + carga de GPU):
+# picom -b 2>/dev/null &
