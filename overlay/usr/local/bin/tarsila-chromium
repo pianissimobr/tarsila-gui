@@ -624,9 +624,12 @@ fi
 EXT_SRC="/usr/share/tarsila/cinema-ext"
 EXT_USR="${XDG_DATA_HOME:-$HOME/.local/share}/tarsila/cinema-ext"
 if [ "$TARSILA_CINEMA" = "1" ] && [ -f "$EXT_SRC/manifest.json" ]; then
+    # Compara a pasta INTEIRA, nao so manifest/rules: a extensao tem varios
+    # .js (modo_leve, cinema, imagens, fundo, sites-mobile, ua-main) e olhar so
+    # dois arquivos fazia mudanca em qualquer outro NUNCA chegar ao usuario.
     if [ ! -f "$EXT_USR/manifest.json" ] \
-       || [ "$EXT_SRC/manifest.json" -nt "$EXT_USR/manifest.json" ] \
-       || [ "$EXT_SRC/rules.json" -nt "$EXT_USR/rules.json" ]; then
+       || [ -n "$(find "$EXT_SRC" -maxdepth 1 -type f \
+                  -newer "$EXT_USR/manifest.json" -print -quit 2>/dev/null)" ]; then
         mkdir -p "$EXT_USR"
         cp -f "$EXT_SRC"/*.json "$EXT_SRC"/*.js "$EXT_USR"/ 2>/dev/null
     fi
