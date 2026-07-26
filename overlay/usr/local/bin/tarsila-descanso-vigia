@@ -1,0 +1,18 @@
+#!/bin/bash
+# Vigia de ociosidade: dispara o modo de espera depois de N minutos sem uso.
+# Usa xprintidle (extensao MIT-SCREEN-SAVER do X). Le o ocioso a cada 20 s --
+# custo desprezivel, e nao ha nada mais leve disponivel no repositorio
+# (xautolock e xssstate nao existem no trixie).
+# Desligar: basta comentar a chamada no ~/.config/openbox/autostart.
+MIN="$(cat "$HOME/.config/tarsila/descanso-minutos" 2>/dev/null)"
+case "$MIN" in ''|*[!0-9]*) MIN=10 ;; esac
+[ "$MIN" -lt 1 ] && exit 0            # 0 = desligado
+LIMITE=$(( MIN * 60 * 1000 ))
+while sleep 20; do
+    command -v xprintidle >/dev/null || continue
+    ocioso=$(xprintidle 2>/dev/null) || continue
+    [ -z "$ocioso" ] && continue
+    if [ "$ocioso" -ge "$LIMITE" ] && ! pgrep -f "[t]arsila-descanso-mpv" >/dev/null; then
+        /usr/local/bin/tarsila-descanso
+    fi
+done

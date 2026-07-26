@@ -1,0 +1,16 @@
+#!/bin/bash
+# Modo de espera do Tarsila: video em loop, tela cheia, mudo, com a hora
+# centralizada. Sai ao primeiro toque de tecla ou movimento de mouse.
+# CUSTO MEDIDO nesta box (720p/24fps): 50% de 400% de CPU e +2C. A mesma cena
+# em 1080p/30fps custava 165% -- por isso o video e reencodado.
+D=/usr/share/tarsila/descanso
+V="$(cat "$HOME/.config/tarsila/descanso-video" 2>/dev/null)"
+[ -n "$V" ] && [ -f "$V" ] || V="$D/video.mp4"
+[ -f "$V" ] || exit 0
+pgrep -f "[t]arsila-descanso-mpv" >/dev/null && exit 0
+exec mpv --no-config --title=tarsila-descanso-mpv \
+     --vo=xv --fs --loop-file=inf --no-audio --really-quiet \
+     --no-osc --osd-level=0 --cursor-autohide=always \
+     --input-conf="$D/input.conf" --script="$D/relogio.lua" \
+     --no-input-default-bindings \
+     "$V"

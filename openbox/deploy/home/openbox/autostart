@@ -63,3 +63,9 @@ command -v tint2 >/dev/null 2>&1 && tint2 &
 # sessao (openbox-autostart exige PyXDG, que nao esta instalado). O sleep da
 # tempo de a rede subir antes de tentar montar.
 (sleep 5; python3 "$HOME/.local/bin/nc-mount.py") &
+
+# Modo de espera: video em loop com a hora, depois de N minutos parado.
+# N vem de ~/.config/tarsila/descanso-minutos (0 desliga). O video vem de
+# ~/.config/tarsila/descanso-video. Custo medido: ~85% de 400% de CPU e +2C.
+# Para desligar sem editar nada: echo 0 > ~/.config/tarsila/descanso-minutos
+/usr/local/bin/tarsila-descanso-vigia &
