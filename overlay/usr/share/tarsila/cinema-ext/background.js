@@ -31,10 +31,14 @@ const padroes = () =>
   self.TARSILA_SITES_MOBILE.flatMap(d => [`*://${d}/*`, `*://*.${d}/*`]);
 
 async function instalarRegras() {
-  // Regras de SESSÃO, não ruleset estático: o Chromium ignora modifyHeaders
-  // sobre User-Agent em ruleset estático, sem emitir erro nenhum.
-  const antigas = await chrome.declarativeNetRequest.getSessionRules();
-  await chrome.declarativeNetRequest.updateSessionRules({
+  // Regras DINÂMICAS: PERSISTEM no perfil. Service worker MV3 é SOB
+  // DEMANDA -- em perfil já estabelecido nada dispara e o aplicar() nunca
+  // roda (perfil novo funcionava, o do usuário não). Com regra dinâmica,
+  // instalada uma vez, continua valendo mesmo sem o SW acordar.
+  // Ruleset ESTÁTICO não serve: o Chromium ignora modifyHeaders sobre
+  // User-Agent nele, silenciosamente.
+  const antigas = await chrome.declarativeNetRequest.getDynamicRules();
+  await chrome.declarativeNetRequest.updateDynamicRules({
     removeRuleIds: antigas.map(r => r.id),
     addRules: self.TARSILA_SITES_MOBILE.map((dominio, i) => ({
       id: i + 1,
