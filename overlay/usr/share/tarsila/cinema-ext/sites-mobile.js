@@ -12,6 +12,7 @@
 // e manda usar o celular. Ele quer desktop, que já é o padrão.
 // ---------------------------------------------------------------------------
 self.TARSILA_SITES_MOBILE = [
+  "youtube.com",
   "facebook.com",
   "instagram.com",
   "x.com",
