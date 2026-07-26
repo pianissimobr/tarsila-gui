@@ -32,8 +32,15 @@ devilspie2 &
 # daemon residente: contagem/sons/renice + alimenta o estado do top bar
 /usr/local/bin/tarsila-monitor.sh &
 
-# decoracao ao maximizar: goto3.sh (super+u) e goto2.sh (super+i) — sem
-# daemon em background (tarsila-ob-decor.sh desativado aqui)
+# Decoracao ao maximizar. O goto3.sh/goto2.sh (botao maximizar e duplo clique)
+# ja tiram/devolvem a barra de titulo sozinhos. MAS quem maximiza por OUTRO
+# caminho escapava: o devilspie2 maximiza o Chromium e chama undecorate(), que
+# usa _MOTIF_WM_HINTS -- e o Openbox NAO honra isso com a janela ja mapeada.
+# Resultado: duas barras de titulo, a da janela e a do sistema.
+# Este vigia cobre esses casos: le o state file e dispara a acao Undecorate do
+# proprio Openbox (a unica que funciona ao vivo). E event-driven por inotify,
+# nao faz polling.
+/usr/local/bin/tarsila-ob-decor.sh &
 
 # cursor de "carregando" até a sessão montar
 /usr/local/bin/tarsila-boot-cursor.sh &
