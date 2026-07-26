@@ -463,8 +463,14 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                 state = STATE_NAMES.get(parts[1], parts[1])
                 conn = parts[2] if len(parts) > 2 and parts[2] else ""
                 subtitle = f"{state} · {conn}" if conn else state
-                add_row(lb, icon, name, subtitle)
+                if dtype == "wifi":
+                    self._wifi_row(lb, add_row, icon, name, parts[1], conn)
+                else:
+                    add_row(lb, icon, name, subtitle)
                 shown += 1
+        if not has_wifi:
+            add_row(lb, "network-wireless-offline", "Wi-Fi",
+                    "Nenhuma placa de Wi-Fi reconhecida")
         if not shown:
             add_row(lb, "network-offline", "Rede",
                     "Nenhuma conexão de rede encontrada neste computador")
@@ -510,6 +516,60 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                 ["nmcli", "radio", "all", "off" if state else "on"]) and False)
             add_row(lb, "airplane-mode-symbolic", "Modo avião",
                     "Desliga o Wi-Fi e outras conexões sem fio", sw)
+
+    # ---- Wi-Fi: linha contextual + janela "Conexões de rede" ----
+    def _wifi_row(self, lb, add_row, icon, name, estado, conn):
+        """Monta a linha do Wi-Fi conforme o estado da placa/conexão."""
+        conectado = (estado == "connected")
+        caixa = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        if conectado:
+            b1 = Gtk.Button.new_with_label("Desconectar Wi-Fi")
+            b1.connect("clicked", lambda *_a: self._wifi_desconectar())
+            b2 = Gtk.Button.new_with_label("Conectar a outra rede Wi-Fi")
+            b2.connect("clicked", lambda *_a: self._wifi_janela())
+            caixa.pack_start(b1, False, False, 0)
+            caixa.pack_start(b2, False, False, 0)
+            sub = conn or "Conectado"
+        else:
+            b = Gtk.Button.new_with_label("Conectar ao Wi-Fi")
+            b.connect("clicked", lambda *_a: self._wifi_janela())
+            caixa.pack_start(b, False, False, 0)
+            sub = "Desconectado"
+        add_row(lb, icon, name, sub, caixa)
+
+    @staticmethod
+    def _wifi_janela():
+        """Abre a janela Conexões de rede (seção Wi-Fi)."""
+        try:
+            subprocess.Popen(["/usr/local/bin/tarsila-wifi"])
+        except Exception as e:
+            print("tarsila-config: nao abriu tarsila-wifi:", e)
+
+    def _wifi_desconectar(self):
+        ok, out, _ = run_ok(["nmcli", "-t", "-f", "DEVICE,TYPE", "device", "status"])
+        dev = None
+        if ok:
+            for line in out.splitlines():
+                p = line.split(":")
+                if len(p) >= 2 and p[1] == "wifi":
+                    dev = p[0]
+                    break
+        if dev:
+            run_ok(["nmcli", "device", "disconnect", dev], timeout=20)
+        GLib.timeout_add_seconds(1, self._wifi_recarregar_pagina)
+
+    def _wifi_recarregar_pagina(self):
+        """Reconstrói a página Internet para refletir o novo estado."""
+        try:
+            antigo = self.stack.get_child_by_name("internet")
+            if antigo is not None:
+                self.stack.remove(antigo)
+            self.built_pages.discard("internet")
+            self._ensure_page("internet")
+            self.stack.set_visible_child_name("internet")
+        except Exception as e:
+            print("tarsila-config: refresh internet:", e)
+        return False
 
     @staticmethod
     def _find_ethernet_connection():
@@ -831,9 +891,19 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
              f"{int(s.get_value())}%"]))
         add_row(lb, "audio-volume-high", "Volume principal", "", vol_scale)
 
+        # Seletor de saída de som (amigável): lista os destinos disponíveis
+        # (TV/HDMI, Fone P2 ou qualquer placa de som USB conectada) e deixa o
+        # usuário escolher por onde o som toca, com um toque. Resolve o caso
+        # da tvbox, que só oferecia HDMI como opção gráfica.
+        card, lb = make_card("Onde o som toca")
+        box.pack_start(card, False, False, 0)
+        self._som_saidas(lb, add_row)
+
+        card, lb = make_card("Ajustes avançados")
+        box.pack_start(card, False, False, 0)
         add_tool_row(lb, "audio-headphones", "Fones, caixas e microfone",
-                     "Escolher por onde o som entra e sai",
-                     ["pavucontrol"], "Ajustar ›")
+                     "Ajuste fino de entradas, saídas e microfone",
+                     ["pavucontrol"], "Abrir ›")
 
         if which("xfce4-notifyd-config"):
             card, lb = make_card("Notificações")
@@ -842,6 +912,72 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                          "Avisos na tela",
                          "Quais aplicativos podem mostrar avisos e por quanto tempo",
                          ["xfce4-notifyd-config"], "Configurar ›")
+
+    @staticmethod
+    def _sink_amigavel(name, desc):
+        """Nome/ícone/subtítulo amigável para um sink do PipeWire."""
+        n = name.lower()
+        if name == "tarsila_fone_p2" or "headphone" in n:
+            return ("audio-headphones", "Fone de ouvido (P2)",
+                    "Som pela entrada de fone (P2) do aparelho")
+        if "hdmi" in n:
+            return ("video-display", "TV ou Monitor (HDMI)",
+                    "Som pela TV ou monitor, pelo cabo HDMI")
+        if "usb" in n:
+            return ("audio-card", desc or "Som USB",
+                    "Placa de som conectada pela USB")
+        if "bluez" in n or "bluetooth" in n:
+            return ("audio-headphones", desc or "Fone Bluetooth",
+                    "Som por um fone ou caixa Bluetooth")
+        return ("audio-card", desc or name, "")
+
+    def _som_saidas(self, lb, add_row):
+        """Lista as saídas de som com escolha por toque (rádio)."""
+        _, defout, _ = run_ok(["pactl", "get-default-sink"])
+        default = defout.strip()
+        ok, out, _ = run_ok(["pactl", "list", "sinks", "short"])
+        nomes = []
+        if ok:
+            for line in out.splitlines():
+                parts = line.split("\t")
+                if len(parts) >= 2 and parts[1].strip():
+                    nomes.append(parts[1].strip())
+        # descrições (para placas USB que trazem nome próprio)
+        desc = {}
+        ok2, out2, _ = run_ok(["pactl", "list", "sinks"])
+        if ok2:
+            cur = None
+            for l in out2.splitlines():
+                s = l.strip()
+                if s.startswith("Name:"):
+                    cur = s.split(":", 1)[1].strip()
+                elif s.startswith("Description:") and cur:
+                    desc[cur] = s.split(":", 1)[1].strip()
+        if not nomes:
+            add_row(lb, "audio-volume-muted", "Som",
+                    "Nenhuma saída de som encontrada neste computador")
+            return
+        grupo = None
+        for name in nomes:
+            icon, titulo, sub = self._sink_amigavel(name, desc.get(name, name))
+            rb = Gtk.RadioButton.new_from_widget(grupo)
+            if grupo is None:
+                grupo = rb
+            rb.set_active(name == default)
+            rb.connect("toggled", lambda w, n=name:
+                       w.get_active() and self._som_definir_saida(n))
+            add_row(lb, icon, titulo, sub, rb)
+
+    def _som_definir_saida(self, name):
+        """Torna 'name' a saída padrão e move o que já está tocando."""
+        run_ok(["pactl", "set-default-sink", name])
+        ok, out, _ = run_ok(["pactl", "list", "sink-inputs", "short"])
+        if ok:
+            for line in out.splitlines():
+                sid = line.split("\t")[0].strip() if "\t" in line \
+                    else (line.split()[0] if line.split() else "")
+                if sid.isdigit():
+                    run_ok(["pactl", "move-sink-input", sid, name])
 
     # ---- Tela e Energia ----
     def _page_tela(self, box):

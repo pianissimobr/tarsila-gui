@@ -11,12 +11,25 @@ NET="$1"
 UA_MOBILE="Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
 UA_DESKTOP="Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 case "$NET" in
-  facebook)  URL="https://m.facebook.com/";    UA="$UA_MOBILE";  PROF=redes-mobile ;;
-  instagram) URL="https://www.instagram.com/"; UA="$UA_MOBILE";  PROF=redes-mobile ;;
-  x|twitter) URL="https://x.com/";             UA="$UA_MOBILE";  PROF=redes-mobile ;;
-  whatsapp)  URL="https://web.whatsapp.com/";  UA="$UA_DESKTOP"; PROF=redes-whatsapp ;;
+  facebook)  URL="https://m.facebook.com/";    UA="$UA_MOBILE";  PROF=redes-mobile;   MOBILE=1 ;;
+  instagram) URL="https://www.instagram.com/"; UA="$UA_MOBILE";  PROF=redes-mobile;   MOBILE=1 ;;
+  x|twitter) URL="https://x.com/";             UA="$UA_MOBILE";  PROF=redes-mobile;   MOBILE=1 ;;
+  whatsapp)  URL="https://web.whatsapp.com/";  UA="$UA_DESKTOP"; PROF=redes-whatsapp; MOBILE=0 ;;
   *) echo "rede desconhecida: $NET" >&2; exit 1 ;;
 esac
+# Redes mobile: janela no formato de um celular (retrato, estreita). Calcula
+# a altura pela tela (cabe abaixo do top bar e acima do Dock) e a largura em
+# proporção de celular (~0,52). WhatsApp é desktop -> sem --window-size.
+WINSIZE=""
+if [ "$MOBILE" = 1 ]; then
+  SH=$(xrandr 2>/dev/null | awk "/\*/{split(\$1,a,\"x\"); print a[2]; exit}")
+  [ -z "$SH" ] && SH=768
+  WH=$(( SH - 34 - 90 ))          # desconta top bar (34) e folga do Dock (~90)
+  [ "$WH" -gt 760 ] && WH=760     # teto p/ telas grandes: continua "de celular"
+  [ "$WH" -lt 480 ] && WH=480     # piso p/ não ficar minúsculo
+  WW=$(( WH * 52 / 100 ))         # proporção retrato de celular
+  WINSIZE="--window-size=${WW},${WH}"
+fi
 BIN=""
 for b in chromium chromium-browser /usr/lib/chromium/chromium; do
   command -v "$b" >/dev/null 2>&1 && { BIN="$b"; break; }
@@ -28,5 +41,6 @@ EXT=""; [ -d /usr/share/tarsila/cinema-ext ] && EXT="--load-extension=/usr/share
 exec "$BIN" --user-data-dir="$DIR" $EXT \
   --user-agent="$UA" \
   --app="$URL" \
+  $WINSIZE \
   --no-first-run --no-default-browser-check \
   --class="tarsila-rede-$NET" >/dev/null 2>&1

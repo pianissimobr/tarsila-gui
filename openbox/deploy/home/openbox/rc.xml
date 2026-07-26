@@ -2,14 +2,19 @@
 <openbox_config xmlns="http://openbox.org/3.4/rc">
   <resistance>
     <strength>10</strength>
-    <screen_edge_strength>20</screen_edge_strength>
+    <!-- resistência forte na borda da área útil: a janela "bate" no início
+         do top bar (y=34, reservado em <margins>) ao ser arrastada p/ cima,
+         em vez de passar por baixo dele -->
+    <screen_edge_strength>2000</screen_edge_strength>
   </resistance>
   <focus>
     <focusNew>yes</focusNew>
     <followMouse>no</followMouse>
     <focusLast>yes</focusLast>
     <underMouse>no</underMouse>
-    <raiseOnFocus>no</raiseOnFocus>
+    <!-- raiseOnFocus: reforço; o clique na área do app usa o binding
+         padrão Client Press→Focus+Raise (Openbox encaminha o clique) -->
+    <raiseOnFocus>yes</raiseOnFocus>
   </focus>
   <placement>
     <policy>Smart</policy>
@@ -21,6 +26,7 @@
     <name>Tarsila</name>
     <titleLayout>CML</titleLayout>
     <keepBorder>yes</keepBorder>
+    <invisibleHandles>yes</invisibleHandles>
     <animateIconify>no</animateIconify>
     <font place="ActiveWindow">
       <name>DejaVu Sans</name>
@@ -66,10 +72,18 @@
     <keybind key="W-i"><action name="Decorate"/></keybind>
   </keyboard>
   <mouse>
-    <dragThreshold>8</dragThreshold>
+    <dragThreshold>4</dragThreshold>
     <doubleClickTime>200</doubleClickTime>
     <context name="Titlebar">
-      <mousebind button="Left" action="Drag"><action name="Move"/></mousebind>
+      <mousebind button="Left" action="Press">
+        <action name="Focus"/>
+        <action name="Raise"/>
+      </mousebind>
+      <mousebind button="Left" action="Drag">
+        <action name="Focus"/>
+        <action name="Raise"/>
+        <action name="Move"/>
+      </mousebind>
       <mousebind button="Left" action="DoubleClick"><action name="Execute"><command>/usr/local/bin/tarsila-goto3.sh</command></action></mousebind>
       <mousebind button="Right" action="Press"><action name="ShowMenu"><menu>client-menu</menu></action></mousebind>
     </context>
@@ -84,9 +98,63 @@
     <context name="Iconify">
       <mousebind button="Left" action="Click"><action name="Iconify"/></mousebind>
     </context>
+    <!-- clique na área do app: foca e traz à frente (padrão Openbox) -->
+    <context name="Client">
+      <mousebind button="Left" action="Press">
+        <action name="Focus"/>
+        <action name="Raise"/>
+      </mousebind>
+      <mousebind button="Middle" action="Press">
+        <action name="Focus"/>
+        <action name="Raise"/>
+      </mousebind>
+      <mousebind button="Right" action="Press">
+        <action name="Focus"/>
+        <action name="Raise"/>
+      </mousebind>
+      <!-- Alt+arrastar move a partir do conteúdo -->
+      <mousebind button="A-Left" action="Drag">
+        <action name="Focus"/>
+        <action name="Raise"/>
+        <action name="Move"/>
+      </mousebind>
+    </context>
+    <!-- sem Press no Frame — isso quebrava o segura-e-arrasta na decoração -->
     <context name="Frame">
-      <mousebind button="A-Left" action="Drag"><action name="Move"/></mousebind>
+      <mousebind button="A-Left" action="Drag">
+        <action name="Focus"/>
+        <action name="Raise"/>
+        <action name="Move"/>
+      </mousebind>
       <mousebind button="A-Right" action="Drag"><action name="Resize"/></mousebind>
+    </context>
+    <!-- Redimensionar arrastando as BORDAS e CANTOS da janela. A faixa
+         agarrável é INVISÍVEL (invisibleHandles=yes no <theme>) e do tamanho
+         da borda do tema; o Resize sem <edge> detecta a direção pela posição
+         do cursor. -->
+    <context name="Top">
+      <mousebind button="Left" action="Drag"><action name="Resize"/></mousebind>
+    </context>
+    <context name="Bottom">
+      <mousebind button="Left" action="Drag"><action name="Resize"/></mousebind>
+    </context>
+    <context name="Left">
+      <mousebind button="Left" action="Drag"><action name="Resize"/></mousebind>
+    </context>
+    <context name="Right">
+      <mousebind button="Left" action="Drag"><action name="Resize"/></mousebind>
+    </context>
+    <context name="TLCorner">
+      <mousebind button="Left" action="Drag"><action name="Resize"/></mousebind>
+    </context>
+    <context name="TRCorner">
+      <mousebind button="Left" action="Drag"><action name="Resize"/></mousebind>
+    </context>
+    <context name="BLCorner">
+      <mousebind button="Left" action="Drag"><action name="Resize"/></mousebind>
+    </context>
+    <context name="BRCorner">
+      <mousebind button="Left" action="Drag"><action name="Resize"/></mousebind>
     </context>
     <context name="Desktop">
       <mousebind button="Right" action="Press"><action name="ShowMenu"><menu>root-menu</menu></action></mousebind>
@@ -101,11 +169,20 @@
     <application class="Plank">
       <decor>no</decor>
       <focus>no</focus>
-      <layer>below</layer>
+      <layer>dock</layer>
     </application>
     <application class="Polybar">
       <decor>no</decor>
       <focus>no</focus>
+    </application>
+    <!-- Redes sociais (Facebook/Instagram/X) abrem em janela tamanho de
+         celular; centralizamos p/ não nascerem desproporcionais. O WhatsApp
+         (tarsila-rede-whatsapp) é desktop e também fica centralizado. -->
+    <application class="tarsila-rede-*">
+      <position force="yes">
+        <x>center</x>
+        <y>center</y>
+      </position>
     </application>
   </applications>
 </openbox_config>
