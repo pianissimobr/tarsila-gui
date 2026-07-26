@@ -1,0 +1,49 @@
+<meta charset="utf-8">
+<title>Ajustes do Navegador Tarsila</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.5 Inter, Cantarell, sans-serif; margin: 0; padding: 22px;
+         max-width: 620px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 22px; opacity: .7; }
+  fieldset { border: 1px solid rgba(128,128,128,.35); border-radius: 10px;
+             padding: 14px 16px; margin: 0 0 16px; }
+  legend { font-weight: 600; padding: 0 6px; }
+  label.op { display: flex; gap: 10px; align-items: flex-start;
+             padding: 8px 0; cursor: pointer; }
+  label.op input { margin-top: 3px; }
+  .desc { display: block; font-size: 13px; opacity: .7; }
+  #salvar { font: inherit; font-weight: 600; padding: 9px 20px; border: 0;
+            border-radius: 8px; background: #1a73e8; color: #fff; cursor: pointer; }
+  #aviso { margin-left: 12px; font-size: 13px; opacity: 0; transition: opacity .2s; }
+  #aviso.ver { opacity: .85; }
+</style>
+
+<h1>Ajustes do Navegador</h1>
+<p class="sub">Estas opções valem para o navegador do Tarsila.</p>
+
+<fieldset>
+  <legend>Qualidade do vídeo no Modo Cinema</legend>
+  <label class="op"><input type="radio" name="q" value="economica">
+    <span>Econômica
+      <span class="desc">Até 480p. Gasta menos e é a mais segura em aparelhos fracos.</span></span></label>
+  <label class="op"><input type="radio" name="q" value="boa">
+    <span>Boa <em>(recomendada)</em>
+      <span class="desc">Até 720p. Bom equilíbrio nesta TV Box.</span></span></label>
+  <label class="op"><input type="radio" name="q" value="maxima">
+    <span>Máxima
+      <span class="desc">Até 1080p. Pode engasgar em vídeos muito pesados.</span></span></label>
+</fieldset>
+
+<fieldset>
+  <legend>Aceleração gráfica</legend>
+  <label class="op"><input type="radio" name="g" value="1">
+    <span>Ligada <em>(recomendada)</em>
+      <span class="desc">Usa a placa de vídeo. Deixa os vídeos da internet bem mais fluidos.</span></span></label>
+  <label class="op"><input type="radio" name="g" value="0">
+    <span>Desligada
+      <span class="desc">Use se a TV Box travar ou reiniciar sozinha. Fica mais lento.</span></span></label>
+</fieldset>
+
+<button id="salvar">Salvar</button><span id="aviso"></span>
+<script src="opcoes.js"></script>

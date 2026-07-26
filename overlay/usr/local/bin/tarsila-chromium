@@ -483,7 +483,19 @@ fi
 
 TARSILA_JITLESS="${TARSILA_JITLESS:-1}"
 TARSILA_TIER_B="${TARSILA_TIER_B:-1}"  # Tier B ligado por padrao: CPU (4x Cortex-A35) satura fácil com varias abas
+# TARSILA_GPU tambem pode vir de um ARQUIVO, que tem precedencia sobre a
+# variavel de ambiente. Motivo: a variavel mora no ~/.config/openbox/environment
+# e so muda no proximo login -- inutil para alternar durante um diagnostico,
+# e inutil para uma tela de configuracao. Com o arquivo, vale no proximo
+# lancamento do navegador.
+#   echo 0 > ~/.config/tarsila/gpu   -> desliga a GPU do Chromium
+#   echo 1 > ~/.config/tarsila/gpu   -> liga
+#   rm    ~/.config/tarsila/gpu      -> volta a mandar a variavel de ambiente
 TARSILA_GPU="${TARSILA_GPU:-1}"
+if [ -r "$HOME/.config/tarsila/gpu" ]; then
+    read -r _g < "$HOME/.config/tarsila/gpu"
+    case "$_g" in 0|1) TARSILA_GPU="$_g" ;; esac
+fi
 TARSILA_HWDEC="${TARSILA_HWDEC:-1}"
 TARSILA_CINEMA="${TARSILA_CINEMA:-1}"
 TARSILA_DEBUG="${TARSILA_DEBUG:-0}"
@@ -641,7 +653,11 @@ if [ "$TARSILA_CINEMA" = "1" ] && [ -f "$EXT_SRC/manifest.json" ]; then
        || [ -n "$(find "$EXT_SRC" -maxdepth 1 -type f \
                   -newer "$EXT_USR/manifest.json" -print -quit 2>/dev/null)" ]; then
         mkdir -p "$EXT_USR"
-        cp -f "$EXT_SRC"/*.json "$EXT_SRC"/*.js "$EXT_USR"/ 2>/dev/null
+        # Copiar a pasta INTEIRA. Filtrar por extensao ja mordeu duas vezes:
+        # antes so json+js, e a pagina de opcoes (.html) nunca chegava --
+        # o Chromium recusava a extensao com "Could not load options page".
+        # O _metadata e do proprio Chromium (indice do DNR): nao copiar.
+        find "$EXT_SRC" -maxdepth 1 -type f -exec cp -f {} "$EXT_USR"/ \; 2>/dev/null
     fi
     FLAGS+=( "--load-extension=$EXT_USR" )
 fi
