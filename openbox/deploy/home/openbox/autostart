@@ -16,7 +16,8 @@ xsettingsd -c "$HOME/.config/xsettingsd/xsettingsd.conf" &
 dunst &
 
 # agente de autenticação de administrador (polkit)
-lxpolkit &
+# lxpolkit era iniciado aqui E de novo no laco de agentes polkit abaixo.
+# Ficou so o laco, que e o portatil (tenta gnome/lxde/mate/kde na ordem).
 
 # papel de parede + adaptação à resolução real da TV (grava geometria da
 # barra em ~/.config/tarsila/ e sobe o polybar no fim)
@@ -31,15 +32,21 @@ devilspie2 &
 # daemon residente: contagem/sons/renice + alimenta o estado do top bar
 /usr/local/bin/tarsila-monitor.sh &
 
-# vigia de decoracao: tira a barra de titulo da janela quando maximizada
-# (titulo/botoes ficam na top bar) e devolve ao restaurar
-/usr/local/bin/tarsila-ob-decor.sh &
+# decoracao ao maximizar: goto3.sh (super+u) e goto2.sh (super+i) — sem
+# daemon em background (tarsila-ob-decor.sh desativado aqui)
 
 # cursor de "carregando" até a sessão montar
 /usr/local/bin/tarsila-boot-cursor.sh &
 
-# compositor leve (backend xrender, CPU) — estabiliza Chromium/video na GPU
-# compositor picom (backend xrender/CPU): com glamor OFF nao crasha, e da
-# transparencia/cantos arredondados ao Plank. Sem ele, cantos ficam pretos.
-picom -b --backend xrender --no-use-damage --config /dev/null 2>/dev/null &
-# nao ha tearing a corrigir. Sessao mais leve sem ele.
+# compositor xrender: cantos arredondados (janelas flutuantes) + Plank
+/usr/local/bin/tarsila-ob-picom.sh &
+# --- claws-mail-suite (nao editar esta secao) ---
+for a in /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 /usr/bin/lxpolkit /usr/lib/mate-polkit/polkit-mate-authentication-agent-1 /usr/lib/*/libexec/polkit-kde-authentication-agent-1; do [ -x "$a" ] && { "$a" & break; }; done
+command -v clipit >/dev/null 2>&1 && clipit &
+command -v parcellite >/dev/null 2>&1 && ! command -v clipit >/dev/null 2>&1 && parcellite &
+command -v tint2 >/dev/null 2>&1 && tint2 &
+# 2026-07-26: REMOVIDO o disparo automatico do assistente de e-mail.
+# Ele abria o 'configurar-claws' 4 s apos TODO login enquanto nao houvesse
+# conta configurada -- ou seja, sempre, na cara do usuario. Configurar
+# e-mail e ato deliberado: agora so pelo icone da Dock.
+# (linha antiga guardada em autostart.bak-20260726)
