@@ -2,48 +2,89 @@
 <title>Ajustes do Navegador Tarsila</title>
 <style>
   :root { color-scheme: light dark; }
-  body { font: 15px/1.5 Inter, Cantarell, sans-serif; margin: 0; padding: 22px;
-         max-width: 620px; }
-  h1 { font-size: 20px; margin: 0 0 4px; }
-  p.sub { margin: 0 0 22px; opacity: .7; }
+  body { font: 15px/1.55 Inter, Cantarell, sans-serif; margin: 0 auto; padding: 24px 26px 60px;
+         max-width: 760px; }
+  h1 { font-size: 21px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 24px; opacity: .7; }
   fieldset { border: 1px solid rgba(128,128,128,.35); border-radius: 10px;
-             padding: 14px 16px; margin: 0 0 16px; }
+             padding: 12px 16px 14px; margin: 0 0 16px; }
   legend { font-weight: 600; padding: 0 6px; }
-  label.op { display: flex; gap: 10px; align-items: flex-start;
-             padding: 8px 0; cursor: pointer; }
-  label.op input { margin-top: 3px; }
-  .desc { display: block; font-size: 13px; opacity: .7; }
-  #salvar { font: inherit; font-weight: 600; padding: 9px 20px; border: 0;
+  label.op { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; cursor: pointer; }
+  label.op input { margin-top: 3px; flex: none; }
+  .desc { display: block; font-size: 13px; opacity: .72; }
+  .medido { font-size: 12.5px; opacity: .6; font-style: italic; }
+  details { border: 1px solid rgba(128,128,128,.28); border-radius: 10px; padding: 10px 14px; }
+  summary { cursor: pointer; font-weight: 600; }
+  details ul { margin: 10px 0 2px; padding-left: 20px; }
+  details li { margin: 5px 0; font-size: 13.5px; }
+  .barra { position: sticky; bottom: 0; background: Canvas; padding: 14px 0 0;
+           border-top: 1px solid rgba(128,128,128,.25); margin-top: 20px; }
+  #salvar { font: inherit; font-weight: 600; padding: 9px 22px; border: 0;
             border-radius: 8px; background: #1a73e8; color: #fff; cursor: pointer; }
   #aviso { margin-left: 12px; font-size: 13px; opacity: 0; transition: opacity .2s; }
   #aviso.ver { opacity: .85; }
 </style>
 
 <h1>Ajustes do Navegador</h1>
-<p class="sub">Estas opções valem para o navegador do Tarsila.</p>
+<p class="sub">Tudo aqui vale para o navegador do Tarsila. Os números citados foram medidos nesta TV Box.</p>
 
 <fieldset>
   <legend>Qualidade do vídeo no Modo Cinema</legend>
-  <label class="op"><input type="radio" name="q" value="economica">
-    <span>Econômica
-      <span class="desc">Até 480p. Gasta menos e é a mais segura em aparelhos fracos.</span></span></label>
-  <label class="op"><input type="radio" name="q" value="boa">
-    <span>Boa <em>(recomendada)</em>
-      <span class="desc">Até 720p. Bom equilíbrio nesta TV Box.</span></span></label>
-  <label class="op"><input type="radio" name="q" value="maxima">
-    <span>Máxima
-      <span class="desc">Até 1080p. Pode engasgar em vídeos muito pesados.</span></span></label>
+  <label class="op"><input type="radio" name="qualidade" value="economica">
+    <span>Econômica<span class="desc">Até 480p. A mais segura em aparelhos fracos.
+      <span class="medido">medido: 44% de processador</span></span></span></label>
+  <label class="op"><input type="radio" name="qualidade" value="boa">
+    <span>Boa <em>(recomendada)</em><span class="desc">Até 720p. Bom equilíbrio nesta TV Box.</span></span></label>
+  <label class="op"><input type="radio" name="qualidade" value="maxima">
+    <span>Máxima<span class="desc">Até 1080p, limitada a 30 quadros por segundo.
+      <span class="medido">a 60 quadros custaria 298% e esquentaria a placa</span></span></span></label>
 </fieldset>
 
 <fieldset>
-  <legend>Aceleração gráfica</legend>
-  <label class="op"><input type="radio" name="g" value="1">
-    <span>Ligada <em>(recomendada)</em>
-      <span class="desc">Usa a placa de vídeo. Deixa os vídeos da internet bem mais fluidos.</span></span></label>
-  <label class="op"><input type="radio" name="g" value="0">
-    <span>Desligada
-      <span class="desc">Use se a TV Box travar ou reiniciar sozinha. Fica mais lento.</span></span></label>
+  <legend>Vídeo e imagem</legend>
+  <label class="op"><input type="checkbox" name="gpu">
+    <span>Usar a placa de vídeo<span class="desc">Deixa os vídeos da internet bem mais fluidos.
+      <span class="medido">medido no YouTube: 19-22 quadros por segundo sem, 28-32 com</span><br>
+      Desligue se a TV Box travar ou reiniciar sozinha.</span></span></label>
+  <label class="op"><input type="checkbox" name="hwdec">
+    <span>Tentar decodificação por hardware<span class="desc">Esta placa não tem o driver necessário,
+      então hoje não muda nada. Fica aqui para outros aparelhos.</span></span></label>
+  <label class="op"><input type="checkbox" name="cinema">
+    <span>Botão “Modo Cinema” nos sites de vídeo<span class="desc">Tira o vídeo do navegador e toca
+      num reprodutor leve. <span class="medido">medido: 477 MB e 238% no navegador contra 135 MB e 29% no reprodutor</span></span></span></label>
 </fieldset>
 
-<button id="salvar">Salvar</button><span id="aviso"></span>
+<fieldset>
+  <legend>Sites</legend>
+  <label class="op"><input type="checkbox" name="mobile">
+    <span>Abrir redes sociais e YouTube na versão de celular<span class="desc">Bem mais leve que a versão
+      de computador. Vale para YouTube, Facebook, Instagram e X.</span></span></label>
+</fieldset>
+
+<fieldset>
+  <legend>Economia de memória</legend>
+  <label class="op"><input type="checkbox" name="jitless">
+    <span>Modo econômico de memória<span class="desc">Reduz bastante a memória usada por páginas pesadas.
+      <span class="medido">desligar foi testado e PIOROU: caiu para ~6 quadros por segundo</span></span></span></label>
+  <label class="op"><input type="checkbox" name="tierb">
+    <span>Limitar processos e congelar abas paradas<span class="desc">Segura o consumo quando há
+      várias abas abertas.</span></span></label>
+</fieldset>
+
+<details>
+  <summary>Otimizações que ficam sempre ligadas</summary>
+  <ul>
+    <li><b>Um processo por site</b> — em 2 GB é a diferença entre navegar e travar por falta de memória.</li>
+    <li><b>Modo de aparelho modesto</b> — buffers menores, menos linhas de execução, cache de imagens reduzido.</li>
+    <li><b>Caches pequenos em disco</b> — poupa o cartão de memória e evita travadas de escrita.</li>
+    <li><b>Bloqueio de anúncios e rastreadores</b> — 18 domínios.</li>
+    <li><b>Menos movimento</b> — rolagem suave, animações e sombras desligadas; GIFs congelados.</li>
+    <li><b>Vídeo só toca depois do clique</b> — evita três reprodutores ligados de graça num portal.</li>
+    <li><b>Sem notificações e sem sincronização</b> — não deixa site acordar sozinho em segundo plano.</li>
+    <li><b>Gestos de toque</b> — arrastar com o mouse funciona como deslizar o dedo, para os sites de celular.</li>
+    <li><b>YouTube</b> — cursor devolvido sobre o vídeo, som ligado e reprodução mantida ao minimizar.</li>
+  </ul>
+</details>
+
+<div class="barra"><button id="salvar">Salvar</button><span id="aviso"></span></div>
 <script src="opcoes.js"></script>

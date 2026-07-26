@@ -481,8 +481,22 @@ if [ -z "$CHROMIUM_BIN" ]; then
     exit 1
 fi
 
-TARSILA_JITLESS="${TARSILA_JITLESS:-1}"
-TARSILA_TIER_B="${TARSILA_TIER_B:-1}"  # Tier B ligado por padrao: CPU (4x Cortex-A35) satura fácil com varias abas
+# ---------------------------------------------------------------------------
+# Cada chave pode vir de um ARQUIVO em ~/.config/tarsila/, com precedencia
+# sobre a variavel de ambiente. Motivo: as variaveis moram no
+# ~/.config/openbox/environment e so mudam no proximo login -- inuteis para a
+# tela de Ajustes do Navegador (pagina de opcoes da extensao cinema-ext), que
+# grava esses arquivos pelo host nativo. Assim a mudanca vale no proximo
+# lancamento do navegador, sem deslogar.
+_pref() {   # _pref <arquivo> <valor-atual>
+    if [ -r "$HOME/.config/tarsila/$1" ]; then
+        read -r _v < "$HOME/.config/tarsila/$1"
+        case "$_v" in 0|1) printf '%s' "$_v"; return ;; esac
+    fi
+    printf '%s' "$2"
+}
+TARSILA_JITLESS="$(_pref jitless "${TARSILA_JITLESS:-1}")"
+TARSILA_TIER_B="$(_pref tierb "${TARSILA_TIER_B:-1}")"  # CPU (4x A35) satura com varias abas
 # TARSILA_GPU tambem pode vir de um ARQUIVO, que tem precedencia sobre a
 # variavel de ambiente. Motivo: a variavel mora no ~/.config/openbox/environment
 # e so muda no proximo login -- inutil para alternar durante um diagnostico,
@@ -491,13 +505,9 @@ TARSILA_TIER_B="${TARSILA_TIER_B:-1}"  # Tier B ligado por padrao: CPU (4x Corte
 #   echo 0 > ~/.config/tarsila/gpu   -> desliga a GPU do Chromium
 #   echo 1 > ~/.config/tarsila/gpu   -> liga
 #   rm    ~/.config/tarsila/gpu      -> volta a mandar a variavel de ambiente
-TARSILA_GPU="${TARSILA_GPU:-1}"
-if [ -r "$HOME/.config/tarsila/gpu" ]; then
-    read -r _g < "$HOME/.config/tarsila/gpu"
-    case "$_g" in 0|1) TARSILA_GPU="$_g" ;; esac
-fi
-TARSILA_HWDEC="${TARSILA_HWDEC:-1}"
-TARSILA_CINEMA="${TARSILA_CINEMA:-1}"
+TARSILA_GPU="$(_pref gpu "${TARSILA_GPU:-1}")"
+TARSILA_HWDEC="$(_pref hwdec "${TARSILA_HWDEC:-1}")"
+TARSILA_CINEMA="$(_pref cinema "${TARSILA_CINEMA:-1}")"
 TARSILA_DEBUG="${TARSILA_DEBUG:-0}"
 
 FLAGS=()

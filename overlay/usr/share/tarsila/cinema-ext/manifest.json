@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzqGKn/8laoahbBUSNhSsQSPDycNKBwICw8C5YbC0B9/vAFBQBcY7/z0heEgPJkVfYMrsglUdPsTEaJyYbX6T/Rp4LLbJDC4MuUAnyQrwIpa/1Ffzcj38WXr3OO9IsFtvgfbGaoVPSGo3zY3nn3HUqEwPkoWu9TwrHWyfsoSR66xQvJi1vQRLwhTpA3Ljk9STvVIu5zruIuMeq6eD881h+DalJJLtdJfELQhaC1P2l5JWnthZ3Qgs22jUUqAo4ycWyPNegjYfSWO4/XVmzY7HG3cCH2VA69uEdoZn/SGC1Wrv4S6oRV3Fy6hr5QDW88hXTckqDBqV0U55p+a1YOxtlQIDAQAB",
   "name": "Tarsila",
-  "version": "2.5",
+  "version": "2.6",
   "description": "Modo Cinema, bloqueio de anúncios e Modo Leve para este computador.",
   "permissions": [
     "nativeMessaging",

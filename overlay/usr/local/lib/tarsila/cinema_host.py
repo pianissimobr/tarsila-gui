@@ -27,7 +27,19 @@ QUALIDADE = {
                   "bv*[height<=?720][vcodec^=avc1]+ba/"
                   "bv*[height<=?720]+ba/best"),
 }
-PADROES = {"qualidade": "boa", "gpu": "1"}
+# Chaves expostas na tela de Ajustes. As de 0/1 sao lidas pelo
+# tarsila-chromium (funcao _pref); "qualidade" e lida aqui mesmo; "mobile" e
+# lida pelo service worker da extensao, que pergunta a este host no arranque.
+PADROES = {
+    "qualidade": "boa",   # economica | boa | maxima
+    "gpu": "1",
+    "jitless": "1",
+    "tierb": "1",
+    "hwdec": "1",
+    "cinema": "1",
+    "mobile": "1",
+}
+LIGA_DESLIGA = [k for k in PADROES if k != "qualidade"]
 
 
 def ler(chave):
@@ -84,8 +96,8 @@ def main():
             for chave, valor in (msg.get("valores") or {}).items():
                 if chave == "qualidade" and valor in QUALIDADE:
                     gravar("qualidade", valor)
-                elif chave == "gpu" and str(valor) in ("0", "1"):
-                    gravar("gpu", valor)
+                elif chave in LIGA_DESLIGA and str(valor) in ("0", "1"):
+                    gravar(chave, valor)
             responder({"ok": True, "valores": {k: ler(k) for k in PADROES}})
         else:
             responder(abrir_no_mpv(msg.get("url", "")))
