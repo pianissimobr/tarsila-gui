@@ -5,7 +5,7 @@ LineWidth=1
 OuterStrokeColor=21;;17;;40;;255
 FillStartColor=21;;17;;40;;255
 FillEndColor=21;;17;;40;;255
-InnerStrokeColor=255;;255;;255;;40
+InnerStrokeColor=21;;17;;40;;255
 [PlankDockTheme]
 HorizPadding=4
 TopPadding=2
