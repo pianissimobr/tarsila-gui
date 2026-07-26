@@ -555,6 +555,16 @@ FLAGS+=(
     "--wm-window-animations-disabled"
 )
 
+# [A7c] Anuncia suporte a TOQUE. Sem isto, a versao mobile dos sites nem
+# registra os manipuladores de gesto: medido nesta box, com user-agent de iPad
+# o ontouchstart continuava false, e arrastar a barra de progresso nao fazia
+# nada. A flag apenas ANUNCIA a capacidade -- quem converte arrasto de mouse em
+# touchstart/touchmove/touchend e o toque.js da extensao cinema-ext.
+# E global de proposito: e capacidade do navegador, nao da para ser por site.
+# O mouse continua funcionando normalmente; o toque.js so age em ARRASTO,
+# nunca em clique simples, para nao disparar botao em dobro.
+FLAGS+=( "--touch-events=enabled" )
+
 # [A7b] Rede e antecipação: RAM que vaza antes de o usuário pedir qualquer coisa.
 #   --autoplay-policy: vídeo só decodifica após clique (portal com 3 autoplays
 #     = 3 decodificadores ativos de graça; maior buraco restante)

@@ -53,7 +53,7 @@ async function registrarInjecao() {
   await chrome.scripting.registerContentScripts([{
     id: ID_INJECAO,
     matches: padroes(),
-    js: ["sites-mobile.js", "ua-main.js"],
+    js: ["sites-mobile.js", "ua-main.js", "toque.js"],
     runAt: "document_start",
     allFrames: true,
     world: "MAIN"
