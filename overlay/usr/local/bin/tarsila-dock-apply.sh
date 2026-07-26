@@ -34,7 +34,18 @@ done
 items="[${items%, }]"
 
 dconf write /net/launchpad/plank/docks/dock1/dock-items "$items"
-dconf write /net/launchpad/plank/docks/dock1/theme "'Tarsila'"
+# NAO fixar o tema aqui: este script roda a CADA login, logo antes do plank
+# subir, e gravar 'Tarsila' fixo desfazia a escolha do usuario -- a Dock voltava
+# sempre ao tema base escuro. Agora deriva do tema salvo, e assim a cor da Dock
+# sobrevive ao reinicio. Mapa igual ao do tarsila-ob-tema-apply.sh.
+_tema=padrao; [ -r "$HOME/.config/tarsila/tema" ] && read -r _tema < "$HOME/.config/tarsila/tema"
+case "$_tema" in
+  maritimo)   _dock=Tarsila-Maritimo ;;
+  escuro)     _dock=Tarsila-Escuro ;;
+  brasileiro) _dock=Tarsila-Brasileiro ;;
+  *)          _dock=Tarsila-Gelo ;;      # padrao e personalizado
+esac
+dconf write /net/launchpad/plank/docks/dock1/theme "'$_dock'"
 dconf write /net/launchpad/plank/docks/dock1/position "'bottom'"
 # visivel com janelas flutuantes; some quando maximizado; reaparece na borda
 # inferior (pressure-reveal) e some 2s depois que o mouse sai da regiao do dock
