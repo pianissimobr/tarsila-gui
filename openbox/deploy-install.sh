@@ -12,6 +12,16 @@ apt-get install -y --no-install-recommends \
   openbox polybar dunst xsettingsd picom feh \
   inotify-tools fonts-font-awesome fonts-noto-core pavucontrol yad wmctrl xdotool x11-utils
 
+# OBRIGATÓRIO para o glamor: 10-modeset-panfrost.conf usa AccelMethod "glamor",
+# que só é estável com Mesa >= 26. O Mesa 25.0.7 do trixie segfaulta no Panfrost
+# da Mali-G31 e derruba o Xorg ao abrir janelas (era o crash de 21/07/2026).
+echo "==> Mesa do backports (pré-requisito do glamor)"
+apt-get install -y -t trixie-backports \
+  libgl1-mesa-dri mesa-libgallium libegl-mesa0 libglx-mesa0 libgbm1 || {
+  echo "AVISO: Mesa do backports não instalado. Sem ele o glamor derruba o Xorg;" >&2
+  echo "       troque AccelMethod para \"none\" em /etc/X11/xorg.conf.d/10-modeset-panfrost.conf." >&2
+}
+
 echo "==> arquivos de sistema (usr/, etc/)"
 cp -a "$SRC/usr/." /usr/
 [ -d "$SRC/etc" ] && cp -a "$SRC/etc/." /etc/
@@ -23,7 +33,7 @@ cp -f "$SRC/usr/share/fonts/nerd/"*.ttf /usr/share/fonts/nerd/ 2>/dev/null || tr
 fc-cache -f >/dev/null 2>&1 || true
 
 echo "==> config do usuário $U"
-for d in openbox polybar xsettingsd dunst; do
+for d in openbox polybar xsettingsd dunst mpv; do
   mkdir -p "$H/.config/$d"; cp -a "$SRC/home/$d/." "$H/.config/$d/"
 done
 chmod 755 "$H/.config/openbox/autostart" "$H/.config/polybar/"*.sh

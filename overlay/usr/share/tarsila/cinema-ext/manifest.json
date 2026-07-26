@@ -4,20 +4,46 @@
   "name": "Tarsila",
   "version": "2.0",
   "description": "Modo Cinema, bloqueio de anúncios e Modo Leve para este computador.",
-  "permissions": ["nativeMessaging", "activeTab"],
-  "background": { "service_worker": "background.js" },
+  "permissions": [
+    "nativeMessaging",
+    "activeTab",
+    "declarativeNetRequest"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["modo_leve.js"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "modo_leve.js"
+      ],
       "run_at": "document_start",
       "all_frames": true
     },
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["cinema.js", "imagens.js"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "cinema.js",
+        "imagens.js"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }
-  ]
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "tarsila",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  }
 }

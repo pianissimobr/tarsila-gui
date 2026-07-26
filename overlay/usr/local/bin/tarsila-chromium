@@ -614,8 +614,23 @@ fi
 # nem GL básico -> TARSILA_GPU=0. Anotar por chip na matriz do projeto.
 
 # [A10] Extensão Tarsila (Modo Cinema + adblock DNR + Modo Leve + imagens)
-if [ "$TARSILA_CINEMA" = "1" ] && [ -f "/usr/share/tarsila/cinema-ext/manifest.json" ]; then
-    FLAGS+=( "--load-extension=/usr/share/tarsila/cinema-ext" )
+# ARMADILHA (2026-07-26): o indexador de regras DNR do Chromium ESCREVE um
+# diretorio _metadata/ DENTRO da pasta da extensao. Em /usr/share (root, so
+# leitura) isso falha com "rules.json: Internal error while parsing rules" e a
+# extensao INTEIRA deixa de carregar (Modo Leve e Modo Cinema juntos). Por isso
+# a fonte canonica fica em /usr/share e carregamos de uma copia no HOME,
+# ressincronizada quando a fonte muda. NAO tornar /usr/share gravavel: a
+# extensao tem permissao nativeMessaging e roda em toda pagina.
+EXT_SRC="/usr/share/tarsila/cinema-ext"
+EXT_USR="${XDG_DATA_HOME:-$HOME/.local/share}/tarsila/cinema-ext"
+if [ "$TARSILA_CINEMA" = "1" ] && [ -f "$EXT_SRC/manifest.json" ]; then
+    if [ ! -f "$EXT_USR/manifest.json" ] \
+       || [ "$EXT_SRC/manifest.json" -nt "$EXT_USR/manifest.json" ] \
+       || [ "$EXT_SRC/rules.json" -nt "$EXT_USR/rules.json" ]; then
+        mkdir -p "$EXT_USR"
+        cp -f "$EXT_SRC"/*.json "$EXT_SRC"/*.js "$EXT_USR"/ 2>/dev/null
+    fi
+    FLAGS+=( "--load-extension=$EXT_USR" )
 fi
 
 # ============================================================================
