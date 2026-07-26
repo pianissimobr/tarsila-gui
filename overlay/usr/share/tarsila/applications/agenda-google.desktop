@@ -1,9 +1,0 @@
-[Desktop Entry]
-StartupNotify=true
-Type=Application
-Name=Agenda
-Comment=Sua agenda (Google/Nextcloud/Outlook) — nativa e leve
-Exec=tarsila-agenda
-Icon=x-office-calendar
-Terminal=false
-Categories=Office;Calendar;
