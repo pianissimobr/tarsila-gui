@@ -6,11 +6,17 @@
 # de painel do XFCE.
 CFG="$HOME/.config/tarsila"
 TEMA=padrao; [ -f "$CFG/tema" ] && read -r TEMA < "$CFG/tema"
+# TOP BAR SEMPRE NA COR DO TEMA PADRAO -- decisao de design (2026-07-26).
+# A top bar nao e so uma barra: ela ABRIGA o titulo da janela ativa e os botoes
+# de fechar/restaurar. Essa integracao so fica coerente na cor clara do padrao;
+# em teal, verde ou preto o conjunto titulo+botoes destoa. Entao a cor da barra
+# deixou de acompanhar o tema. O TEMA continua mandando no papel de parede e na
+# Dock -- so a barra ficou fixa.
+# Para voltar a acompanhar o tema, e so devolver as linhas comentadas abaixo:
+#   maritimo)      TB_BG=#194350; TB_FG=#f2f6f7; TB_DIM=#5a7c86 ;;
+#   escuro)        TB_BG=#101014; TB_FG=#e8e8ea; TB_DIM=#55555c ;;
+#   brasileiro)    TB_BG=#1B472C; TB_FG=#f4f7f2; TB_DIM=#5f8a70 ;;
 case "$TEMA" in
-  maritimo)      TB_BG=#194350; TB_FG=#f2f6f7; TB_DIM=#5a7c86 ;;
-  escuro)        TB_BG=#101014; TB_FG=#e8e8ea; TB_DIM=#55555c ;;
-  brasileiro)    TB_BG=#1B472C; TB_FG=#f4f7f2; TB_DIM=#5f8a70 ;;
-  personalizado) TB_BG=#EDF1F4; TB_FG=#2a2e32; TB_DIM=#9aa4ac ;;
   *)             TB_BG=#EDF1F4; TB_FG=#2a2e32; TB_DIM=#9aa4ac ;;
 esac
 H=$(xrandr --query 2>/dev/null | sed -n 's/.* connected \(primary \)\?[0-9]\+x\([0-9]\+\)+.*/\2/p' | head -1)
@@ -19,6 +25,9 @@ if   [ "$H" -gt 1600 ]; then TB_HEIGHT=64; TB_FONT=20; TB_ICON=18; TB_DOT=22; TB
 elif [ "$H" -gt 900 ];  then TB_HEIGHT=44; TB_FONT=14; TB_ICON=13; TB_DOT=16; TB_CAP=38
 else                         TB_HEIGHT=34; TB_FONT=11; TB_ICON=11; TB_DOT=13; TB_CAP=40
 fi
+mkdir -p "$CFG"
+echo "$TB_HEIGHT" > "$CFG/bar-height"
+/usr/local/bin/tarsila-ob-margins.sh &
 # cores dos pontos (aceso/apagado) vão por ambiente para o dots.sh
 export TB_FG TB_DIM
 # gera o config efetivo a partir do template (polybar 3.7 não expande
