@@ -50,3 +50,9 @@ command -v tint2 >/dev/null 2>&1 && tint2 &
 # conta configurada -- ou seja, sempre, na cara do usuario. Configurar
 # e-mail e ato deliberado: agora so pelo icone da Dock.
 # (linha antiga guardada em autostart.bak-20260726)
+
+# Nextcloud: monta o WebDAV (gvfs) se ja houver credenciais; sai calado se nao.
+# TEM de ficar AQUI e nao em ~/.config/autostart: o autostart XDG NAO roda nesta
+# sessao (openbox-autostart exige PyXDG, que nao esta instalado). O sleep da
+# tempo de a rede subir antes de tentar montar.
+(sleep 5; python3 "$HOME/.local/bin/nc-mount.py") &
