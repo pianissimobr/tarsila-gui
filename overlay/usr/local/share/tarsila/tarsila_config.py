@@ -231,9 +231,7 @@ SEARCH_TOPICS = [
     ("dispositivos", "Bluetooth", "bluetooth parear fone sem fio caixinha controle"),
     ("acessibilidade", "Alto contraste", "alto contraste enxergar visao daltonismo"),
     ("acessibilidade", "Tamanho do texto", "texto grande letra grande fonte lupa"),
-    ("conta", "Trocar a senha", "senha trocar mudar password esqueci"),
-    ("conta", "Bloquear a tela", "bloquear tela travar seguranca"),
-    ("conta", "Outros usuários", "usuario conta outra pessoa perfil"),
+    ("geral", "Trocar senha", "senha trocar mudar password esqueci conta"),
     ("geral", "Atualizações", "atualizar atualizacao update sistema novo"),
     ("geral", "Data e hora", "data hora relogio errada fuso horario"),
     ("geral", "Idioma", "idioma lingua portugues"),
@@ -267,7 +265,6 @@ class SearchIndex:
 # --------------------------------------------------------------------------
 
 CATEGORIES = [
-    ("conta", "preferences-desktop-user", "Conta e Segurança"),
     ("geral", "computer", "Geral"),
     ("internet", "preferences-system-network", "Internet"),
     ("aparencia", "preferences-desktop-wallpaper", "Aparência"),
@@ -326,7 +323,6 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
             "tela": self._page_tela,
             "dispositivos": self._page_dispositivos,
             "acessibilidade": self._page_acessibilidade,
-            "conta": self._page_conta,
             "geral": self._page_geral,
             "dev": self._page_dev,
         }
@@ -344,7 +340,7 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         if onde:
             self.move(*onde)
         self.show_all()
-        self._select_category("conta")
+        self._select_category("geral")
 
     # -- estrutura geral ----------------------------------------------------
 
@@ -1149,54 +1145,21 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                          ["xfce4-accessibility-settings"])
 
     # ---- Conta e Segurança ----
-    def _page_conta(self, box):
+    # ---- Geral ----
+    def _page_geral(self, box):
+        # Sobrou da antiga aba "Conta e Segurança": o nome da conta e, na
+        # propria linha, o botao de trocar a senha. Bloquear a tela, o estado
+        # do firewall e a lista de outros usuarios foram retirados a pedido do
+        # usuario, e com eles a aba inteira -- nao valia uma secao so para
+        # mostrar o nome de quem esta usando.
         card, lb = make_card("Sua conta")
         box.pack_start(card, False, False, 0)
         user = os.environ.get("USER") or os.environ.get("LOGNAME") or "?"
-        add_row(lb, "avatar-default", user, "Conta deste computador")
-        pw_btn = Gtk.Button(label="Trocar ›")
+        pw_btn = Gtk.Button(label="Trocar senha")
         pw_btn.connect("clicked", lambda *_: run_bg(
             ["xfce4-terminal", "--title=Trocar senha", "-e", "passwd"]))
-        add_row(lb, "dialog-password", "Trocar a senha",
-                "Vai abrir uma janela pedindo a senha atual e depois a nova",
-                pw_btn)
+        add_row(lb, "avatar-default", user, "Conta deste computador", pw_btn)
 
-        card, lb = make_card("Segurança")
-        box.pack_start(card, False, False, 0)
-        lock_btn = Gtk.Button(label="Bloquear")
-        lock_btn.connect("clicked", lambda *_: run_bg(["xflock4"]))
-        add_row(lb, "system-lock-screen", "Bloquear a tela agora",
-                "Para voltar, será preciso digitar a senha", lock_btn)
-
-        # Firewall: leitura sem pedir senha (systemctl is-active não exige
-        # root). Se o ufw não existe, a linha não existe — sem alarmar.
-        if which("ufw"):
-            ok, out, _ = run_ok(["systemctl", "is-active", "ufw"])
-            active = ok and out.strip() == "active"
-            add_row(lb, "security-high" if active else "security-medium",
-                    "Proteção de rede",
-                    "Ativa" if active else "Desativada")
-
-        # Outros usuários: só mostra se realmente houver mais alguém.
-        ok, out, _ = run_ok(["getent", "passwd"])
-        others = []
-        if ok:
-            for line in out.splitlines():
-                parts = line.split(":")
-                try:
-                    uid = int(parts[2])
-                except (ValueError, IndexError):
-                    continue
-                if (uid >= 1000 and "nologin" not in parts[-1]
-                        and "false" not in parts[-1] and parts[0] != user):
-                    others.append(parts[0])
-        if others:
-            card, lb = make_card("Outras pessoas neste computador")
-            box.pack_start(card, False, False, 0)
-            add_row(lb, "system-users", "Contas", ", ".join(others))
-
-    # ---- Geral ----
-    def _page_geral(self, box):
         card, lb = make_card("Atualizações")
         box.pack_start(card, False, False, 0)
         check_btn = Gtk.Button(label="Verificar")
