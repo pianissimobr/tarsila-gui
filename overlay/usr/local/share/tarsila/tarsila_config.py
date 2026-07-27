@@ -1269,23 +1269,23 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                     "Volume de entrada e escolha do microfone" if micros
                     else "Nenhum microfone conectado", btn_mic)
 
-        # USB: contagem simples, útil para diagnóstico por telefone
-        # ("quantos dispositivos aparecem aí?").
+        # Entradas USB: era um cartao so para si, com titulo "USB" servindo uma
+        # unica linha. Cabe aqui -- e tambem um dispositivo externo, e a
+        # contagem ajuda no diagnostico por telefone ("quantos aparecem ai?").
         if which("lsusb"):
-            ok, out, _ = run_ok(["lsusb"])
+            ok, saida, _ = run_ok(["lsusb"], timeout=10)
             if ok:
-                devices = [l for l in out.splitlines()
-                           if l and "root hub" not in l.lower()]
-                n = len(devices)
-                if n == 0:
-                    subtitle = "Nenhum dispositivo conectado nas entradas USB"
-                elif n == 1:
-                    subtitle = "1 dispositivo conectado nas entradas USB"
+                conectados = [l for l in saida.splitlines()
+                              if l and "root hub" not in l.lower()]
+                n_usb = len(conectados)
+                if n_usb == 0:
+                    quantos = "Nenhum aparelho conectado"
+                elif n_usb == 1:
+                    quantos = "1 aparelho conectado"
                 else:
-                    subtitle = f"{n} dispositivos conectados nas entradas USB"
-                card, lb = make_card("USB")
-                box.pack_start(card, False, False, 0)
-                add_row(lb, "drive-removable-media", "Entradas USB", subtitle)
+                    quantos = "%d aparelhos conectados" % n_usb
+                add_row(lb, "drive-removable-media", "Entradas USB", quantos)
+
 
         # Bluetooth: só aparece se o gerenciador existir neste equipamento.
         if which("blueman-manager"):
