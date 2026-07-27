@@ -1214,16 +1214,23 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         else:
             add_row(lb, "printer", "Impressora", "Nenhuma impressora conectada")
 
-        # Scanner. A mesma biblioteca (SANE) atende tanto scanner de mesa
-        # quanto o vidro de uma multifuncional.
+        # Scanner. Mesmo criterio da impressora: sem aparelho, o botao nao
+        # promete o que nao da para fazer.
+        # A procura roda em segundo plano porque o "scanimage -L" varre a rede
+        # atras de scanners e pode levar dezenas de segundos -- fazer isso na
+        # abertura deixaria a tela travada.
         if which("simple-scan"):
-            add_tool_row(lb, "scanner", "Scanner",
-                         "Digitalizar documentos e fotos",
-                         ["simple-scan"], "Abrir ›")
+            btn_scan = open_tool_button("Ajustar ›", ["simple-scan"])
+            btn_scan.set_sensitive(False)
+            btn_scan.set_tooltip_text("Conecte o scanner para digitalizar")
+            linha_scan = add_row(lb, "scanner", "Scanner",
+                                 "Procurando…", btn_scan)
+            self._procurar_scanner(btn_scan, linha_scan)
 
         # Camera: no Linux, webcam padrao (UVC) funciona sem instalar nada --
         # a linha e status mais ajuste fino, nao configuracao para funcionar.
-        if bool(sorted(Path("/dev").glob("video*"))):
+        tem_camera = bool(sorted(Path("/dev").glob("video*")))
+        if True:
             app_camera = None
             # guvcview primeiro: o cheese arrasta 43 pacotes da pilha do GNOME;
             # o guvcview resolve o mesmo em 4,5 MB e ainda deixa mexer em
@@ -1233,17 +1240,34 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                     app_camera = [app]
                     break
             if app_camera:
+                btn_cam = open_tool_button("Ajustar ›", app_camera)
+                btn_cam.set_sensitive(tem_camera)
+                if not tem_camera:
+                    btn_cam.set_tooltip_text("Conecte a câmera para ajustar")
                 add_row(lb, "camera-web", "Câmera",
-                        "Conectada e pronta para usar",
-                        open_tool_button("Ajustar ›", app_camera))
+                        "Conectada e pronta para usar" if tem_camera
+                        else "Nenhuma câmera conectada", btn_cam)
             else:
                 add_row(lb, "camera-web", "Câmera",
-                        "Conectada e pronta para usar")
+                        "Conectada e pronta para usar" if tem_camera
+                        else "Nenhuma câmera conectada")
 
+        # Microfone: as fontes terminadas em ".monitor" nao contam -- sao o eco
+        # da SAIDA de som, nao entradas de verdade. Sem filtrar, todo aparelho
+        # pareceria ter microfone.
+        micros = []
+        ok, saida, _ = run_ok(["pactl", "list", "short", "sources"], timeout=10)
+        if ok:
+            micros = [l for l in saida.splitlines()
+                      if l.strip() and ".monitor" not in l.split("\t")[1]]
         if which("pavucontrol"):
-            add_tool_row(lb, "audio-input-microphone", "Microfone",
-                         "Volume de entrada e escolha do microfone",
-                         ["pavucontrol"], "Ajustar ›")
+            btn_mic = open_tool_button("Ajustar ›", ["pavucontrol"])
+            btn_mic.set_sensitive(bool(micros))
+            if not micros:
+                btn_mic.set_tooltip_text("Conecte um microfone para ajustar")
+            add_row(lb, "audio-input-microphone", "Microfone",
+                    "Volume de entrada e escolha do microfone" if micros
+                    else "Nenhum microfone conectado", btn_mic)
 
         # USB: contagem simples, útil para diagnóstico por telefone
         # ("quantos dispositivos aparecem aí?").
@@ -1270,6 +1294,37 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
             add_tool_row(lb, "bluetooth-symbolic", "Bluetooth",
                          "Conectar fones, caixas de som e controles sem fio",
                          ["blueman-manager"], "Gerenciar ›")
+
+    def _procurar_scanner(self, botao, linha):
+        """Procura scanner sem travar a tela.
+
+        O backend "v4l" do SANE apresenta a WEBCAM como scanner virtual. Isso e
+        falso positivo: filtramos, senao o botao ficaria ativo so por haver
+        camera no aparelho."""
+        def worker():
+            achou = False
+            ok, saida, _ = run_ok(["scanimage", "-L"], timeout=40)
+            if ok:
+                achou = any(l.startswith("device `") and "v4l:" not in l
+                            for l in saida.splitlines())
+            GLib.idle_add(self._scanner_encontrado, botao, linha, achou)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    @staticmethod
+    def _scanner_encontrado(botao, linha, achou):
+        botao.set_sensitive(achou)
+        botao.set_tooltip_text("" if achou else "Conecte o scanner para digitalizar")
+        rotulos = [w for w in linha.get_child().get_children()
+                   if isinstance(w, Gtk.Box)]
+        if rotulos:
+            filhos = rotulos[0].get_children()
+            if len(filhos) > 1:
+                filhos[1].set_markup(
+                    "<small>%s</small>" % GLib.markup_escape_text(
+                        "Digitalizar documentos e fotos" if achou
+                        else "Nenhum scanner conectado"))
+        return False
 
     # ---- Acessibilidade ----
     def _page_acessibilidade(self, box):
