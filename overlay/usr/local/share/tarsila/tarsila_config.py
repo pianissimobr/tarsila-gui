@@ -632,8 +632,12 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         card, lb = make_card("Conexão")
         box.pack_start(card, False, False, 0)
 
-        TYPE_NAMES = {"wifi": ("network-wireless", "Wi-Fi"),
-                      "ethernet": ("network-wired", "Cabo de rede")}
+        # "network-wireless" e "network-wired" existem em devices E em panel do
+        # Papirus. No tamanho que estas linhas usam (24px), a versao do panel
+        # ganha -- e ela e a fininha monocromatica, que saia mais clara que os
+        # vizinhos. Estes dois nomes so existem nas pastas coloridas.
+        TYPE_NAMES = {"wifi": ("network-card", "Wi-Fi"),
+                      "ethernet": ("gnome-dev-ethernet", "Cabo de rede")}
         STATE_NAMES = {"connected": "Conectado", "disconnected": "Desconectado",
                        "unavailable": "Indisponível", "connecting": "Conectando…",
                        "unmanaged": "Não gerenciado"}
@@ -662,10 +666,10 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                     add_row(lb, icon, name, subtitle)
                 shown += 1
         if not has_wifi:
-            add_row(lb, "network-wireless-offline", "Wi-Fi",
+            add_row(lb, "network-card", "Wi-Fi",
                     "Nenhuma placa de Wi-Fi reconhecida")
         if not shown:
-            add_row(lb, "network-offline", "Rede",
+            add_row(lb, "network-card", "Rede",
                     "Nenhuma conexão de rede encontrada neste computador")
 
         add_tool_row(lb, "network-workgroup", "Redes salvas e VPN",
@@ -681,9 +685,31 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
             method, ip, gw, dns = self._read_ethernet_ipv4(eth_dev)
             card, lb = make_card("Cabo de rede (Ethernet)")
             box.pack_start(card, False, False, 0)
-            add_row(lb, "network-wired", "Endereço IP", ip or "—")
-            add_row(lb, "network-wired", "Portão de entrada (gateway)", gw or "—")
-            add_row(lb, "network-wired", "DNS", dns or "—")
+            # Um por linha, mas em linhas JUSTAS -- sem icone e com margem
+            # menor que a das linhas de acao. Sao informacao, nao botao: o
+            # cartao ja diz "Cabo de rede (Ethernet)", e repetir o icone de
+            # cabo tres vezes nao acrescentava nada. Tentei os tres na mesma
+            # linha antes; ficou apertado e a leitura piorou.
+            for rotulo, valor in (("Endereço IP", ip), ("Gateway", gw),
+                                  ("DNS", dns)):
+                linha_info = Gtk.ListBoxRow()
+                linha_info.set_selectable(False)
+                linha_info.set_activatable(False)
+                caixa_info = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                                     spacing=8)
+                caixa_info.set_margin_start(16)
+                caixa_info.set_margin_end(16)
+                caixa_info.set_margin_top(2)
+                caixa_info.set_margin_bottom(2)
+                nome_lbl = Gtk.Label(xalign=0)
+                nome_lbl.set_markup("<b>%s</b>"
+                                    % GLib.markup_escape_text(rotulo))
+                caixa_info.pack_start(nome_lbl, False, False, 0)
+                valor_lbl = Gtk.Label(label=valor or "—", xalign=0)
+                valor_lbl.set_selectable(True)   # da para copiar o endereco
+                caixa_info.pack_start(valor_lbl, False, False, 0)
+                linha_info.add(caixa_info)
+                lb.add(linha_info)
             self._eth_conn = eth_conn
             eth_btn = Gtk.Button(label="Configurar ›")
             eth_btn.connect("clicked", self._on_ethernet_manual_clicked)
@@ -1199,7 +1225,7 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         self._descanso_spin.set_value(minutos)
         self._descanso_spin.connect("value-changed", self._on_descanso_changed)
         add_row(lb, "preferences-desktop-screensaver", "Descansar a tela",
-                "Depois de quantos minutos parado (0 desliga)",
+                "Depois de quantos minutos parados o monitor entra em stand-by",
                 self._descanso_spin)
 
         # Bateria: só aparece se existir. Em TV box e desktop, nada.
@@ -1510,9 +1536,6 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                     f"{used / 2**30:.1f} GB usados de {total / 2**30:.1f} GB", bar)
         except OSError:
             pass
-        add_tool_row(lb, "folder", "Meus arquivos",
-                     "Ver e organizar seus documentos e fotos",
-                     ["thunar"])
         add_tool_row(lb, "baobab", "Ver o que está ocupando espaço",
                      "Mapa visual de pastas e arquivos grandes",
                      ["baobab"], "Analisar ›")
@@ -1566,11 +1589,22 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         uso_lb.set_selection_mode(Gtk.SelectionMode.NONE)
         uso_lb.get_style_context().add_class("tarsila-list")
         card.get_child().pack_start(uso_lb, False, False, 0)
-        uso_btn = Gtk.Button(label="Abrir ›")
+        # Sem icone e sem texto ao lado: o proprio botao ja diz o que faz.
+        # Mesmo desenho do "Ajustar hora e data manualmente".
+        uso_btn = Gtk.Button(label="Verificar uso de CPU e RAM")
         uso_btn.connect("clicked", lambda *_: run_bg(
             ["xfce4-terminal", "--title=Uso de CPU e RAM", "-e", "htop"]))
-        add_row(uso_lb, "utilities-system-monitor", "Verificar uso de CPU e RAM",
-                "Mostra o que está consumindo o computador agora", uso_btn)
+        linha_uso = Gtk.ListBoxRow()
+        linha_uso.set_selectable(False)
+        linha_uso.set_activatable(False)
+        caixa_uso = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        caixa_uso.set_margin_start(16)
+        caixa_uso.set_margin_end(16)
+        caixa_uso.set_margin_top(10)
+        caixa_uso.set_margin_bottom(10)
+        caixa_uso.pack_start(uso_btn, False, False, 0)
+        linha_uso.add(caixa_uso)
+        uso_lb.add(linha_uso)
 
     def _check_updates(self):
         self._updates_lbl.set_text("Procurando atualizações…")
