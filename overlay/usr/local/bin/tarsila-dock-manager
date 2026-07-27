@@ -29,6 +29,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, GLib, GdkPixbuf, Pango
 
 CURATED_DIR = "/usr/share/tarsila/applications"
+GAMES_DIR = "/usr/share/tarsila/games"
 ICONS_DIR = "/usr/share/tarsila/icons"
 VERMAIS_DESKTOP = os.path.join(CURATED_DIR, "vermais-tarsila.desktop")
 LAUNCHERS = os.path.join(os.path.expanduser("~"), ".config/plank/dock1/launchers")
@@ -115,14 +116,19 @@ def read_dock_order():
 
 
 def read_curated():
-    """{Name: caminho .desktop} dos apps curados (sem o vermais)."""
+    """{Name: caminho .desktop} do que pode ir para a Dock (sem o vermais).
+
+    Jogos entram junto: eles tambem podem ser fixados na Dock, entao precisam
+    aparecer nesta lista. Antes so a pasta de aplicativos era varrida e por
+    isso nenhum jogo podia ser escolhido aqui."""
     apps = {}
-    for p in sorted(glob.glob(os.path.join(CURATED_DIR, "*.desktop"))):
-        if p == VERMAIS_DESKTOP:
-            continue
-        name, _ = parse_desktop(p)
-        if name:
-            apps[name] = p
+    for base in (CURATED_DIR, GAMES_DIR):
+        for p in sorted(glob.glob(os.path.join(base, "*.desktop"))):
+            if p == VERMAIS_DESKTOP:
+                continue
+            name, _ = parse_desktop(p)
+            if name:
+                apps[name] = p
     return apps
 
 

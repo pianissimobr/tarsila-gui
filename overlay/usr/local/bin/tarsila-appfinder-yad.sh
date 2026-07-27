@@ -3,6 +3,7 @@ export NO_AT_BRIDGE=1
 set -uo pipefail
 
 CURATED_DIR="/usr/share/tarsila/applications"
+GAMES_DIR="/usr/share/tarsila/games"
 ICONS_DIR="/usr/share/tarsila/icons"
 VERMAIS_DESKTOP="$CURATED_DIR/vermais-tarsila.desktop"
 DOCK_DCONF_KEY="/net/launchpad/plank/docks/dock1/dock-items"
@@ -41,7 +42,30 @@ for f in "$CURATED_DIR"/*.desktop; do
     [ -n "$name" ] && curated_apps["$name"]="$f"
 done
 
-if [ ${#curated_apps[@]} -eq 0 ]; then
+# Os jogos moram numa pasta so deles. Antes o botao "Jogos" da Dock era o
+# gerenciador de arquivos abrindo essa pasta: o usuario via arquivos .desktop
+# soltos, nao uma tela de jogos. Agora sao a segunda aba desta janela.
+declare -A game_apps
+for f in "$GAMES_DIR"/*.desktop; do
+    [ -e "$f" ] || continue
+    name=$(sed -n 's/^Name=//p' "$f" | head -n1)
+    [ -n "$name" ] && game_apps["$name"]="$f"
+done
+
+# Mapa unico para procurar o escolhido: os botoes (Executar, Desinstalar)
+# ficam na janela de fora e valem para as duas abas, entao a busca pelo
+# caminho gravado precisa enxergar aplicativos e jogos juntos.
+declare -A todos_apps aba_de
+for name in "${!curated_apps[@]}"; do
+    todos_apps["$name"]="${curated_apps[$name]}"
+    aba_de["$name"]="apps"
+done
+for name in "${!game_apps[@]}"; do
+    todos_apps["$name"]="${game_apps[$name]}"
+    aba_de["$name"]="jogos"
+done
+
+if [ ${#todos_apps[@]} -eq 0 ]; then
     yad --info --center --title="Aplicativos instalados" \
         --text="Nenhum aplicativo encontrado em:\n$CURATED_DIR" \
         --width=400 --height=100
@@ -86,7 +110,7 @@ restart_plank() {
 
 uninstall_app() {
     local app_name="$1"
-    local desktop_file="${curated_apps[$app_name]}"
+    local desktop_file="${todos_apps[$app_name]}"
     local exec_line exec_cmd exec_path package_name=""
 
     exec_line=$(sed -n 's/^Exec=//p' "$desktop_file" | head -n1)
@@ -131,7 +155,7 @@ uninstall_app() {
     # Tira o app da grade imediatamente (a janela reabre em seguida ja
     # sem ele; a remocao real continua em segundo plano). Se falhar, a
     # notificacao avisa e o app volta na proxima abertura do AppFinder.
-    rm -f "$TMP_DIR/${app_name}.desktop"
+    rm -f "$TMP_DIR/${aba_de[$app_name]}/${app_name}.desktop"
     (
         if sudo -n "$PKG_HELPER" remove "$package_name" >/dev/null 2>&1; then
             find "$DOCK_CONFIG" -name "*.dockitem" 2>/dev/null | while read -r dockitem; do
@@ -160,6 +184,8 @@ uninstall_app() {
 TMP_DIR=$(mktemp -d)
 trap "rm -rf $TMP_DIR" EXIT
 SELECTION_FILE="$TMP_DIR/.selected"
+# Chave que liga as abas a janela-caderno do yad.
+YAD_KEY=$$
 
 # O yad --icons desta versão não reporta de forma confiável o item
 # selecionado quando ha varios botoes customizados na mesma janela
@@ -169,7 +195,7 @@ SELECTION_FILE="$TMP_DIR/.selected"
 # executa-lo direto - as acoes reais (Executar/Fixar/Desinstalar) sao
 # escolhidas depois, num dialogo comum (nao-icones), onde os botoes
 # funcionam normalmente em qualquer posicao.
-mkdir -p "$TMP_DIR/wrappers"
+mkdir -p "$TMP_DIR/wrappers" "$TMP_DIR/apps" "$TMP_DIR/jogos"
 
 # Fase 1: resolve o ícone de cada app e monta o lote do cache de
 # ícones. O yad 0.40 não redimensiona ícones que já vêm grandes
@@ -181,8 +207,8 @@ ICON_CACHE="$REAL_HOME/.cache/tarsila/icons$ICON_SIZE"
 mkdir -p "$ICON_CACHE" 2>/dev/null || true
 ICON_BATCH="$TMP_DIR/.icon-batch"
 declare -A tile_icon_spec tile_icon_png
-for name in "${!curated_apps[@]}"; do
-    desktop_file="${curated_apps[$name]}"
+for name in "${!todos_apps[@]}"; do
+    desktop_file="${todos_apps[$name]}"
     # "Ver mais aplicativos" é o próprio botão que abre esta tela - não
     # faz sentido listá-lo como uma opção dentro dela mesma. Apps
     # nativos também ficam de fora (sempre na Dock, ver native-apps.txt).
@@ -218,7 +244,7 @@ fi
 # cache deu certo (senão cai no ícone original, como antes).
 wrapper_i=0
 for name in "${!tile_icon_spec[@]}"; do
-    desktop_file="${curated_apps[$name]}"
+    desktop_file="${todos_apps[$name]}"
     icon="${tile_icon_spec[$name]}"
     [ -s "${tile_icon_png[$name]}" ] && icon="${tile_icon_png[$name]}"
     # Script wrapper dedicado: evita as regras de citação do campo
@@ -232,14 +258,14 @@ printf '%s' "$desktop_file" > "$SELECTION_FILE"
 EOF
     chmod +x "$wrapper"
     # Cria arquivo .desktop no TMP_DIR
-    cat > "$TMP_DIR/${name}.desktop" << EOF
+    cat > "$TMP_DIR/${aba_de[$name]}/${name}.desktop" << EOF
 [Desktop Entry]
 Name=$name
 Exec=$wrapper
 Icon=$icon
 Type=Application
 EOF
-    chmod +x "$TMP_DIR/${name}.desktop"
+    chmod +x "$TMP_DIR/${aba_de[$name]}/${name}.desktop"
 done
 
 # Loop principal. O toque num app grava a seleção em SELECTION_FILE
@@ -252,21 +278,34 @@ done
 while true; do
     rm -f "$SELECTION_FILE"
 
-    yad --icons \
+    # Duas abas na mesma janela. Um menu de selecao nao caberia aqui: a
+    # grade de icones do yad ocupa a janela inteira, entao a escolha teria de
+    # virar um dialogo ANTES da grade - uma pergunta a mais toda vez que se
+    # abre a tela. A aba nao custa passo nenhum.
+    # Cada aba e um yad "plugado" na janela-caderno; os botoes ficam na janela
+    # de fora e servem as duas, porque a escolha ja e gravada em
+    # SELECTION_FILE pelos wrappers (ver comentario acima).
+    yad --plug=$YAD_KEY --tabnum=1 --icons --read-dir="$TMP_DIR/apps" \
+        --sort-by-name --icon-size=48 --item-width=100 \
+        --icon-theme=Papirus --single-click 2>/dev/null &
+    plug_apps=$!
+    yad --plug=$YAD_KEY --tabnum=2 --icons --read-dir="$TMP_DIR/jogos" \
+        --sort-by-name --icon-size=48 --item-width=100 \
+        --icon-theme=Papirus --single-click 2>/dev/null &
+    plug_jogos=$!
+    sleep 1                 # as abas precisam existir antes da janela-caderno
+
+    yad --notebook --key=$YAD_KEY \
+        --tab="Aplicativos" \
+        --tab="Jogos" \
         --center \
         --title="Aplicativos Instalados" \
-        --text="Toque em um aplicativo e escolha um botão abaixo" \
         --width=700 --height=500 \
-        --read-dir="$TMP_DIR" \
-        --sort-by-name \
-        --icon-size=48 \
-        --item-width=100 \
-        --icon-theme=Papirus \
-        --single-click \
         --button="Executar:0" \
         --button="Desinstalar:2" \
         --button="Gerenciar Dock:5" 2>/dev/null
     yad_rc=$?
+    kill $plug_apps $plug_jogos 2>/dev/null
 
     case $yad_rc in
         5) # Gerenciar Dock - ao fechar, volta para a grade
@@ -292,8 +331,8 @@ while true; do
     # Identifica o app escolhido a partir do caminho gravado
     desktop_path="$(cat "$SELECTION_FILE")"
     app_name=""
-    for key in "${!curated_apps[@]}"; do
-        if [ "${curated_apps[$key]}" == "$desktop_path" ]; then
+    for key in "${!todos_apps[@]}"; do
+        if [ "${todos_apps[$key]}" == "$desktop_path" ]; then
             app_name="$key"
             break
         fi
@@ -307,7 +346,7 @@ while true; do
 
     if [ "$yad_rc" = "0" ]; then
         # Executar - sem "exec": assim o trap ainda limpa o TMP_DIR
-        gio launch "${curated_apps[$app_name]}" >/dev/null 2>&1 &
+        gio launch "${todos_apps[$app_name]}" >/dev/null 2>&1 &
         disown
         exit 0
     fi
