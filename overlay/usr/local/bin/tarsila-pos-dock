@@ -32,11 +32,11 @@ DESCE_ATE = 29
 # O gerenciador acrescenta a decoracao ao que se pede, e o quanto depende de
 # quem pede. Medido nesta box, e nao e o mesmo numero para todos:
 #   gtk      Gtk.Window comum, movida antes de show()      -> 8 / 39
-#   gtk-app  Gtk.ApplicationWindow exibida via present()   -> 8 / 64
+#   gtk-app  Gtk.ApplicationWindow exibida via present()   -> 8 / 30
 #   yad      via --geometry                                -> 9 / 66
 # Descontamos aqui para a janela nascer no lugar em vez de ser corrigida
 # depois -- e a correcao depois e justamente o "pulinho" que se via ao abrir.
-COMPENSA = {"gtk": (8, 39), "gtk-app": (8, 64), "yad": (9, 66)}
+COMPENSA = {"gtk": (8, 39), "gtk-app": (8, 30), "yad": (9, 66)}
 
 
 def dock():

@@ -449,7 +449,68 @@ DEV_CATEGORY = ("dev", "utilities-terminal", "Opções Avançadas")
 
 
 # Tamanho em que a janela abre -- o que o usuario deixou ao ajustar na mao.
-LARGURA_JANELA, ALTURA_JANELA = 705, 600
+# A altura foi calculada, nao chutada: o pe fica em 718 (encostado na Dock) e a
+# moldura tem 32px de barra de titulo, entao para o topo parar logo abaixo da
+# barra de cima -- que termina em 34 -- a janela precisa de 648 de altura.
+# Aproveita a tela inteira sem cobrir nem a barra nem a Dock.
+# Largura escolhida pelo usuario. A ALTURA nao e fixa: e medida em tempo de
+# execucao, do fim da barra de cima ate o inicio da Dock, descontando a moldura
+# que o gerenciador desenha. Numero cravado aqui quebraria em outra tela, ou se
+# a barra ou a Dock mudarem de tamanho.
+LARGURA_JANELA = 697        # largura que o usuario deixou ao ajustar
+ALTURA_MINIMA = 360          # so para a janela nunca nascer inutilizavel
+# Mesmo valor que o tarsila-pos-dock usa para encostar a Lixeira e a tela de
+# Aplicativos: os primeiros pixels da janela do Plank sao transparentes.
+DESCE_ATE_DOCK = 29
+# Quanto a moldura consome na vertical (barra de titulo + bordas), medido nesta
+# decoracao. Sai da conta: vao entre a barra e a Dock, menos a altura que o
+# usuario escolheu.
+# Quanto a moldura consome na vertical, MAIS a folga para o pe da janela nao
+# entrar na Dock. Medido: com 37 o conteudo ficava cortado pela Dock e a borda
+# de baixo sumia atras dela -- o "engolido" que o usuario apontou.
+MOLDURA_VERTICAL = 71
+
+
+def _geometria_de(classe):
+    """(y, altura) da janela de um programa da area de trabalho."""
+    try:
+        ids = subprocess.run(["xdotool", "search", "--class", classe],
+                             capture_output=True, text=True, timeout=5).stdout.split()
+    except Exception:
+        return None
+    melhor = None
+    for wid in ids:
+        try:
+            saida = subprocess.run(["xdotool", "getwindowgeometry", "--shell", wid],
+                                   capture_output=True, text=True, timeout=5).stdout
+            d = dict(l.split("=", 1) for l in saida.splitlines() if "=" in l)
+            larg = int(d.get("WIDTH", 0))
+            if larg <= 1000:      # janelas auxiliares
+                continue
+            atual = (int(d["Y"]), int(d["HEIGHT"]))
+            if melhor is None or atual[1] > melhor[1]:
+                melhor = atual
+        except Exception:
+            continue
+    return melhor
+
+
+def espaco_vertical_livre():
+    """Quanto ha entre a barra de cima e a Dock, agora.
+
+    Tudo relativo: se a barra crescer (ela muda de altura conforme a resolucao)
+    ou a Dock mudar de tamanho, a janela acompanha sozinha."""
+    barra = _geometria_de("polybar")
+    dock = _geometria_de("plank")
+    if not barra or not dock:
+        return None
+    topo = barra[0] + barra[1]        # onde a barra termina
+    # A Dock VISIVEL nao comeca no topo da janela do Plank: os primeiros
+    # DESCE_ATE pixels dela sao area transparente acima dos icones. E por isso
+    # que a Lixeira e a tela de Aplicativos terminam ali e nao antes -- usamos
+    # a mesma referencia, para as tres janelas fecharem na mesma linha.
+    base = dock[0] + DESCE_ATE_DOCK
+    return (topo, base) if base > topo else None
 
 
 def posicao_junto_da_dock(larg, alt):
@@ -474,8 +535,27 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         # de maximizar e sem arrastar as bordas. Janela nao-redimensionavel
         # ignora set_default_size (assume o tamanho natural), por isso o
         # tamanho vem de um pedido. Mover pela barra de titulo continua valendo.
-        self.set_size_request(LARGURA_JANELA, ALTURA_JANELA)
+        # A altura definitiva depende da moldura, que so existe depois que a
+        # janela e mapeada -- por isso ela e ajustada em _encaixar_na_tela().
+        # Altura derivada da posicao que o usuario ajustou na mao: ele deixou
+        # a janela ocupando o vao entre a barra e a Dock menos MOLDURA_VERTICAL.
+        # Nada de numero de tela aqui -- se a barra ou a Dock mudarem de
+        # tamanho, a janela acompanha.
+        limites = espaco_vertical_livre()
+        altura = ((limites[1] - limites[0]) - MOLDURA_VERTICAL) if limites else 618
+        altura = max(ALTURA_MINIMA, altura)
+        self._altura_escolhida = altura
+        self.set_size_request(LARGURA_JANELA, altura)
         self.set_resizable(False)
+        # Espera meio segundo antes de encaixar: logo apos o mapa, o
+        # gerenciador ainda esta assentando a janela e o GDK devolve medida
+        # velha -- foi o que fez a janela subir demais numa tentativa.
+        # Depois que a janela aparece, encosta o pe dela na Dock -- mesma
+        # referencia da Lixeira e da tela de Aplicativos, para as tres fecharem
+        # na mesma linha. Meio segundo de espera porque logo apos o mapa o
+        # gerenciador ainda esta assentando a janela e devolve medida velha.
+        self.connect("map-event", lambda *_: GLib.timeout_add(
+            500, self._encostar_na_dock) and False)
         self.state = load_state()
         self.index = SearchIndex(SEARCH_TOPICS)
         self.built_pages = set()
@@ -503,7 +583,7 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         # Nasce encostada na Dock, na mesma linha das outras telas do
         # Tarsila. Posicionar ANTES de mostrar e o que evita a janela aparecer
         # num lugar e pular para outro.
-        onde = posicao_junto_da_dock(LARGURA_JANELA, ALTURA_JANELA)
+        onde = posicao_junto_da_dock(LARGURA_JANELA, self._altura_escolhida)
         if onde:
             self.move(*onde)
         self.show_all()
@@ -881,6 +961,10 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         dlg = Gtk.FileChooserDialog(
             title="Escolha o arquivo da VPN", transient_for=self,
             action=Gtk.FileChooserAction.OPEN)
+        # O seletor abria do tamanho minimo, mostrando tres ou quatro arquivos.
+        # Numa tela de 1366x768 cabe bem mais, e procurar arquivo por uma frestinha
+        # e o tipo de detalhe que faz o usuario desistir.
+        dlg.set_default_size(760, 560)
         dlg.add_buttons("Cancelar", Gtk.ResponseType.CANCEL,
                         "Importar", Gtk.ResponseType.OK)
         filtro = Gtk.FileFilter()
@@ -1321,12 +1405,31 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
             minutos = max(0, int(bruto.strip()))
         except (OSError, ValueError):
             pass
+        # O SpinButton do GTK poe os dois botoes juntos, a direita do numero.
+        # Aqui o numero fica ENTRE o menos e o mais, que e como se le naturalmente
+        # -- diminui de um lado, aumenta do outro.
         self._descanso_spin = Gtk.SpinButton.new_with_range(0, 120, 5)
         self._descanso_spin.set_value(minutos)
         self._descanso_spin.connect("value-changed", self._on_descanso_changed)
+        menos_btn = Gtk.Button(label="−")
+        mais_btn = Gtk.Button(label="+")
+        menos_btn.connect("clicked", lambda *_: self._descanso_spin.spin(
+            Gtk.SpinType.STEP_BACKWARD, 1))
+        mais_btn.connect("clicked", lambda *_: self._descanso_spin.spin(
+            Gtk.SpinType.STEP_FORWARD, 1))
+        valor_lbl = Gtk.Label()
+        def _mostra_minutos(*_a):
+            valor_lbl.set_text(str(int(self._descanso_spin.get_value())))
+        _mostra_minutos()
+        self._descanso_spin.connect("value-changed", _mostra_minutos)
+        caixa_min = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        caixa_min.pack_start(menos_btn, False, False, 0)
+        caixa_min.pack_start(valor_lbl, False, False, 0)
+        caixa_min.pack_start(mais_btn, False, False, 0)
+        valor_lbl.set_width_chars(3)
         add_row(lb, "preferences-desktop-screensaver", "Descansar a tela",
                 "Depois de quantos minutos parados o monitor entra em stand-by",
-                self._descanso_spin)
+                caixa_min)
 
         # O que aparece durante o descanso. "Preto" e o padrao e o mais barato:
         # nada e decodificado, a tela so apaga. Escolher um video custa CPU o
@@ -1336,7 +1439,10 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         self._atualiza_nome_descanso()
         descanso_btn = Gtk.Button(label="Escolher ›")
         descanso_btn.connect("clicked", self._on_escolher_descanso)
-        caixa_desc = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        # Nome em cima do botao, nao ao lado: assim ele nao disputa espaco com
+        # a descricao da linha e fica claro que se refere aquele botao.
+        caixa_desc = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self._descanso_lbl.set_xalign(0.5)
         caixa_desc.pack_start(self._descanso_lbl, False, False, 0)
         caixa_desc.pack_start(descanso_btn, False, False, 0)
         add_row(lb, "video-x-generic", "Configurar tela de descanso",
@@ -1917,13 +2023,17 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         atual = self._descanso_video_atual()
         nome = Path(atual).name if atual else "Preto"
         self._descanso_lbl.set_markup(
-            '<small><span alpha="65%%">%s</span></small>'
+            '<small><span alpha="65%%"><b>%s</b></span></small>'
             % GLib.markup_escape_text(nome))
 
     def _on_escolher_descanso(self, *_a):
         dlg = Gtk.FileChooserDialog(
             title="Escolha o que aparece no descanso", transient_for=self,
             action=Gtk.FileChooserAction.OPEN)
+        # O seletor abria do tamanho minimo, mostrando tres ou quatro arquivos.
+        # Numa tela de 1366x768 cabe bem mais, e procurar arquivo por uma frestinha
+        # e o tipo de detalhe que faz o usuario desistir.
+        dlg.set_default_size(760, 560)
         dlg.add_buttons("Cancelar", Gtk.ResponseType.CANCEL,
                         "Tela preta", Gtk.ResponseType.REJECT,
                         "Usar este", Gtk.ResponseType.OK)
@@ -1951,6 +2061,64 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                               "A escolha do descanso não foi gravada.")
             return
         self._atualiza_nome_descanso()
+
+    def _encostar_na_dock(self, *_a):
+        """Alinha o pe da janela com o das outras telas do Tarsila.
+
+        Corrige pela DIFERENCA medida: pedir uma posicao e receber outra e
+        comum, porque o gerenciador soma a decoracao ao pedido."""
+        limites = espaco_vertical_livre()
+        janela_x = self.get_window()
+        if not limites or janela_x is None:
+            return False
+        _, base = limites
+        for _ in range(2):
+            quadro = janela_x.get_frame_extents()
+            sobra = (quadro.y + quadro.height) - base
+            if abs(sobra) <= 1:
+                break
+            x_atual, y_atual = self.get_position()
+            self.move(x_atual, y_atual - sobra)
+        return False
+
+    def _encaixar_na_tela_antigo(self, *_a):
+        """Ocupa exatamente o vao entre a barra de cima e a Dock.
+
+        So da para fazer isto DEPOIS que a janela aparece: a moldura (barra de
+        titulo mais as bordas do tema, hoje 4px nas laterais e embaixo) e
+        desenhada pelo gerenciador, e o GDK so sabe informa-la quando a janela
+        ja existe.
+
+        Nada aqui e numero cravado. Ate o acerto final sai de MEDIR onde a
+        moldura caiu e corrigir pela diferenca: pedir uma posicao e receber
+        outra e comum, porque o gerenciador soma a decoracao ao pedido, e o
+        quanto varia conforme o tema."""
+        limites = espaco_vertical_livre()
+        janela_x = self.get_window()
+        if not limites or janela_x is None:
+            return False
+        topo, base = limites
+
+        quadro = janela_x.get_frame_extents()
+        _, altura_cliente = self.get_size()
+        moldura = quadro.height - altura_cliente     # titulo + bordas de cima e baixo
+        alvo = (base - topo) - moldura
+        if alvo < ALTURA_MINIMA:
+            return False
+        if abs(alvo - altura_cliente) > 1:
+            self.set_size_request(LARGURA_JANELA, alvo)
+            self.resize(LARGURA_JANELA, alvo)
+
+        # Encosta o TOPO DA MOLDURA no fim da barra. Duas passadas: a primeira
+        # pede, a segunda corrige o que o gerenciador tiver somado.
+        for _ in range(2):
+            quadro = janela_x.get_frame_extents()
+            sobra = quadro.y - topo
+            if abs(sobra) <= 1:
+                break
+            x_atual, y_atual = self.get_position()
+            self.move(x_atual, y_atual - sobra)
+        return False
 
     def _on_descanso_changed(self, spin):
         """Grava os minutos de ociosidade.
