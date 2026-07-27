@@ -125,6 +125,33 @@ def save_state(state):
 # Widgets auxiliares
 # --------------------------------------------------------------------------
 
+# Idiomas oferecidos, com o nome escrito na propria lingua -- quem procura
+# "Espanol" nao reconhece "es_ES.UTF-8". O ingles esta aqui e NUNCA e removido
+# do sistema: e a lingua de recurso quando um programa nao tem traducao.
+IDIOMAS = [
+    ("pt_BR.UTF-8", "Português (Brasil)"),
+    ("pt_PT.UTF-8", "Português (Portugal)"),
+    ("en_US.UTF-8", "English (United States)"),
+    ("es_ES.UTF-8", "Español (España)"),
+    ("es_AR.UTF-8", "Español (Argentina)"),
+    ("fr_FR.UTF-8", "Français (France)"),
+    ("it_IT.UTF-8", "Italiano (Italia)"),
+    ("de_DE.UTF-8", "Deutsch (Deutschland)"),
+]
+
+
+def nome_do_idioma(codigo):
+    """"pt_BR.UTF-8" -> "Português (Brasil)". Sem isto a tela mostrava o
+    codigo cru, que nao diz nada para quem so quer saber que idioma esta
+    usando."""
+    if not codigo:
+        return "—"
+    for cod, nome in IDIOMAS:
+        if cod == codigo or cod.split(".")[0] == codigo.split(".")[0]:
+            return nome
+    return codigo
+
+
 def reiniciar_barra():
     """Faz a barra de cima recarregar.
 
@@ -1302,8 +1329,23 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         linha.add(caixa_btn)
         lb.add(linha)
 
-        lang = os.environ.get("LANG", "—")
-        add_row(lb, "preferences-desktop-locale", "Idioma do sistema", lang)
+        # Idioma: mostra o nome por extenso e deixa trocar ali mesmo.
+        lang = os.environ.get("LANG", "")
+        self._idioma_combo = Gtk.ComboBoxText()
+        escolhido = 0
+        conhecidos = [c for c, _ in IDIOMAS]
+        if lang and lang not in conhecidos:
+            self._idioma_combo.append(lang, nome_do_idioma(lang))
+        for i, (cod, nome) in enumerate(IDIOMAS):
+            self._idioma_combo.append(cod, nome)
+            if cod.split(".")[0] == lang.split(".")[0]:
+                escolhido = i + (0 if lang in conhecidos else 1)
+        self._idioma_combo.set_active(escolhido)
+        self._idioma_combo.set_sensitive(which("sudo"))
+        self._idioma_atual = lang
+        self._idioma_combo.connect("changed", self._on_idioma_changed)
+        add_row(lb, "preferences-desktop-locale", "Idioma do sistema",
+                "Vale a partir do próximo login", self._idioma_combo)
 
         card, lb = make_card("Espaço no disco")
         box.pack_start(card, False, False, 0)
@@ -1544,6 +1586,41 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
             self._info_dialog("Hora ajustada", "A data e a hora foram atualizadas.")
         else:
             self._info_dialog("Não foi possível ajustar", "O comando falhou.")
+        return False
+
+    def _on_idioma_changed(self, combo):
+        escolha = combo.get_active_id()
+        if not escolha or escolha == self._idioma_atual:
+            return
+        combo.set_sensitive(False)
+
+        def worker():
+            ok, saida, _ = run_ok(
+                ["sudo", "-n", "/usr/local/sbin/tarsila-idioma", escolha],
+                timeout=300)
+            aplicado = any(l.startswith("OK=") for l in saida.splitlines())
+            GLib.idle_add(self._after_idioma, combo, escolha, ok and aplicado)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _after_idioma(self, combo, escolha, ok):
+        combo.set_sensitive(True)
+        if ok:
+            self._idioma_atual = escolha
+            self._info_dialog(
+                "Idioma alterado",
+                "O sistema passa a usar %s quando você entrar de novo.\n\n"
+                "As telas do próprio Tarsila continuam em português: os textos "
+                "delas ainda não são traduzidos." % nome_do_idioma(escolha))
+        else:
+            # Volta o combo para onde estava: deixar mostrando a escolha nova
+            # com o sistema no idioma velho seria mentir para o usuário.
+            for i, (cod, _) in enumerate(IDIOMAS):
+                if cod == self._idioma_atual:
+                    combo.set_active(i)
+                    break
+            self._info_dialog("Não foi possível trocar o idioma",
+                              "O comando falhou. O idioma continua o mesmo.")
         return False
 
     def _aplicar_fuso(self, zona):
