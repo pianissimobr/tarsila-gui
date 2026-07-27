@@ -152,6 +152,56 @@ def nome_do_idioma(codigo):
     return codigo
 
 
+# Tema padrao, para onde se volta ao desligar escuro ou alto contraste.
+TEMA_CLARO = "Xfce"
+TEMA_ESCURO = "Adwaita-dark"
+TEMA_CONTRASTE = "Tarsila-Contraste"
+XSETTINGS_CONF = Path.home() / ".config/xsettingsd/xsettingsd.conf"
+
+
+def xsettings_get(chave, padrao=""):
+    """Le uma chave do arquivo do xsettingsd."""
+    try:
+        for linha in XSETTINGS_CONF.read_text(encoding="utf-8").splitlines():
+            if linha.startswith(chave + " "):
+                return linha.split(" ", 1)[1].strip().strip('"')
+    except OSError:
+        pass
+    return padrao
+
+
+def xsettings_set(chave, valor, texto=True):
+    """Grava no arquivo do xsettingsd e manda recarregar.
+
+    ISTO E O QUE ESTAVA FALTANDO. A tela gravava no xfconf, que e o deposito do
+    XFCE -- mas esta sessao nao roda o xfsettingsd: roda o xsettingsd, que le
+    este arquivo e ignora o xfconf por completo. Por isso Modo escuro, Tamanho
+    do texto e Alto contraste nao faziam nada.
+
+    O xsettingsd relê o arquivo ao receber SIGHUP, entao a mudanca aparece na
+    hora, ate em programas ja abertos -- testado."""
+    linha_nova = '%s "%s"' % (chave, valor) if texto else "%s %s" % (chave, valor)
+    try:
+        XSETTINGS_CONF.parent.mkdir(parents=True, exist_ok=True)
+        linhas = []
+        achou = False
+        if XSETTINGS_CONF.exists():
+            for linha in XSETTINGS_CONF.read_text(encoding="utf-8").splitlines():
+                if linha.startswith(chave + " "):
+                    linhas.append(linha_nova)
+                    achou = True
+                else:
+                    linhas.append(linha)
+        if not achou:
+            linhas.append(linha_nova)
+        XSETTINGS_CONF.write_text("\n".join(linhas) + "\n", encoding="utf-8")
+    except OSError:
+        return False
+    subprocess.run(["pkill", "-HUP", "-x", "xsettingsd"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return True
+
+
 def reiniciar_barra():
     """Faz a barra de cima recarregar.
 
@@ -866,8 +916,9 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         box.pack_start(card, False, False, 0)
         current_theme = xfconf_get("xsettings", "/Net/ThemeName", "Xfce")
         dark_switch = Gtk.Switch()
-        dark_switch.set_active("dark" in current_theme.lower()
-                               or current_theme == "HighContrast")
+        tema_atual = xsettings_get("Net/ThemeName", TEMA_CLARO)
+        dark_switch.set_active(tema_atual == TEMA_ESCURO)
+        dark_switch.set_state(tema_atual == TEMA_ESCURO)
         dark_switch.connect("state-set", self._on_dark_toggle)
         add_row(lb, "weather-clear-night", "Modo escuro",
                 "Cores escuras, mais confortáveis à noite", dark_switch)
@@ -886,7 +937,7 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         """Tamanho do texto — usado em Aparência e em Acessibilidade,
         porque o usuário procura "letra grande" nos dois lugares."""
         font_scale = Gtk.SpinButton.new_with_range(8, 24, 1)
-        cur_font = xfconf_get("xsettings", "/Gtk/FontName", "Sans 10")
+        cur_font = xsettings_get("Gtk/FontName", "Sans 10")
         try:
             size = int(cur_font.split()[-1])
         except (ValueError, IndexError):
@@ -897,16 +948,15 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                 "Aumenta as letras em todo o sistema", font_scale)
 
     def _on_dark_toggle(self, switch, state):
-        theme = "Adwaita-dark" if state else "Adwaita"
-        if not Path(f"/usr/share/themes/{theme}").exists():
-            theme = "HighContrast" if state else "Xfce"
-        xfconf_set("xsettings", "/Net/ThemeName", theme, "string", create=True)
-        return False
+        # Escuro e alto contraste disputam a MESMA chave (o nome do tema):
+        # ligar um desliga o outro, nao ha como estar nos dois.
+        xsettings_set("Net/ThemeName", TEMA_ESCURO if state else TEMA_CLARO)
+        switch.set_state(state)
+        return True
 
     def _on_font_size_changed(self, spin, base_font):
         family = " ".join(base_font.split()[:-1]) or "Sans"
-        xfconf_set("xsettings", "/Gtk/FontName",
-                   f"{family} {int(spin.get_value())}", "string", create=True)
+        xsettings_set("Gtk/FontName", f"{family} {int(spin.get_value())}")
 
     def _tema_atual(self):
         try:
@@ -1332,18 +1382,23 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         return False
 
     # ---- Acessibilidade ----
+    def _on_contrast_toggle(self, switch, state):
+        # Mesma chave do modo escuro: um desliga o outro.
+        xsettings_set("Net/ThemeName", TEMA_CONTRASTE if state else TEMA_CLARO)
+        switch.set_state(state)
+        return True
+
     def _page_acessibilidade(self, box):
         card, lb = make_card("Visão")
         box.pack_start(card, False, False, 0)
 
         contrast_switch = Gtk.Switch()
-        current_theme = xfconf_get("xsettings", "/Net/ThemeName", "Xfce")
-        contrast_switch.set_active(current_theme == "HighContrast")
-        contrast_switch.connect("state-set", lambda s, state: xfconf_set(
-            "xsettings", "/Net/ThemeName",
-            "HighContrast" if state else "Xfce", "string", create=True) and False)
-        add_row(lb, "video-display-symbolic", "Alto contraste",
-                "Cores mais fortes, para enxergar melhor", contrast_switch)
+        tema_agora = xsettings_get("Net/ThemeName", TEMA_CLARO)
+        contrast_switch.set_active(tema_agora == TEMA_CONTRASTE)
+        contrast_switch.set_state(tema_agora == TEMA_CONTRASTE)
+        contrast_switch.connect("state-set", self._on_contrast_toggle)
+        add_row(lb, "preferences-desktop-accessibility", "Alto contraste",
+                "Preto no branco, com bordas mais fortes", contrast_switch)
 
         self._add_font_size_row(lb)
 
