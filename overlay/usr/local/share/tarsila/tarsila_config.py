@@ -1286,9 +1286,21 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         # Desligado enquanto o relogio se acerta sozinho: mexer na mao com o
         # ajuste automatico ligado nao adianta, o NTP desfaz em segundos.
         self._atualiza_botao_manual(ntp == "yes")
-        # Sem titulo nem descricao ao lado: o proprio botao ja diz o que faz,
-        # e repetir "Data e hora" a esquerda dele era so ruido.
-        add_row(lb, "document-edit", "", "", self._manual_btn)
+        # Linha montada a mao em vez de add_row: aquela funcao sempre poe um
+        # icone a esquerda e empurra o controle para a direita. Aqui o botao ja
+        # diz tudo sozinho, entao nao ha icone nem texto -- e ele fica encostado
+        # a esquerda, alinhado com os titulos das outras linhas.
+        linha = Gtk.ListBoxRow()
+        linha.set_selectable(False)
+        linha.set_activatable(False)
+        caixa_btn = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        caixa_btn.set_margin_start(16)
+        caixa_btn.set_margin_end(16)
+        caixa_btn.set_margin_top(10)
+        caixa_btn.set_margin_bottom(10)
+        caixa_btn.pack_start(self._manual_btn, False, False, 0)
+        linha.add(caixa_btn)
+        lb.add(linha)
 
         lang = os.environ.get("LANG", "—")
         add_row(lb, "preferences-desktop-locale", "Idioma do sistema", lang)
