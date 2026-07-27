@@ -284,10 +284,34 @@ CATEGORIES = [
 DEV_CATEGORY = ("dev", "utilities-terminal", "Opções Avançadas")
 
 
+# Tamanho em que a janela abre -- o que o usuario deixou ao ajustar na mao.
+LARGURA_JANELA, ALTURA_JANELA = 705, 600
+
+
+def posicao_junto_da_dock(larg, alt):
+    """Onde abrir para ficar encostada na Dock. O calculo mora no
+    tarsila-pos-dock, compartilhado com a Lixeira e a tela de Aplicativos."""
+    try:
+        r = subprocess.run(["/usr/local/bin/tarsila-pos-dock",
+                            str(larg), str(alt), "gtk-app"],
+                           capture_output=True, text=True, timeout=15)
+        if r.returncode == 0:
+            x, y = r.stdout.split()
+            return int(x), int(y)
+    except Exception:
+        pass
+    return None
+
+
 class TarsilaConfigWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title="Ajustes")
-        self.set_default_size(880, 600)
+        # Tamanho travado, como a Lixeira e a tela de Aplicativos: sem botao
+        # de maximizar e sem arrastar as bordas. Janela nao-redimensionavel
+        # ignora set_default_size (assume o tamanho natural), por isso o
+        # tamanho vem de um pedido. Mover pela barra de titulo continua valendo.
+        self.set_size_request(LARGURA_JANELA, ALTURA_JANELA)
+        self.set_resizable(False)
         self.state = load_state()
         self.index = SearchIndex(SEARCH_TOPICS)
         self.built_pages = set()
@@ -313,6 +337,12 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         self._build_sidebar()
 
         self.connect("key-press-event", self._on_key_press)
+        # Nasce encostada na Dock, na mesma linha das outras telas do
+        # Tarsila. Posicionar ANTES de mostrar e o que evita a janela aparecer
+        # num lugar e pular para outro.
+        onde = posicao_junto_da_dock(LARGURA_JANELA, ALTURA_JANELA)
+        if onde:
+            self.move(*onde)
         self.show_all()
         self._select_category("conta")
 

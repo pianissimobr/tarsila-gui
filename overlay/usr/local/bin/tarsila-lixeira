@@ -23,7 +23,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import urllib.parse
 from datetime import datetime
 
@@ -37,19 +36,7 @@ INFOS = os.path.join(LIXO, "info")
 
 COL_ICONE, COL_NOME, COL_TAM, COL_DATA, COL_ORIGEM, COL_ARQ, COL_BYTES = range(7)
 
-# Quanto o pe da janela desce dentro da faixa do Plank -- ali ainda e area
-# transparente acima dos icones, entao ela encosta sem cobrir nada. Mesmo valor
-# usado na tela "Aplicativos Instalados", derivado medindo a posicao que o
-# usuario escolheu na mao.
-DESCE_ATE = 29
 LARGURA, ALTURA = 700, 460
-# O gerenciador acrescenta a decoracao ao que se pede, entao descontamos aqui
-# para a janela nascer no ponto certo em vez de ser corrigida depois. O valor
-# vertical NAO e o mesmo da tela "Aplicativos Instalados" (que pede via yad):
-# medido, o GTK soma 39 onde o yad soma 64. Por isso as duas janelas terminavam
-# em linhas diferentes -- 693 contra 718 -- e o usuario notou.
-# Nao sao coordenadas de tela: e a espessura da moldura, propriedade do tema.
-COMPENSA_X, COMPENSA_Y = 8, 39
 
 
 def tamanho_legivel(n):
@@ -318,40 +305,17 @@ class Lixeira(Gtk.Window):
 
 
 def posicao_junto_da_dock(larg, alt):
-    """Onde abrir: encostada no fim da Dock, subindo a partir dela.
+    """Onde abrir para ficar encostada na Dock.
 
-    Mesma regra da tela "Aplicativos Instalados": nada de coordenada fixa -- a
-    Dock e medida agora, entao se ela andar, a janela acompanha. O Plank ocupa
-    a largura inteira da tela mas so pinta o pedaco do meio, por isso medimos
-    ate onde a janela dele esta pintada em vez de usar a largura dela."""
+    O calculo mora no tarsila-pos-dock, compartilhado com a tela "Aplicativos
+    Instalados" e com os Ajustes -- era a terceira copia da mesma conta."""
     try:
-        ids = subprocess.run(["xdotool", "search", "--class", "plank"],
-                             capture_output=True, text=True, timeout=4).stdout.split()
-        for wid in ids:
-            g = subprocess.run(["xdotool", "getwindowgeometry", "--shell", wid],
-                               capture_output=True, text=True, timeout=4).stdout
-            d = dict(l.split("=", 1) for l in g.splitlines() if "=" in l)
-            if int(d.get("WIDTH", 0)) <= 1000:
-                continue
-            px, py = int(d["X"]), int(d["Y"])
-            with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
-                subprocess.run(["import", "-window", wid, tmp.name],
-                               timeout=8, stderr=subprocess.DEVNULL)
-                from PIL import Image
-                im = Image.open(tmp.name).convert("RGB")
-                w, h = im.size
-                q = im.load()
-                canto = q[2, 2]
-                meio = h // 2
-                xs = [x for x in range(w)
-                      if sum(abs(a - b) for a, b in zip(q[x, meio], canto)) > 30]
-            if not xs:
-                return None
-            # So a horizontal vem dos pixels: a captura da janela do Plank vem
-            # composta com o papel de parede, que tem gradiente, e no eixo Y a
-            # comparacao acusaria "pintado" onde ha so fundo.
-            return (px + xs[-1] - larg - COMPENSA_X,
-                    py - alt + DESCE_ATE - COMPENSA_Y)
+        r = subprocess.run(["/usr/local/bin/tarsila-pos-dock",
+                            str(larg), str(alt), "gtk"],
+                           capture_output=True, text=True, timeout=15)
+        if r.returncode == 0:
+            x, y = r.stdout.split()
+            return int(x), int(y)
     except Exception:
         pass
     return None

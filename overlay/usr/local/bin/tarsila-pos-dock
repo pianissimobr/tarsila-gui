@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""Diz onde uma janela deve nascer para ficar encostada na Dock.
+
+As telas do Tarsila que saem da Dock -- Aplicativos Instalados, Lixeira,
+Ajustes -- abrem todas do mesmo jeito: borda direita no fim da Dock e pe
+encostado nela, como um menu que sai do proprio icone. Este utilitario existe
+para esse calculo ficar num lugar so, em vez de copiado em cada programa.
+
+Nada aqui e coordenada fixa: a Dock e medida agora. Se ela andar, as janelas
+acompanham.
+
+O Plank ocupa a largura inteira da tela mas so pinta o pedaco do meio, entao a
+geometria da janela dele nao serve -- medimos ate onde ela esta PINTADA.
+So no eixo horizontal, porem: a captura vem composta com o papel de parede,
+que tem gradiente, e no vertical a comparacao acusaria "pintado" onde ha so
+fundo. Para o Y basta o topo da janela do Plank, que e exato.
+
+Uso:  tarsila-pos-dock <largura> <altura> [toolkit]
+      toolkit: "gtk" (padrao) ou "yad" -- muda so a compensacao da moldura.
+Saida: "X Y" ja compensado, pronto para move()/--geometry.
+"""
+
+import subprocess
+import sys
+import tempfile
+
+# Quanto o pe da janela desce dentro da faixa do Plank. Ali ainda e area
+# transparente acima dos icones, entao a janela encosta sem cobrir nada. Valor
+# derivado medindo a posicao que o usuario escolheu na mao.
+DESCE_ATE = 29
+
+# O gerenciador acrescenta a decoracao ao que se pede, e o quanto depende de
+# quem pede. Medido nesta box, e nao e o mesmo numero para todos:
+#   gtk      Gtk.Window comum, movida antes de show()      -> 8 / 39
+#   gtk-app  Gtk.ApplicationWindow exibida via present()   -> 8 / 64
+#   yad      via --geometry                                -> 9 / 66
+# Descontamos aqui para a janela nascer no lugar em vez de ser corrigida
+# depois -- e a correcao depois e justamente o "pulinho" que se via ao abrir.
+COMPENSA = {"gtk": (8, 39), "gtk-app": (8, 64), "yad": (9, 66)}
+
+
+def dock():
+    """(x do fim da Dock, y do topo da janela do Plank) ou None."""
+    try:
+        ids = subprocess.run(["xdotool", "search", "--class", "plank"],
+                             capture_output=True, text=True, timeout=5).stdout.split()
+    except Exception:
+        return None
+    for wid in ids:
+        try:
+            saida = subprocess.run(
+                ["xdotool", "getwindowgeometry", "--shell", wid],
+                capture_output=True, text=True, timeout=5).stdout
+            d = dict(l.split("=", 1) for l in saida.splitlines() if "=" in l)
+            if int(d.get("WIDTH", 0)) <= 1000:
+                continue          # janela auxiliar do Plank, nao a barra
+            px, py = int(d["X"]), int(d["Y"])
+            with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
+                subprocess.run(["import", "-window", wid, tmp.name],
+                               timeout=10, stderr=subprocess.DEVNULL)
+                from PIL import Image
+                im = Image.open(tmp.name).convert("RGB")
+                w, h = im.size
+                p = im.load()
+                canto = p[2, 2]
+                meio = h // 2
+                xs = [x for x in range(w)
+                      if sum(abs(a - b) for a, b in zip(p[x, meio], canto)) > 30]
+            if xs:
+                return px + xs[-1], py
+        except Exception:
+            continue
+    return None
+
+
+def main():
+    if len(sys.argv) < 3:
+        sys.exit("uso: tarsila-pos-dock <largura> <altura> [gtk|yad]")
+    larg, alt = int(sys.argv[1]), int(sys.argv[2])
+    kit = sys.argv[3] if len(sys.argv) > 3 else "gtk"
+    cx, cy = COMPENSA.get(kit, COMPENSA["gtk"])
+    d = dock()
+    if not d:
+        sys.exit(1)               # sem Dock visivel: quem chamou que centralize
+    direita, topo = d
+    print("%d %d" % (direita - larg - cx, topo - alt + DESCE_ATE - cy))
+
+
+if __name__ == "__main__":
+    main()
