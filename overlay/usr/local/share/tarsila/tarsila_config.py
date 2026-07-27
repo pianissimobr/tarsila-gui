@@ -874,14 +874,6 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
 
         self._add_font_size_row(lb)
 
-        icons_style = xfconf_get("xfce4-desktop", "/desktop-icons/style", "0")
-        icons_switch = Gtk.Switch()
-        icons_switch.set_active(icons_style.strip() not in ("0", ""))
-        icons_switch.connect("state-set", lambda s, state: xfconf_set(
-            "xfce4-desktop", "/desktop-icons/style",
-            2 if state else 0, "int", create=True) and False)
-        add_row(lb, "user-desktop", "Mostrar ícones na área de trabalho",
-                "", icons_switch)
 
         if which("xfce4-appearance-settings"):
             card, lb = make_card("Mais opções")
@@ -1032,7 +1024,10 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         vol_scale.connect("value-changed", lambda s: run_ok(
             ["pactl", "set-sink-volume", "@DEFAULT_SINK@",
              f"{int(s.get_value())}%"]))
-        add_row(lb, "audio-volume-high", "Volume principal", "", vol_scale)
+        # audio-volume-high mora em actions/panel do Papirus, que e a variante
+        # fininha monocromatica -- por isso saia mais claro que as vizinhas.
+        # audio-speakers esta em devices, a variante colorida cheia.
+        add_row(lb, "audio-speakers", "Volume principal", "", vol_scale)
 
         # Seletor de saída de som (amigável): lista os destinos disponíveis
         # (TV/HDMI, Fone P2 ou qualquer placa de som USB conectada) e deixa o
@@ -1395,7 +1390,10 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
             pass
 
         add_row(lb, "computer", "Nome do computador", hostname)
-        add_row(lb, "media-flash", "Memória", mem_total)
+        # "RAM" e o nome que a pessoa ve em anuncio e caixa de aparelho.
+        # O icone antigo (media-flash) e um cartao de memoria, que e outra
+        # coisa -- gnome-dev-memory desenha um pente de RAM.
+        add_row(lb, "gnome-dev-memory", "RAM", mem_total)
 
         # 7 toques na linha da versão desbloqueiam as Opções Avançadas.
         # Silencioso até os 2 últimos toques; sem linha anunciando o segredo.
@@ -1406,6 +1404,19 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         vrow = add_row(version_lb, "dialog-information", "Sistema", pretty_os)
         vrow.set_activatable(True)
         version_lb.connect("row-activated", self._on_version_activated)
+
+        # Numa lista separada de proposito: a de cima tem o segredo dos 7
+        # toques na linha "Sistema", e qualquer linha nova ali entraria no
+        # caminho desse gesto.
+        uso_lb = Gtk.ListBox()
+        uso_lb.set_selection_mode(Gtk.SelectionMode.NONE)
+        uso_lb.get_style_context().add_class("tarsila-list")
+        card.get_child().pack_start(uso_lb, False, False, 0)
+        uso_btn = Gtk.Button(label="Abrir ›")
+        uso_btn.connect("clicked", lambda *_: run_bg(
+            ["xfce4-terminal", "--title=Uso de CPU e RAM", "-e", "htop"]))
+        add_row(uso_lb, "utilities-system-monitor", "Verificar uso de CPU e RAM",
+                "Mostra o que está consumindo o computador agora", uso_btn)
 
     def _check_updates(self):
         self._updates_lbl.set_text("Procurando atualizações…")
