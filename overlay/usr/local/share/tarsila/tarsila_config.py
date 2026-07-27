@@ -30,6 +30,8 @@ import shutil
 import subprocess
 import threading
 import time
+from datetime import datetime, timezone as dt_timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 CONFIG_DIR = Path.home() / ".config" / "tarsila-config"
@@ -122,6 +124,94 @@ def save_state(state):
 # --------------------------------------------------------------------------
 # Widgets auxiliares
 # --------------------------------------------------------------------------
+
+def reiniciar_barra():
+    """Faz a barra de cima recarregar.
+
+    Antes isto chamava "xfce4-panel -r". O pacote esta instalado, mas quem
+    desenha a barra deste sistema e o polybar -- entao a chamada morria com
+    "org.xfce.Panel was not provided by any .service files" e o usuario levava
+    um dialogo de erro na cara toda vez que mexia na hora ou no fuso.
+    O polybar recarrega ao receber SIGUSR1."""
+    run_bg(["pkill", "-USR1", "-x", "polybar"])
+
+
+# Uma cidade por faixa horária, não os 485 fusos que o sistema conhece --
+# ninguém escolhe entre "America/Argentina/Catamarca" e "America/Cordoba".
+# Nas quatro faixas que são do Brasil a referência é brasileira; nas outras,
+# uma cidade que qualquer pessoa reconhece.
+# O deslocamento NÃO está escrito aqui de propósito: é calculado na hora, se
+# não o horário de verão de outros países deixaria o rótulo mentindo.
+FUSOS = [
+    ("Pacific/Pago_Pago",   "Pago Pago"),
+    ("Pacific/Honolulu",    "Honolulu"),
+    ("America/Anchorage",   "Anchorage"),
+    ("America/Los_Angeles", "Los Angeles"),
+    ("America/Denver",      "Denver"),
+    ("America/Mexico_City", "Cidade do México"),
+    ("America/Rio_Branco",  "Rio Branco"),
+    ("America/Manaus",      "Manaus"),
+    ("America/Sao_Paulo",   "São Paulo"),
+    ("America/Noronha",     "Fernando de Noronha"),
+    ("Atlantic/Azores",     "Açores"),
+    ("Europe/London",       "Londres"),
+    ("Europe/Paris",        "Paris"),
+    ("Europe/Athens",       "Atenas"),
+    ("Europe/Moscow",       "Moscou"),
+    ("Asia/Dubai",          "Dubai"),
+    ("Asia/Karachi",        "Carachi"),
+    ("Asia/Dhaka",          "Daca"),
+    ("Asia/Bangkok",        "Bangkok"),
+    ("Asia/Shanghai",       "Xangai"),
+    ("Asia/Tokyo",          "Tóquio"),
+    ("Australia/Sydney",    "Sydney"),
+    ("Pacific/Noumea",      "Numeá"),
+    ("Pacific/Auckland",    "Auckland"),
+]
+
+
+def _deslocamento(zona):
+    """O fuso BASE da zona, sem horário de verão.
+
+    Usar o deslocamento do momento deixaria a lista torta metade do ano: em
+    julho o horário de verão do hemisfério norte empurra Denver para -06, onde
+    já está a Cidade do México, e Atenas para +03, onde já está Moscou -- duas
+    colisões e dois buracos. Descontando o horário de verão sai uma faixa por
+    hora, que é o que se espera de "GMT-3". É assim que Windows e Android
+    rotulam."""
+    try:
+        agora = datetime.now(dt_timezone.utc).astimezone(ZoneInfo(zona))
+        desloc = agora.utcoffset()
+        verao = agora.dst()
+    except Exception:
+        return None
+    if desloc is None:
+        return None
+    if verao:
+        desloc -= verao
+    return int(desloc.total_seconds()) // 60
+
+
+def listar_fusos(atual=""):
+    """As faixas horárias, como (id, "(GMT-03:00) São Paulo").
+
+    Se o computador estiver num fuso fora da lista, ele entra também -- assim
+    a janela nunca deixa de mostrar onde a máquina realmente está."""
+    escolhas = list(FUSOS)
+    if atual and atual not in dict(escolhas):
+        escolhas.append((atual, atual.split("/")[-1].replace("_", " ")))
+    itens = []
+    for zona, cidade in escolhas:
+        minutos = _deslocamento(zona)
+        if minutos is None:
+            continue
+        sinal = "+" if minutos >= 0 else "-"
+        horas, resto = divmod(abs(minutos), 60)
+        itens.append((minutos, zona,
+                      "(GMT%s%02d:%02d) %s" % (sinal, horas, resto, cidade)))
+    itens.sort(key=lambda t: (t[0], t[2]))
+    return [(z, rot) for _, z, rot in itens]
+
 
 def make_card(title):
     frame = Gtk.Frame()
@@ -1188,29 +1278,17 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
             add_row(lb, "appointment-soon", "Acertar a hora automaticamente",
                     "Sem permissão para alterar neste equipamento")
 
-        # Fuso horário: nada no sistema detecta isso sozinho (NTP só
-        # sincroniza o instante UTC, não sabe onde o equipamento está) —
-        # por isso precisa de uma escolha explícita aqui.
-        self._tz_combo = Gtk.ComboBoxText()
-        current_idx = 0
-        for i, (tz_id, tz_label) in enumerate(TIMEZONES_BR):
-            self._tz_combo.append(tz_id, tz_label)
-            if tz_id == tz:
-                current_idx = i
-        if tz not in dict(TIMEZONES_BR):
-            self._tz_combo.append(tz, f"Outro ({tz})")
-            current_idx = len(TIMEZONES_BR)
-        self._tz_combo.set_active(current_idx)
-        self._tz_combo.set_sensitive(which("sudo"))
-        self._tz_combo.connect("changed", self._on_timezone_changed)
-        add_row(lb, "preferences-system-time", "Fuso horário", "", self._tz_combo)
-
-        manual_btn = Gtk.Button(label="Ajustar ›")
-        manual_btn.set_sensitive(which("sudo"))
-        manual_btn.connect("clicked", self._on_manual_time_clicked)
-        add_row(lb, "document-edit", "Ajustar data e hora manualmente",
-                "Define a data e a hora na mão; desliga o ajuste automático",
-                manual_btn)
+        # O fuso saiu da grade: virou um campo dentro da janela de ajuste.
+        # Ele so importa quando alguem vai mexer na hora, e ocupava uma linha
+        # inteira da tela principal para uma escolha que se faz uma vez na vida.
+        self._manual_btn = Gtk.Button(label="Ajustar hora e data manualmente")
+        self._manual_btn.connect("clicked", self._on_manual_time_clicked)
+        # Desligado enquanto o relogio se acerta sozinho: mexer na mao com o
+        # ajuste automatico ligado nao adianta, o NTP desfaz em segundos.
+        self._atualiza_botao_manual(ntp == "yes")
+        # Sem titulo nem descricao ao lado: o proprio botao ja diz o que faz,
+        # e repetir "Data e hora" a esquerda dele era so ruido.
+        add_row(lb, "document-edit", "", "", self._manual_btn)
 
         lang = os.environ.get("LANG", "—")
         add_row(lb, "preferences-desktop-locale", "Idioma do sistema", lang)
@@ -1342,9 +1420,21 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         threading.Thread(target=worker, daemon=True).start()
         return True
 
+    def _atualiza_botao_manual(self, automatico):
+        """O ajuste manual so faz sentido com o automatico desligado."""
+        botao = getattr(self, "_manual_btn", None)
+        if botao is None:
+            return
+        pode = which("sudo") and not automatico
+        botao.set_sensitive(bool(pode))
+        botao.set_tooltip_text(
+            "Desligue \"Acertar a hora automaticamente\" para ajustar na mão"
+            if automatico else "")
+
     def _after_ntp_toggle(self, switch, state, ok):
         switch.set_sensitive(True)
         switch.set_state(state if ok else not state)
+        self._atualiza_botao_manual(state if ok else not state)
         if not ok:
             self._info_dialog(
                 "Não foi possível alterar",
@@ -1362,6 +1452,23 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         content.set_margin_end(16)
         content.set_margin_top(12)
         content.set_margin_bottom(12)
+
+        # Fuso horario aqui dentro, antes do calendario: ele muda o que o
+        # calendario e o relogio significam, entao vem primeiro na leitura.
+        fuso_atual, _ = self._read_timedate()
+        fusos = listar_fusos(fuso_atual)
+        combo_fuso = Gtk.ComboBoxText()
+        escolhido = 0
+        for i, (zona, rotulo) in enumerate(fusos):
+            combo_fuso.append(zona, rotulo)
+            if zona == fuso_atual:
+                escolhido = i
+        if fusos:
+            combo_fuso.set_active(escolhido)
+        linha_fuso = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        linha_fuso.pack_start(Gtk.Label(label="Fuso horário"), False, False, 0)
+        linha_fuso.pack_start(combo_fuso, True, True, 0)
+        content.pack_start(linha_fuso, False, False, 0)
 
         now = time.localtime()
         cal = Gtk.Calendar()
@@ -1384,12 +1491,20 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         content.show_all()
         response = dlg.run()
         stamp = None
+        novo_fuso = None
         if response == Gtk.ResponseType.OK:
             year, month, day = cal.get_date()  # mês vem 0-indexado
             stamp = (f"{year:04d}-{month + 1:02d}-{day:02d} "
                      f"{int(hour.get_value()):02d}:{int(minute.get_value()):02d}:"
                      f"{int(second.get_value()):02d}")
+            escolha = combo_fuso.get_active_id()
+            if escolha and escolha != fuso_atual:
+                novo_fuso = escolha
         dlg.destroy()
+        # O fuso vai PRIMEIRO: trocá-lo depois de acertar a hora deslocaria o
+        # horário que o usuário acabou de digitar.
+        if novo_fuso:
+            self._aplicar_fuso(novo_fuso)
         if stamp:
             self._apply_manual_time(stamp)
 
@@ -1410,15 +1525,26 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
             self._ntp_switch.set_active(False)
             self._ntp_switch.set_state(False)
         if ok:
-            # O relógio do painel (xfce4-panel) não percebe um salto abrupto
-            # de hora sozinho — ele só recalcula no próprio ciclo interno.
-            # Reiniciar o painel força a topbar a mostrar a hora nova na
-            # hora, em vez de só na próxima vez que o usuário reparar.
-            run_bg(["xfce4-panel", "-r"])
+            # A barra de cima não percebe um salto abrupto de hora sozinha:
+            # só recalcula no próprio ciclo. Recarregá-la mostra a hora nova
+            # na hora, em vez de só quando o usuário reparar.
+            reiniciar_barra()
             self._info_dialog("Hora ajustada", "A data e a hora foram atualizadas.")
         else:
             self._info_dialog("Não foi possível ajustar", "O comando falhou.")
         return False
+
+    def _aplicar_fuso(self, zona):
+        """Troca o fuso e espera terminar: quem chama precisa acertar a hora
+        logo em seguida, e as duas coisas na ordem errada se atrapalham."""
+        ok, _out, _err = run_ok(["sudo", "-n", "timedatectl", "set-timezone", zona],
+                                timeout=30)
+        if ok:
+            reiniciar_barra()
+        else:
+            self._info_dialog("Não foi possível trocar o fuso",
+                              "O comando falhou. O fuso continua como estava.")
+        return ok
 
     def _on_timezone_changed(self, combo):
         tz = combo.get_active_id()
@@ -1436,9 +1562,9 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
     def _after_timezone_change(self, combo, ok):
         combo.set_sensitive(True)
         if ok:
-            # Mesma razão do ajuste manual de hora: o relógio da topbar não
+            # Mesma razão do ajuste manual de hora: o relógio da barra não
             # recalcula o deslocamento sozinho quando o fuso muda.
-            run_bg(["xfce4-panel", "-r"])
+            reiniciar_barra()
         else:
             self._info_dialog("Não foi possível trocar o fuso", "O comando falhou.")
         return False
@@ -1488,8 +1614,7 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         card, lb = make_card("Painel e Dock")
         box.pack_start(card, False, False, 0)
         restart_panel_btn = Gtk.Button(label="Reiniciar")
-        restart_panel_btn.connect("clicked",
-                                  lambda *_: run_ok(["xfce4-panel", "-r"]))
+        restart_panel_btn.connect("clicked", lambda *_: reiniciar_barra())
         add_row(lb, "view-refresh", "Reiniciar painel superior", "",
                 restart_panel_btn)
         restart_dock_btn = Gtk.Button(label="Reiniciar")
@@ -1500,8 +1625,6 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                 restart_dock_btn)
         add_tool_row(lb, "user-desktop", "Preferências do dock", "",
                      ["plank", "--preferences"])
-        add_tool_row(lb, "org.xfce.panel", "Preferências do painel", "",
-                     ["xfce4-panel", "--preferences"])
 
         card, lb = make_card("Inicialização automática")
         box.pack_start(card, False, False, 0)
