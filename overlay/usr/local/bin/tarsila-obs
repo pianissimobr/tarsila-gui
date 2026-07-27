@@ -1,0 +1,8 @@
+#!/bin/sh
+# O OBS exige OpenGL 3.3 de desktop. O Panfrost desta Mali-G31 entrega no
+# maximo 3.1 de desktop (GLES ate 3.2, mas o OBS nao usa GLES no Linux), entao
+# o contexto falha com EGL_BAD_MATCH e o programa nem abre.
+# Aqui a renderizacao vai por software (llvmpipe, que da OpenGL 4.6). E lento,
+# mas e a unica forma de o OBS abrir nesta placa.
+# Esta variavel vale SO para este processo -- nada no resto do sistema muda.
+LIBGL_ALWAYS_SOFTWARE=1 exec obs "$@"
