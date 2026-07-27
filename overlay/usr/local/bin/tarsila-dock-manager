@@ -32,6 +32,17 @@ CURATED_DIR = "/usr/share/tarsila/applications"
 GAMES_DIR = "/usr/share/tarsila/games"
 ICONS_DIR = "/usr/share/tarsila/icons"
 VERMAIS_DESKTOP = os.path.join(CURATED_DIR, "vermais-tarsila.desktop")
+# Os cinco ultimos da Dock sao fixos, NESTA ordem. Sao os itens que o usuario
+# procura pela POSICAO ("o ultimo", "o do cantinho"), nao pelo desenho -- se um
+# aplicativo novo cai no meio deles, essa referencia se perde. Aconteceu: o OBS
+# entrou depois da Lixeira. Tudo que se instala entra ANTES deste bloco.
+CAUDA_FIXA = [os.path.join(CURATED_DIR, nome) for nome in (
+    "terminal-tarsila.desktop",
+    "files-tarsila.desktop",
+    "configuracao-tarsila.desktop",
+    "lixeira-tarsila.desktop",
+    "vermais-tarsila.desktop",
+)]
 LAUNCHERS = os.path.join(os.path.expanduser("~"), ".config/plank/dock1/launchers")
 DOCK_DCONF_KEY = "/net/launchpad/plank/docks/dock1/dock-items"
 DOCK_APPLY = "/usr/local/bin/tarsila-dock-apply.sh"
@@ -366,8 +377,10 @@ class DockManager(Gtk.Window):
         for f in glob.glob(os.path.join(LAUNCHERS, "*.dockitem")):
             os.remove(f)
         entries = [row[2] for row in self.store_dock]
-        if os.path.isfile(VERMAIS_DESKTOP):
-            entries.append(VERMAIS_DESKTOP)  # sempre o ultimo
+        # A cauda fixa vai para o fim na ordem definida, nao importa onde o
+        # usuario os tenha arrastado na lista.
+        entries = [e for e in entries if e not in CAUDA_FIXA]
+        entries += [e for e in CAUDA_FIXA if os.path.isfile(e)]
         for i, desktop in enumerate(entries, 1):
             base = os.path.basename(desktop)
             if base.endswith(".desktop"):
