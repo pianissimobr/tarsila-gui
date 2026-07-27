@@ -1212,12 +1212,15 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
             box.pack_start(card, False, False, 0)
             if has_camera:
                 test_argv = None
-                for app in ("cheese", "guvcview"):
+                # guvcview primeiro: o cheese arrasta 43 pacotes da pilha do
+                # GNOME; o guvcview resolve o mesmo em 4,5 MB e ainda deixa
+                # ajustar brilho, foco e resolucao da camera.
+                for app in ("guvcview", "cheese"):
                     if which(app):
                         test_argv = [app]
                         break
                 if test_argv:
-                    btn = open_tool_button("Testar ›", test_argv)
+                    btn = open_tool_button("Ajustar ›", test_argv)
                     add_row(lb, "camera-web", "Câmera",
                             "Conectada e pronta para usar", btn)
                 else:
