@@ -1191,41 +1191,56 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                      "Idioma do teclado e acentuação",
                      ["xfce4-keyboard-settings"], "Ajustar ›")
 
-        card, lb = make_card("Impressora")
+        # Um guarda-chuva so: impressora, scanner, camera e microfone eram
+        # tres cartoes separados dizendo a mesma coisa -- "coisas que voce
+        # pluga no computador". Agora sao um.
+        card, lb = make_card("Dispositivos externos")
         box.pack_start(card, False, False, 0)
-        if which("system-config-printer"):
-            btn = open_tool_button("Gerenciar ›", ["system-config-printer"])
-            add_row(lb, "printer", "Impressoras e scanners",
-                    "Adicionar impressora e ver fila de impressão", btn)
-        else:
-            link = Gtk.LinkButton.new_with_label("http://localhost:631",
-                                                 "Gerenciar ›")
-            add_row(lb, "printer", "Impressoras e scanners",
-                    "Adicionar impressora e ver fila de impressão", link)
 
-        # Câmera e microfone: no Linux, webcams padrão (UVC) funcionam sem
-        # instalar nada — então o painel é status + teste, não configuração.
-        # O cartão só aparece se houver câmera de verdade (/dev/video*).
-        has_camera = bool(sorted(Path("/dev").glob("video*")))
-        if has_camera or which("pavucontrol"):
-            card, lb = make_card("Câmera e microfone")
-            box.pack_start(card, False, False, 0)
-            if has_camera:
-                test_argv = None
-                # guvcview primeiro: o cheese arrasta 43 pacotes da pilha do
-                # GNOME; o guvcview resolve o mesmo em 4,5 MB e ainda deixa
-                # ajustar brilho, foco e resolucao da camera.
-                for app in ("guvcview", "cheese"):
-                    if which(app):
-                        test_argv = [app]
-                        break
-                if test_argv:
-                    btn = open_tool_button("Ajustar ›", test_argv)
-                    add_row(lb, "camera-web", "Câmera",
-                            "Conectada e pronta para usar", btn)
-                else:
-                    add_row(lb, "camera-web", "Câmera",
-                            "Conectada e pronta para usar")
+        # Impressora. O botao so fica disponivel se houver impressora, como
+        # pedido: sem nenhuma, ele nao promete o que nao da para fazer.
+        tem_impressora = False
+        ok, saida, _ = run_ok(["lpstat", "-p"], timeout=10)
+        if ok and saida.strip():
+            tem_impressora = any(l.startswith("printer ") for l in saida.splitlines())
+        if which("system-config-printer"):
+            btn = open_tool_button("Ajustar ›", ["system-config-printer"])
+            btn.set_sensitive(tem_impressora)
+            if not tem_impressora:
+                btn.set_tooltip_text("Conecte a impressora para ajustar")
+            add_row(lb, "printer", "Impressora",
+                    "Fila de impressão e opções" if tem_impressora
+                    else "Nenhuma impressora conectada", btn)
+        else:
+            add_row(lb, "printer", "Impressora", "Nenhuma impressora conectada")
+
+        # Scanner. A mesma biblioteca (SANE) atende tanto scanner de mesa
+        # quanto o vidro de uma multifuncional.
+        if which("simple-scan"):
+            add_tool_row(lb, "scanner", "Scanner",
+                         "Digitalizar documentos e fotos",
+                         ["simple-scan"], "Abrir ›")
+
+        # Camera: no Linux, webcam padrao (UVC) funciona sem instalar nada --
+        # a linha e status mais ajuste fino, nao configuracao para funcionar.
+        if bool(sorted(Path("/dev").glob("video*"))):
+            app_camera = None
+            # guvcview primeiro: o cheese arrasta 43 pacotes da pilha do GNOME;
+            # o guvcview resolve o mesmo em 4,5 MB e ainda deixa mexer em
+            # brilho, foco e resolucao.
+            for app in ("guvcview", "cheese"):
+                if which(app):
+                    app_camera = [app]
+                    break
+            if app_camera:
+                add_row(lb, "camera-web", "Câmera",
+                        "Conectada e pronta para usar",
+                        open_tool_button("Ajustar ›", app_camera))
+            else:
+                add_row(lb, "camera-web", "Câmera",
+                        "Conectada e pronta para usar")
+
+        if which("pavucontrol"):
             add_tool_row(lb, "audio-input-microphone", "Microfone",
                          "Volume de entrada e escolha do microfone",
                          ["pavucontrol"], "Ajustar ›")
