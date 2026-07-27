@@ -69,3 +69,8 @@ command -v tint2 >/dev/null 2>&1 && tint2 &
 # ~/.config/tarsila/descanso-video. Custo medido: ~85% de 400% de CPU e +2C.
 # Para desligar sem editar nada: echo 0 > ~/.config/tarsila/descanso-minutos
 /usr/local/bin/tarsila-descanso-vigia &
+
+# Avisa quando um aparelho e conectado (duas etapas: percebido / pronto).
+# Roda na sessao do usuario de proposito: assim ja tem o DBUS das notificacoes
+# e nao precisa de regra de udev com root.
+/usr/local/bin/tarsila-dispositivos &
