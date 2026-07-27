@@ -364,7 +364,12 @@ while true; do
     POS=$(posicao_junto_da_dock 2>/dev/null)
     if [ -n "$POS" ]; then
         set -- $POS
-        LUGAR="--posx=$(( $1 - COMPENSA_X )) --posy=$(( $2 - COMPENSA_Y ))"
+        # --geometry em vez de --posx/--posy: o yad aplica a posicao DEPOIS de
+        # mostrar a janela, e da o pulinho que se ve ao abrir. A geometria e
+        # lida pelo GTK antes de exibir, entao a janela ja nasce no lugar --
+        # e o que faz a Lixeira (programa nosso, que move antes de mostrar)
+        # nao piscar.
+        LUGAR="--geometry=${JANELA_LARG}x${JANELA_ALT}+$(( $1 - COMPENSA_X ))+$(( $2 - COMPENSA_Y ))"
     else
         LUGAR="--center"          # sem Dock visivel, volta ao meio da tela
     fi

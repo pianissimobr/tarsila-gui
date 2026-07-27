@@ -43,11 +43,13 @@ COL_ICONE, COL_NOME, COL_TAM, COL_DATA, COL_ORIGEM, COL_ARQ, COL_BYTES = range(7
 # usuario escolheu na mao.
 DESCE_ATE = 29
 LARGURA, ALTURA = 700, 460
-# O gerenciador de janelas acrescenta a decoracao ao que se pede: pedindo o
-# canto em (499, 258) a janela nasceu em (507, 322). Descontamos aqui para ela
-# nascer no ponto certo em vez de aparecer e ser corrigida depois. Nao sao
-# coordenadas de tela -- e a espessura da moldura, propriedade do tema.
-COMPENSA_X, COMPENSA_Y = 8, 64
+# O gerenciador acrescenta a decoracao ao que se pede, entao descontamos aqui
+# para a janela nascer no ponto certo em vez de ser corrigida depois. O valor
+# vertical NAO e o mesmo da tela "Aplicativos Instalados" (que pede via yad):
+# medido, o GTK soma 39 onde o yad soma 64. Por isso as duas janelas terminavam
+# em linhas diferentes -- 693 contra 718 -- e o usuario notou.
+# Nao sao coordenadas de tela: e a espessura da moldura, propriedade do tema.
+COMPENSA_X, COMPENSA_Y = 8, 39
 
 
 def tamanho_legivel(n):
