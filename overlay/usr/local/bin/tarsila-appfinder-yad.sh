@@ -13,6 +13,68 @@ NATIVES_FILE="/usr/share/tarsila/native-apps.txt"
 DOCK_MANAGER="/usr/local/bin/tarsila-dock-manager"
 ICON_HELPER="/usr/local/bin/tarsila-icon-cache"
 ICON_SIZE=48
+# Tamanho com que a janela abre -- o que o usuario deixou ao ajustar na mao.
+JANELA_LARG=405
+JANELA_ALT=500
+# Onde o pe da janela fica em relacao ao topo da janela da Dock. O valor veio
+# de MEDIR a posicao que o usuario escolheu na mao (ele posicionou, eu derivei):
+# o pe cai 29px dentro da faixa do Plank, que ali ainda e area transparente
+# acima dos icones -- por isso encosta sem cobrir nada.
+DESCE_ATE=29
+# O yad PEDE uma posicao, mas o gerenciador de janelas soma a barra de titulo e
+# a borda antes de desenhar: pedindo 185 a janela nasceu em 218. Descontamos
+# isso ao pedir, para ela ja nascer no lugar em vez de aparecer e pular.
+# Nao sao coordenadas de tela -- e a espessura da decoracao que o gerenciador
+# acrescenta, propriedade do tema da janela. Medido: +8 na horizontal, +64 na
+# vertical (a barra de titulo mais as bordas).
+COMPENSA_X=8
+COMPENSA_Y=64
+
+
+# Onde abrir: encostada no fim da Dock, subindo a partir dela, como um menu que
+# sai do proprio botao "Ver mais". Em vez de chutar a largura da Dock (o Plank
+# ocupa a tela inteira, mas so pinta o pedaco do meio), medimos a janela DELE e
+# vemos ate onde ela esta pintada. Assim o calculo continua certo se o usuario
+# acrescentar icones ou mudar o tamanho deles.
+posicao_junto_da_dock() {
+    local plank px py pw ph
+    plank=$(xdotool search --class plank 2>/dev/null | while read -r w; do
+                eval "$(xdotool getwindowgeometry --shell "$w" 2>/dev/null)"
+                [ "${WIDTH:-0}" -gt 1000 ] && echo "$w"
+            done | head -n1)
+    [ -n "$plank" ] || return 1
+    eval "$(xdotool getwindowgeometry --shell "$plank" 2>/dev/null)" || return 1
+    px=$X; py=$Y
+    import -window "$plank" "$TMP_DIR/dock.png" 2>/dev/null || return 1
+    python3 - "$TMP_DIR/dock.png" "$px" "$py" "$JANELA_LARG" "$JANELA_ALT" \
+             "$DESCE_ATE" <<'PY'
+import sys
+from PIL import Image
+
+arq, px, py, larg, alt, desce = sys.argv[1:7]
+px, py, larg, alt, desce = map(int, (px, py, larg, alt, desce))
+im = Image.open(arq).convert("RGB")
+w, h = im.size
+p = im.load()
+canto = p[2, 2]                      # canto transparente/vazio da janela
+
+def pintado(c):
+    return sum(abs(a - b) for a, b in zip(c, canto)) > 30
+
+meio = h // 2
+xs = [x for x in range(w) if pintado(p[x, meio])]
+if not xs:
+    raise SystemExit(1)
+# So a medida horizontal vem dos pixels. A vertical NAO: 'import -window'
+# entrega a janela do Plank ja composta com o papel de parede, que tem
+# gradiente, entao comparar com o canto acusa "pintado" onde ha so fundo.
+# Para o eixo Y basta o topo da propria janela do Plank, que e exato.
+direita = px + xs[-1]                # onde a Dock termina, na tela
+print("%d %d" % (direita - larg, py - alt + desce))
+PY
+}
+
+
 
 # Apps nativos do sistema (Arquivos, Configuração, Store, Terminal,
 # Lixeira): ficam sempre na Dock e fora desta grade - gerenciados so
@@ -295,12 +357,25 @@ while true; do
     plug_jogos=$!
     sleep 1                 # as abas precisam existir antes da janela-caderno
 
+    # --fixed trava o tamanho: sem isso a janela abriria redimensionavel e com
+    # botao de maximizar, que nao fazem sentido numa grade de icones -- e o
+    # usuario pediu os dois fora. O yad marca min=max nas dicas de tamanho e o
+    # Openbox, vendo isso, ja esconde o botao e recusa o arrasto das bordas.
+    POS=$(posicao_junto_da_dock 2>/dev/null)
+    if [ -n "$POS" ]; then
+        set -- $POS
+        LUGAR="--posx=$(( $1 - COMPENSA_X )) --posy=$(( $2 - COMPENSA_Y ))"
+    else
+        LUGAR="--center"          # sem Dock visivel, volta ao meio da tela
+    fi
+
     yad --notebook --key=$YAD_KEY \
         --tab="Aplicativos" \
         --tab="Jogos" \
-        --center \
+        --fixed \
+        $LUGAR \
         --title="Aplicativos Instalados" \
-        --width=700 --height=500 \
+        --width=$JANELA_LARG --height=$JANELA_ALT \
         --button="Executar:0" \
         --button="Desinstalar:2" \
         --button="Gerenciar Dock:5" 2>/dev/null
