@@ -676,25 +676,37 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                      "Conexões conhecidas, VPN e proxy",
                      ["nm-connection-editor"], "Gerenciar ›")
 
+        # O ajuste de como o IP e obtido fica AQUI, no cartao da conexao, e nao
+        # dentro de "Cabo de rede (Ethernet)": aquele cartao passou a ser so os
+        # numeros da conexao, e este e uma acao -- lugar dela e junto das outras
+        # acoes de rede.
+        eth_dev_ajuste, eth_conn_ajuste = self._find_ethernet_connection()
+        if eth_conn_ajuste and which("sudo"):
+            metodo_ip = self._read_ethernet_ipv4(eth_dev_ajuste)[0]
+            self._eth_conn = eth_conn_ajuste
+            eth_btn = Gtk.Button(label="Configurar ›")
+            eth_btn.connect("clicked", self._on_ethernet_manual_clicked)
+            add_row(lb, "preferences-system-network",
+                    "IP automático (DHCP)" if metodo_ip != "manual"
+                    else "IP manual",
+                    "Toque para trocar entre automático e manual", eth_btn)
+
         # Cabo de rede: IP/gateway/DNS direto pelo painel via "sudo -n" —
         # o nm-connection-editor (botão acima) sofre do mesmo problema do
         # pkexec (exige agente gráfico de polkit, que este equipamento não
         # tem), então salvar uma conexão do sistema por ele trava/falha.
-        eth_dev, eth_conn = self._find_ethernet_connection()
-        if eth_conn and which("sudo"):
-            method, ip, gw, dns = self._read_ethernet_ipv4(eth_dev)
-            card, lb = make_card("Cabo de rede (Ethernet)")
+        ativo_dev, ativo_nome, ativo_tipo = self._find_active_connection()
+        if ativo_dev and which("sudo"):
+            method, ip, gw, dns = self._read_ethernet_ipv4(ativo_dev)
+            # O titulo diz de qual conexao sao estes numeros. Num aparelho
+            # ligado por Wi-Fi, "Cabo de rede (Ethernet)" era simplesmente falso.
+            if ativo_tipo == "wifi":
+                titulo_conexao = ("Wi-Fi · %s" % ativo_nome if ativo_nome
+                                  else "Wi-Fi")
+            else:
+                titulo_conexao = "Cabo de rede (Ethernet)"
+            card, lb = make_card(titulo_conexao)
             box.pack_start(card, False, False, 0)
-            # O ajuste vem ANTES dos numeros: quem abre esta parte quer
-            # primeiro saber COMO o endereco e obtido; os valores em si sao a
-            # consequencia disso.
-            self._eth_conn = eth_conn
-            eth_btn = Gtk.Button(label="Configurar ›")
-            eth_btn.connect("clicked", self._on_ethernet_manual_clicked)
-            add_row(lb, "preferences-system-network",
-                    "IP automático (DHCP)" if method != "manual" else "IP manual",
-                    "Toque para trocar entre automático e manual", eth_btn)
-
             # Um por linha, mas em linhas JUSTAS -- sem icone e com margem
             # menor que a das linhas de acao. Sao informacao, nao botao: o
             # cartao ja diz "Cabo de rede (Ethernet)", e repetir o icone de
@@ -801,6 +813,27 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         except Exception as e:
             print("tarsila-config: refresh internet:", e)
         return False
+
+    @staticmethod
+    def _find_active_connection():
+        """A conexao que esta REALMENTE em uso: (dispositivo, nome, tipo).
+
+        O cartao dos numeros precisa dizer de onde eles vem. Antes so procurava
+        cabo, e o titulo era fixo -- num aparelho ligado por Wi-Fi ele mentia.
+        O cabo tem preferencia quando os dois estao conectados, que e o que o
+        proprio sistema faz: com cabo ligado, e por ele que a maquina sai."""
+        ok, out, _ = run_ok(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION",
+                             "device", "status"])
+        if not ok:
+            return None, None, None
+        achados = {}
+        for linha in out.splitlines():
+            partes = linha.split(":")
+            if len(partes) < 4 or partes[2] != "connected":
+                continue
+            if partes[1] in ("ethernet", "wifi"):
+                achados[partes[1]] = (partes[0], partes[3] or None, partes[1])
+        return achados.get("ethernet") or achados.get("wifi") or (None, None, None)
 
     @staticmethod
     def _find_ethernet_connection():
