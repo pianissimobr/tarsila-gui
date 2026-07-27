@@ -1162,7 +1162,8 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
 
         card, lb = make_card("Atualizações")
         box.pack_start(card, False, False, 0)
-        check_btn = Gtk.Button(label="Verificar")
+        check_btn = Gtk.Button(label="Verificar e Instalar")
+        self._check_btn = check_btn
         self._updates_lbl = Gtk.Label(label="", xalign=0)
         self._updates_lbl.set_margin_start(16)
         self._updates_lbl.set_margin_bottom(8)
@@ -1170,15 +1171,6 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                 "Correções e melhorias para este computador", check_btn)
         card.get_child().pack_start(self._updates_lbl, False, False, 0)
         check_btn.connect("clicked", lambda *_: self._check_updates())
-
-        install_btn = Gtk.Button(label="Instalar ›")
-        install_btn.connect("clicked", lambda *_: run_bg(
-            ["xfce4-terminal", "--title=Atualizando o sistema", "-e",
-             "sh -c 'sudo -n apt-get update && sudo -n apt-get upgrade -y; "
-             "echo; echo Pronto. Pode fechar esta janela.; read x'"]))
-        add_row(lb, "system-run", "Instalar atualizações agora",
-                "O computador pode ficar mais lento durante a instalação",
-                install_btn)
 
         card, lb = make_card("Data, hora e idioma")
         box.pack_start(card, False, False, 0)
@@ -1284,21 +1276,35 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
 
     def _check_updates(self):
         self._updates_lbl.set_text("Procurando atualizações…")
+        # Trava o botao: a instalacao demora, e clicar de novo no meio dela
+        # dispararia um segundo apt que so ficaria preso esperando a trava.
+        self._check_btn.set_sensitive(False)
 
         def worker():
             # Sem pkexec aqui: a checagem usa o cache existente e não
             # interrompe o usuário com pedido de senha só para "verificar".
-            ok, out, _ = run_ok(["apt", "list", "--upgradable"], timeout=30)
-            n = max(0, len(out.splitlines()) - 1) if ok else 0
-            if not ok:
-                msg = "Não foi possível verificar agora"
-            elif n == 0:
-                msg = "Tudo em dia — nenhuma atualização pendente"
-            elif n == 1:
-                msg = "1 atualização disponível"
+            # Todo o trabalho e do tarsila-atualizar, que roda como root e
+            # devolve "FEITAS=<n>" ou "ERRO=...". Assim a tela nao repete a
+            # logica que o arranque tambem usa.
+            ok, out, _ = run_ok(["sudo", "-n", "/usr/local/sbin/tarsila-atualizar"],
+                                timeout=3600)
+            feitas = None
+            for linha in out.splitlines():
+                if linha.startswith("FEITAS="):
+                    try:
+                        feitas = int(linha.split("=", 1)[1])
+                    except ValueError:
+                        feitas = None
+            if feitas is None:
+                msg = "Não foi possível atualizar agora"
+            elif feitas == 0:
+                msg = "Sem atualizações"
+            elif feitas == 1:
+                msg = "1 atualização foi feita"
             else:
-                msg = f"{n} atualizações disponíveis"
+                msg = "%d atualizações foram feitas" % feitas
             GLib.idle_add(self._updates_lbl.set_text, msg)
+            GLib.idle_add(self._check_btn.set_sensitive, True)
 
         threading.Thread(target=worker, daemon=True).start()
 

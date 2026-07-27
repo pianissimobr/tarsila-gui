@@ -1,0 +1,70 @@
+#!/bin/bash
+# Atualiza o sistema sem fazer perguntas. Usado em dois lugares:
+#   - no arranque, pelo tarsila-atualizar.service
+#   - no botao "Verificar e Instalar" da tela de Ajustes
+# Ter um so lugar evita que os dois caminhos divirjam.
+#
+# Escreve na ultima linha um resumo que a tela le:
+#   FEITAS=<n>   quantos pacotes foram atualizados (0 = nao havia nada)
+#   ERRO=<algo>  nao deu para atualizar agora
+#
+# CUIDADOS QUE NAO SAO OPCIONAIS NESTA MAQUINA:
+#  - Sem perguntas: um dialogo de configuracao esperando resposta travaria o
+#    arranque para sempre. Dai o DEBIAN_FRONTEND e o --force-confold, que manda
+#    manter o arquivo de configuracao que ja esta na maquina.
+#  - Espera a trava do apt em vez de falhar na hora: no arranque e comum outro
+#    processo estar mexendo no dpkg.
+#  - nice/ionice: a maquina tem 4 nucleos fracos, e atualizar nao pode deixar
+#    a area de trabalho travada enquanto o usuario tenta usar.
+
+set -uo pipefail
+export DEBIAN_FRONTEND=noninteractive
+export LC_ALL=C
+
+REGISTRO=/opt/tarsila-diag/atualizacoes.log
+OPCOES=(-o DPkg::Lock::Timeout=300
+        -o Dpkg::Options::=--force-confold
+        -o Dpkg::Options::=--force-confdef)
+
+anotar() {
+    mkdir -p "$(dirname "$REGISTRO")" 2>/dev/null
+    printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$REGISTRO" 2>/dev/null
+}
+
+if [ "$(id -u)" != "0" ]; then
+    echo "ERRO=precisa ser root"
+    exit 1
+fi
+
+anotar "inicio"
+
+if ! nice -n 10 ionice -c3 apt-get "${OPCOES[@]}" update >>"$REGISTRO" 2>&1; then
+    anotar "falhou ao consultar os repositorios (sem internet?)"
+    echo "ERRO=sem conexao"
+    exit 1
+fi
+
+# Conta o que seria atualizado ANTES de mexer: e este numero que a tela mostra.
+# "apt-get -s upgrade" simula; as linhas "Inst " sao os pacotes que mudariam.
+PENDENTES=$(apt-get -s upgrade 2>/dev/null | grep -c '^Inst ')
+anotar "pendentes=$PENDENTES"
+
+if [ "$PENDENTES" -eq 0 ]; then
+    anotar "nada a fazer"
+    echo "FEITAS=0"
+    exit 0
+fi
+
+if nice -n 10 ionice -c3 apt-get "${OPCOES[@]}" upgrade -y >>"$REGISTRO" 2>&1; then
+    # Reconta depois: se algo ficou retido, o numero real e menor do que o
+    # previsto, e mostrar o previsto seria mentira.
+    RESTANTES=$(apt-get -s upgrade 2>/dev/null | grep -c '^Inst ')
+    FEITAS=$(( PENDENTES - RESTANTES ))
+    [ "$FEITAS" -lt 0 ] && FEITAS=0
+    anotar "concluido feitas=$FEITAS restantes=$RESTANTES"
+    echo "FEITAS=$FEITAS"
+else
+    anotar "falhou ao instalar"
+    echo "ERRO=falhou ao instalar"
+    exit 1
+fi

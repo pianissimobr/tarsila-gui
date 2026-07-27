@@ -1,0 +1,21 @@
+[Unit]
+Description=Atualiza o sistema no arranque, quando houver internet
+# Espera a rede de verdade (com endereco), nao so a interface subir: sem isso
+# o apt-get update falharia toda vez em quem liga a maquina antes do Wi-Fi.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Nao segura o arranque: a area de trabalho sobe enquanto isto roda ao fundo.
+# Numa maquina de 4 nucleos fracos isso e a diferenca entre ligar e esperar.
+ExecStart=/usr/local/sbin/tarsila-atualizar
+# Sem internet nao e erro: o proprio utilitario ja anota e sai. Um insucesso
+# aqui nao pode manchar o estado do sistema nem gerar alarme para o usuario.
+SuccessExitStatus=0 1
+TimeoutStartSec=45min
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target
