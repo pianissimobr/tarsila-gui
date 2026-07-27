@@ -1,0 +1,45 @@
+#!/bin/bash
+# Importa uma VPN a partir do arquivo que o provedor entrega.
+#
+# O usuario leigo recebe um arquivo e so isso: nao sabe (nem precisa saber) se
+# aquilo e OpenVPN ou WireGuard. Aqui o tipo e deduzido da extensao e do
+# conteudo, e o nmcli faz o resto.
+#
+# Uso:  tarsila-vpn-importar <arquivo>
+# Saida: OK=<nome da conexao>  ou  ERRO=<motivo>
+
+set -uo pipefail
+export LC_ALL=C
+ARQ="${1:-}"
+[ "$(id -u)" = "0" ] || { echo "ERRO=precisa ser root"; exit 1; }
+[ -f "$ARQ" ] || { echo "ERRO=arquivo nao encontrado"; exit 1; }
+
+# WireGuard: arquivo .conf com secao [Interface] e uma chave privada.
+# OpenVPN: .ovpn, ou .conf com as palavras tipicas dele.
+if grep -qi "^\[Interface\]" "$ARQ" && grep -qi "PrivateKey" "$ARQ"; then
+    TIPO=wireguard
+elif grep -qiE "^(remote|client|dev tun|dev tap)\b" "$ARQ"; then
+    TIPO=openvpn
+else
+    case "${ARQ,,}" in
+        *.ovpn) TIPO=openvpn ;;
+        *.conf) TIPO=wireguard ;;
+        *) echo "ERRO=nao reconheci o tipo de VPN neste arquivo"; exit 1 ;;
+    esac
+fi
+
+if [ "$TIPO" = "openvpn" ] && [ ! -e /usr/lib/NetworkManager/VPN/nm-openvpn-service.name ]; then
+    echo "ERRO=falta o suporte a OpenVPN neste computador"
+    exit 1
+fi
+
+SAIDA=$(nmcli connection import type "$TIPO" file "$ARQ" 2>&1)
+if [ $? -eq 0 ]; then
+    NOME=$(printf '%s' "$SAIDA" | sed -n "s/.*'\(.*\)'.*/\1/p" | head -1)
+    [ -n "$NOME" ] || NOME=$(basename "${ARQ%.*}")
+    echo "OK=$NOME"
+else
+    # A mensagem do nmcli e tecnica demais para a tela; fica so o essencial.
+    printf 'ERRO=%s\n' "$(printf '%s' "$SAIDA" | tail -1 | cut -c1-120)"
+    exit 1
+fi

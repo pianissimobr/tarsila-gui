@@ -676,6 +676,16 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                      "Conexões conhecidas, VPN e proxy",
                      ["nm-connection-editor"], "Gerenciar ›")
 
+        # Importar VPN: o provedor entrega um arquivo e o usuario so precisa
+        # aponta-lo. O editor de conexoes do NetworkManager sabe criar VPN, mas
+        # exige entender o formulario inteiro -- aqui e um arquivo e pronto.
+        # O tipo (OpenVPN ou WireGuard) e deduzido pelo utilitario; quem recebeu
+        # o arquivo geralmente nem sabe qual dos dois e.
+        vpn_btn = Gtk.Button(label="Importar ›")
+        vpn_btn.connect("clicked", self._on_importar_vpn)
+        add_row(lb, "network-server", "Adicionar uma VPN",
+                "Escolha o arquivo que o serviço de VPN lhe enviou", vpn_btn)
+
         # O ajuste de como o IP e obtido fica AQUI, no cartao da conexao, e nao
         # dentro de "Cabo de rede (Ethernet)": aquele cartao passou a ser so os
         # numeros da conexao, e este e uma acao -- lugar dela e junto das outras
@@ -864,6 +874,49 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         if ok and out.strip():
             dns = out.splitlines()[0].split("|")[0].strip()
         return method, ip, gw, dns
+
+    def _on_importar_vpn(self, *_a):
+        dlg = Gtk.FileChooserDialog(
+            title="Escolha o arquivo da VPN", transient_for=self,
+            action=Gtk.FileChooserAction.OPEN)
+        dlg.add_buttons("Cancelar", Gtk.ResponseType.CANCEL,
+                        "Importar", Gtk.ResponseType.OK)
+        filtro = Gtk.FileFilter()
+        filtro.set_name("Arquivos de VPN (.ovpn, .conf)")
+        for padrao in ("*.ovpn", "*.conf", "*.OVPN", "*.CONF"):
+            filtro.add_pattern(padrao)
+        dlg.add_filter(filtro)
+        todos = Gtk.FileFilter()
+        todos.set_name("Todos os arquivos")
+        todos.add_pattern("*")
+        dlg.add_filter(todos)
+        dlg.set_current_folder(str(Path.home() / "Downloads")
+                               if (Path.home() / "Downloads").is_dir()
+                               else str(Path.home()))
+        resposta = dlg.run()
+        caminho = dlg.get_filename() if resposta == Gtk.ResponseType.OK else None
+        dlg.destroy()
+        if not caminho:
+            return
+
+        ok, saida, _ = run_ok(
+            ["sudo", "-n", "/usr/local/sbin/tarsila-vpn-importar", caminho],
+            timeout=60)
+        nome = erro = ""
+        for linha in saida.splitlines():
+            if linha.startswith("OK="):
+                nome = linha[3:]
+            elif linha.startswith("ERRO="):
+                erro = linha[5:]
+        if ok and nome:
+            self._info_dialog(
+                "VPN adicionada",
+                "A conexão \"%s\" foi criada. Para usar, abra "
+                "\"Redes salvas e VPN\" e ligue-a." % nome)
+        else:
+            self._info_dialog(
+                "Não foi possível adicionar",
+                erro or "O arquivo não parece ser de uma VPN reconhecida.")
 
     def _on_ethernet_manual_clicked(self, *_a):
         method, ip, gw, dns = self._read_ethernet_ipv4(self._eth_conn)
