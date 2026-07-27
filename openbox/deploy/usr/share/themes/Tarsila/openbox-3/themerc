@@ -3,8 +3,8 @@
 
 # --- bordas ---
 border.width: 1
-window.active.border.color: #c7ccd1
-window.inactive.border.color: #dbdfe3
+window.active.border.color: #dbdfe3
+window.inactive.border.color: #e9ecee
 
 # --- barra de titulo (cinza claro sutil) ---
 padding.width: 8
@@ -25,14 +25,16 @@ window.active.title.separator.color: #d3d8dc
 window.inactive.title.separator.color: #e2e6e9
 
 # --- sem handle inferior ---
-window.handle.width: 0
+window.handle.width: 3
 window.active.handle.bg: flat solid
-window.active.handle.bg.color: #e7eaed
+window.active.handle.bg.color: #c7ccd1
 window.inactive.handle.bg: flat solid
-window.inactive.handle.bg.color: #eef1f3
-window.active.grip.bg: parentrelative
-window.inactive.grip.bg: parentrelative
-window.client.padding.width: 0
+window.inactive.handle.bg.color: #dbdfe3
+window.active.grip.bg: flat solid
+window.inactive.grip.bg: flat solid
+window.client.padding.width: 3
+window.inactive.client.color: #dbdfe3
+window.active.client.color: #c7ccd1
 window.client.padding.height: 0
 
 # --- botoes planos e discretos ---
@@ -76,3 +78,5 @@ osd.border.color: #c7ccd1
 osd.bg: flat solid
 osd.bg.color: #e7eaed
 osd.label.text.color: #2a2e32
+window.active.grip.bg.color: #c7ccd1
+window.inactive.grip.bg.color: #dbdfe3
