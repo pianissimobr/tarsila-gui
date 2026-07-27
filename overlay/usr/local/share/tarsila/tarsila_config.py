@@ -672,8 +672,10 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
             add_row(lb, "network-card", "Rede",
                     "Nenhuma conexão de rede encontrada neste computador")
 
-        add_tool_row(lb, "network-workgroup", "Redes salvas e VPN",
-                     "Conexões conhecidas, VPN e proxy",
+        # Sem "VPN" no nome: ela ganhou linha propria logo abaixo, e deixar a
+        # palavra nos dois lugares faria o usuario procurar no lugar errado.
+        add_tool_row(lb, "network-workgroup", "Redes salvas",
+                     "Conexões conhecidas",
                      ["nm-connection-editor"], "Gerenciar ›")
 
         # Importar VPN: o provedor entrega um arquivo e o usuario so precisa
@@ -1326,6 +1328,20 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                 "Depois de quantos minutos parados o monitor entra em stand-by",
                 self._descanso_spin)
 
+        # O que aparece durante o descanso. "Preto" e o padrao e o mais barato:
+        # nada e decodificado, a tela so apaga. Escolher um video custa CPU o
+        # tempo todo em que a maquina fica parada -- por isso a opcao existe,
+        # mas nao vem ligada.
+        self._descanso_lbl = Gtk.Label(xalign=1)
+        self._atualiza_nome_descanso()
+        descanso_btn = Gtk.Button(label="Escolher ›")
+        descanso_btn.connect("clicked", self._on_escolher_descanso)
+        caixa_desc = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        caixa_desc.pack_start(self._descanso_lbl, False, False, 0)
+        caixa_desc.pack_start(descanso_btn, False, False, 0)
+        add_row(lb, "video-x-generic", "Configurar tela de descanso",
+                "O que aparece enquanto o computador está parado", caixa_desc)
+
         # Bateria: só aparece se existir. Em TV box e desktop, nada.
         # "upower -e" também lista baterias de periféricos (teclado/mouse
         # sem fio via receptor hidpp) — o próprio upower marca essas como
@@ -1885,6 +1901,56 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         else:
             self._info_dialog("Não foi possível ajustar", "O comando falhou.")
         return False
+
+    @staticmethod
+    def _descanso_video_atual():
+        """Caminho do video do descanso, ou "" quando for tela preta."""
+        try:
+            escolha = (Path.home() / ".config/tarsila/descanso-video"
+                       ).read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+        return escolha if escolha and Path(escolha).is_file() else ""
+
+    def _atualiza_nome_descanso(self):
+        """Mostra "Preto" ou o nome do arquivo que a pessoa escolheu."""
+        atual = self._descanso_video_atual()
+        nome = Path(atual).name if atual else "Preto"
+        self._descanso_lbl.set_markup(
+            '<small><span alpha="65%%">%s</span></small>'
+            % GLib.markup_escape_text(nome))
+
+    def _on_escolher_descanso(self, *_a):
+        dlg = Gtk.FileChooserDialog(
+            title="Escolha o que aparece no descanso", transient_for=self,
+            action=Gtk.FileChooserAction.OPEN)
+        dlg.add_buttons("Cancelar", Gtk.ResponseType.CANCEL,
+                        "Tela preta", Gtk.ResponseType.REJECT,
+                        "Usar este", Gtk.ResponseType.OK)
+        filtro = Gtk.FileFilter()
+        filtro.set_name("Vídeos")
+        for padrao in ("*.mp4", "*.mkv", "*.webm", "*.avi", "*.mov",
+                       "*.MP4", "*.MKV", "*.WEBM"):
+            filtro.add_pattern(padrao)
+        dlg.add_filter(filtro)
+        pasta = Path.home() / "Videos"
+        dlg.set_current_folder(str(pasta if pasta.is_dir() else Path.home()))
+        resposta = dlg.run()
+        escolha = dlg.get_filename() if resposta == Gtk.ResponseType.OK else None
+        dlg.destroy()
+        if resposta == Gtk.ResponseType.CANCEL:
+            return
+        alvo = Path.home() / ".config/tarsila/descanso-video"
+        try:
+            alvo.parent.mkdir(parents=True, exist_ok=True)
+            # Vazio = tela preta. O tarsila-descanso ja trata assim: sem arquivo
+            # valido, ele nao sobe o reprodutor e a tela apenas apaga.
+            alvo.write_text((escolha or "") + "\n", encoding="utf-8")
+        except OSError:
+            self._info_dialog("Não foi possível salvar",
+                              "A escolha do descanso não foi gravada.")
+            return
+        self._atualiza_nome_descanso()
 
     def _on_descanso_changed(self, spin):
         """Grava os minutos de ociosidade.
