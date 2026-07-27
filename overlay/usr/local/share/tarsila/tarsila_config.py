@@ -1345,7 +1345,8 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         self._idioma_atual = lang
         self._idioma_combo.connect("changed", self._on_idioma_changed)
         add_row(lb, "preferences-desktop-locale", "Idioma do sistema",
-                "Vale a partir do próximo login", self._idioma_combo)
+                "As telas do Tarsila seguem em português",
+                self._idioma_combo)
 
         card, lb = make_card("Espaço no disco")
         box.pack_start(card, False, False, 0)
@@ -1607,11 +1608,23 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         combo.set_sensitive(True)
         if ok:
             self._idioma_atual = escolha
-            self._info_dialog(
-                "Idioma alterado",
-                "O sistema passa a usar %s quando você entrar de novo.\n\n"
-                "As telas do próprio Tarsila continuam em português: os textos "
-                "delas ainda não são traduzidos." % nome_do_idioma(escolha))
+            # Pergunta em vez de avisar: o idioma so vale de verdade depois de
+            # reiniciar, e deixar o usuario descobrir isso sozinho seria deixa-lo
+            # achando que a troca nao funcionou.
+            dlg = Gtk.MessageDialog(transient_for=self, modal=True,
+                                    message_type=Gtk.MessageType.QUESTION,
+                                    text="Reiniciar agora?")
+            dlg.format_secondary_text(
+                "Para que as alterações de idioma possam ser feitas, é "
+                "necessário reiniciar o sistema. Fazer isso agora?")
+            dlg.add_button("Não", Gtk.ResponseType.NO)
+            dlg.add_button("Sim", Gtk.ResponseType.YES)
+            dlg.set_default_response(Gtk.ResponseType.NO)
+            dlg.set_position(Gtk.WindowPosition.CENTER_ALWAYS)
+            resposta = dlg.run()
+            dlg.destroy()
+            if resposta == Gtk.ResponseType.YES:
+                run_bg(["systemctl", "reboot"])
         else:
             # Volta o combo para onde estava: deixar mostrando a escolha nova
             # com o sistema no idioma velho seria mentir para o usuário.
