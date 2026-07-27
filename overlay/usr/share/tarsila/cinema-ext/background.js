@@ -82,10 +82,3 @@ async function aplicar() {
 chrome.runtime.onInstalled.addListener(aplicar);
 chrome.runtime.onStartup.addListener(aplicar);
 aplicar();
-
-// --- 3) icone na barra abre os ajustes ---------------------------------------
-// A pagina de opcoes tambem e alcancavel por chrome://extensions, mas isso e
-// caminho de tecnico. O icone e o caminho do usuario.
-chrome.action.onClicked.addListener(() => {
-  chrome.tabs.create({ url: chrome.runtime.getURL("opcoes.html") });
-});

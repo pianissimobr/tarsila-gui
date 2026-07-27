@@ -667,7 +667,10 @@ if [ "$TARSILA_CINEMA" = "1" ] && [ -f "$EXT_SRC/manifest.json" ]; then
         # antes so json+js, e a pagina de opcoes (.html) nunca chegava --
         # o Chromium recusava a extensao com "Could not load options page".
         # O _metadata e do proprio Chromium (indice do DNR): nao copiar.
-        find "$EXT_SRC" -maxdepth 1 -type f -exec cp -f {} "$EXT_USR"/ \; 2>/dev/null
+        # Apaga antes de copiar: sem isto, arquivo removido da fonte sobrevivia
+    # para sempre na copia do HOME. Preserva _metadata/, que e do Chromium.
+    find "$EXT_USR" -maxdepth 1 -type f -delete 2>/dev/null
+    find "$EXT_SRC" -maxdepth 1 -type f -exec cp -f {} "$EXT_USR"/ \; 2>/dev/null
     fi
     FLAGS+=( "--load-extension=$EXT_USR" )
 fi

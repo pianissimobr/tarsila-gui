@@ -19,41 +19,19 @@ CFG = os.path.expanduser("~/.config/tarsila")
 # Perfis de qualidade do Modo Cinema. Medido nesta box (Big Buck Bunny):
 #   1080p60 H.264 -> 298% de CPU e 57C  (perto demais do teto de 400%)
 #   480p30  H.264 ->  44% de CPU e 53C
-# Por isso "maxima" limita a 30fps em 1080p: acima disso a placa nao sustenta.
+# Por isso o 1080p do Automatico limita a 30fps: acima disso a placa nao sustenta.
 QUALIDADE = {
-    "economica": "bv*[height<=?480]+ba/best",
-    "boa":       "bv*[height<=?720][vcodec^=avc1]+ba/bv*[height<=?720]+ba/best",
-    "maxima":    ("bv*[height<=?1080][fps<=?30][vcodec^=avc1]+ba/"
-                  "bv*[height<=?720][vcodec^=avc1]+ba/"
-                  "bv*[height<=?720]+ba/best"),
+    # "auto" NAO e a adaptacao do YouTube -- o mpv escolhe UM formato e fica
+    # nele, nao ha negociacao durante a reproducao. Aqui "auto" significa "a
+    # melhor que ESTA placa sustenta": H.264 ate 1080p e ate 30fps. AV1 e 4K
+    # ficam de fora de proposito (sem VPU no mainline, tudo e software).
+    "auto": ("bv*[height<=?1080][fps<=?30][vcodec^=avc1]+ba/"
+             "bv*[height<=?720][vcodec^=avc1]+ba/bv*[height<=?720]+ba/best"),
+    "1080": ("bv*[height<=?1080][vcodec^=avc1]+ba/"
+             "bv*[height<=?1080]+ba/best"),
+    "720":  "bv*[height<=?720][vcodec^=avc1]+ba/bv*[height<=?720]+ba/best",
+    "480":  "bv*[height<=?480]+ba/best",
 }
-# Chaves expostas na tela de Ajustes. As de 0/1 sao lidas pelo
-# tarsila-chromium (funcao _pref); "qualidade" e lida aqui mesmo; "mobile" e
-# lida pelo service worker da extensao, que pergunta a este host no arranque.
-PADROES = {
-    "qualidade": "boa",   # economica | boa | maxima
-    "gpu": "1",
-    "jitless": "1",
-    "tierb": "1",
-    "hwdec": "1",
-    "cinema": "1",
-    "mobile": "1",
-}
-LIGA_DESLIGA = [k for k in PADROES if k != "qualidade"]
-
-
-def ler(chave):
-    try:
-        with open(os.path.join(CFG, chave), encoding="utf-8") as f:
-            return f.read().strip()
-    except Exception:
-        return PADROES.get(chave, "")
-
-
-def gravar(chave, valor):
-    os.makedirs(CFG, exist_ok=True)
-    with open(os.path.join(CFG, chave), "w", encoding="utf-8") as f:
-        f.write(str(valor).strip() + "\n")
 
 
 def ler_mensagem():
@@ -70,10 +48,13 @@ def responder(obj):
     sys.stdout.buffer.flush()
 
 
-def abrir_no_mpv(url):
+def abrir_no_mpv(url, qualidade=None):
+    """A qualidade vem do microbotao ao lado do "Modo Cinema", por VIDEO.
+    Escolher na hora e melhor que uma tela de configuracao: o usuario decide
+    olhando o video que quer ver, e nao precisa lembrar que a opcao existe."""
     if not url.startswith(("http://", "https://")):
         return {"ok": False, "erro": "URL invalida"}
-    fmt = QUALIDADE.get(ler("qualidade"), QUALIDADE["boa"])
+    fmt = QUALIDADE.get(qualidade) or QUALIDADE["auto"]
     cmd = ["mpv", "--fs", "--hwdec=auto-safe", "--ytdl=yes",
            "--ytdl-format=" + fmt, "--no-terminal", "--osc=yes", url]
     try:
@@ -88,19 +69,8 @@ def abrir_no_mpv(url):
 
 def main():
     msg = ler_mensagem()
-    acao = msg.get("acao", "cinema")
     try:
-        if acao == "ler":
-            responder({"ok": True, "valores": {k: ler(k) for k in PADROES}})
-        elif acao == "gravar":
-            for chave, valor in (msg.get("valores") or {}).items():
-                if chave == "qualidade" and valor in QUALIDADE:
-                    gravar("qualidade", valor)
-                elif chave in LIGA_DESLIGA and str(valor) in ("0", "1"):
-                    gravar(chave, valor)
-            responder({"ok": True, "valores": {k: ler(k) for k in PADROES}})
-        else:
-            responder(abrir_no_mpv(msg.get("url", "")))
+        responder(abrir_no_mpv(msg.get("url", ""), msg.get("qualidade")))
     except Exception as exc:
         responder({"ok": False, "erro": str(exc)})
 
