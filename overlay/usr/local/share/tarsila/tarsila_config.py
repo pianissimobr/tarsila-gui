@@ -1197,6 +1197,10 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         card, lb = make_card("Dispositivos externos")
         box.pack_start(card, False, False, 0)
 
+        # O icone "printer" existe em apps, devices E panel do Papirus, e o
+        # GTK estava pegando a variante fina do panel -- por isso saia claro
+        # demais ao lado do scanner. "gnome-dev-printer" so existe em devices,
+        # a colorida cheia. Mesma armadilha do volume e do "network-wireless".
         # Impressora. O botao so fica disponivel se houver impressora, como
         # pedido: sem nenhuma, ele nao promete o que nao da para fazer.
         tem_impressora = False
@@ -1208,11 +1212,12 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
             btn.set_sensitive(tem_impressora)
             if not tem_impressora:
                 btn.set_tooltip_text("Conecte a impressora para ajustar")
-            add_row(lb, "printer", "Impressora",
+            add_row(lb, "gnome-dev-printer", "Impressora",
                     "Fila de impressão e opções" if tem_impressora
                     else "Nenhuma impressora conectada", btn)
         else:
-            add_row(lb, "printer", "Impressora", "Nenhuma impressora conectada")
+            add_row(lb, "gnome-dev-printer", "Impressora",
+                    "Nenhuma impressora conectada")
 
         # Scanner. Mesmo criterio da impressora: sem aparelho, o botao nao
         # promete o que nao da para fazer.
