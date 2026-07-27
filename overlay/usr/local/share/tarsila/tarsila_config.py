@@ -914,7 +914,7 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
             self._info_dialog(
                 "VPN adicionada",
                 "A conexão \"%s\" foi criada. Para usar, abra "
-                "\"Redes salvas e VPN\" e ligue-a." % nome)
+                "\"Redes salvas\" e ligue-a." % nome)
         else:
             self._info_dialog(
                 "Não foi possível adicionar",
