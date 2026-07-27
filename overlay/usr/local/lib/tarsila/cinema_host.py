@@ -55,8 +55,18 @@ def abrir_no_mpv(url, qualidade=None):
     if not url.startswith(("http://", "https://")):
         return {"ok": False, "erro": "URL invalida"}
     fmt = QUALIDADE.get(qualidade) or QUALIDADE["auto"]
+    # Ja tem video aberto? Entao o clique e repetido: o usuario achou que o
+    # primeiro nao pegou porque o mpv demora a pintar a tela (o yt-dlp precisa
+    # resolver o endereco antes). Abrir um segundo mpv so piora tudo.
+    if subprocess.run(["pgrep", "-x", "mpv"],
+                      stdout=subprocess.DEVNULL).returncode == 0:
+        return {"ok": True, "jaAberto": True}
+
     cmd = ["mpv", "--fs", "--hwdec=auto-safe", "--ytdl=yes",
            "--ytdl-format=" + fmt, "--no-terminal", "--osc=yes", url]
+    # tarsila-abrindo segura a ampulheta e bloqueia cliques ate o mpv pintar.
+    if os.access("/usr/local/bin/tarsila-abrindo", os.X_OK):
+        cmd = ["/usr/local/bin/tarsila-abrindo"] + cmd
     try:
         subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, start_new_session=True)
