@@ -685,6 +685,16 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
             method, ip, gw, dns = self._read_ethernet_ipv4(eth_dev)
             card, lb = make_card("Cabo de rede (Ethernet)")
             box.pack_start(card, False, False, 0)
+            # O ajuste vem ANTES dos numeros: quem abre esta parte quer
+            # primeiro saber COMO o endereco e obtido; os valores em si sao a
+            # consequencia disso.
+            self._eth_conn = eth_conn
+            eth_btn = Gtk.Button(label="Configurar ›")
+            eth_btn.connect("clicked", self._on_ethernet_manual_clicked)
+            add_row(lb, "preferences-system-network",
+                    "IP automático (DHCP)" if method != "manual" else "IP manual",
+                    "Toque para trocar entre automático e manual", eth_btn)
+
             # Um por linha, mas em linhas JUSTAS -- sem icone e com margem
             # menor que a das linhas de acao. Sao informacao, nao botao: o
             # cartao ja diz "Cabo de rede (Ethernet)", e repetir o icone de
@@ -697,25 +707,27 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                 linha_info.set_activatable(False)
                 caixa_info = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
                                      spacing=8)
-                caixa_info.set_margin_start(16)
+                # Alinhado com o TEXTO das outras linhas, nao com o icone
+                # delas: 16 de margem + 24 do icone + 12 de espaco = 52.
+                caixa_info.set_margin_start(52)
                 caixa_info.set_margin_end(16)
                 caixa_info.set_margin_top(2)
                 caixa_info.set_margin_bottom(2)
+                # Mesmo cinza dos subtitulos (alpha 65%): sao informacao de
+                # apoio, nao titulo de linha -- preto cheio pesava demais.
                 nome_lbl = Gtk.Label(xalign=0)
-                nome_lbl.set_markup("<b>%s</b>"
-                                    % GLib.markup_escape_text(rotulo))
+                nome_lbl.set_markup(
+                    '<small><span alpha="65%%"><b>%s</b></span></small>'
+                    % GLib.markup_escape_text(rotulo))
                 caixa_info.pack_start(nome_lbl, False, False, 0)
-                valor_lbl = Gtk.Label(label=valor or "—", xalign=0)
+                valor_lbl = Gtk.Label(xalign=0)
+                valor_lbl.set_markup(
+                    '<small><span alpha="65%%">%s</span></small>'
+                    % GLib.markup_escape_text(valor or "—"))
                 valor_lbl.set_selectable(True)   # da para copiar o endereco
                 caixa_info.pack_start(valor_lbl, False, False, 0)
                 linha_info.add(caixa_info)
                 lb.add(linha_info)
-            self._eth_conn = eth_conn
-            eth_btn = Gtk.Button(label="Configurar ›")
-            eth_btn.connect("clicked", self._on_ethernet_manual_clicked)
-            add_row(lb, "preferences-system-network",
-                    "IP automático (DHCP)" if method != "manual" else "IP manual",
-                    "Toque para trocar entre automático e manual", eth_btn)
 
         # Modo avião com semântica de celular: LIGAR o modo avião DESLIGA
         # os rádios. O original invertia isso ("Rádios ativos"), que obriga
