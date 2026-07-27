@@ -1127,9 +1127,30 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
 
         card, lb = make_card("Energia")
         box.pack_start(card, False, False, 0)
-        add_tool_row(lb, "battery", "Economia de energia",
-                     "Quando apagar a tela ou suspender o computador",
-                     ["xfce4-power-manager-settings"], "Configurar ›")
+        # Aqui havia um botão para o gerenciador de energia do XFCE. Ele abria
+        # reclamando "o gerenciador não está em execução, deseja lançá-lo?",
+        # porque o daemon dele não roda -- a sessão é Openbox, não XFCE.
+        #
+        # Ligar aquele daemon não resolveria nada de útil: este aparelho NÃO
+        # TEM BATERIA (as duas que o sistema lista são do teclado e do mouse
+        # sem fio), o DPMS do X já apaga a tela sozinho, e o descanso de tela
+        # do Tarsila já cuida da ociosidade. Seria um processo a mais na
+        # memória para não fazer nada.
+        #
+        # No lugar, o ajuste que de fato existe: depois de quantos minutos
+        # parado a tela entra em descanso.
+        minutos = 10
+        try:
+            bruto = (Path.home() / ".config/tarsila/descanso-minutos").read_text()
+            minutos = max(0, int(bruto.strip()))
+        except (OSError, ValueError):
+            pass
+        self._descanso_spin = Gtk.SpinButton.new_with_range(0, 120, 5)
+        self._descanso_spin.set_value(minutos)
+        self._descanso_spin.connect("value-changed", self._on_descanso_changed)
+        add_row(lb, "preferences-desktop-screensaver", "Descansar a tela",
+                "Depois de quantos minutos parado (0 desliga)",
+                self._descanso_spin)
 
         # Bateria: só aparece se existir. Em TV box e desktop, nada.
         # "upower -e" também lista baterias de periféricos (teclado/mouse
@@ -1599,6 +1620,20 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         else:
             self._info_dialog("Não foi possível ajustar", "O comando falhou.")
         return False
+
+    def _on_descanso_changed(self, spin):
+        """Grava os minutos de ociosidade.
+
+        O vigia relê este arquivo a cada volta do laço (20 s), então a mudança
+        vale sem sair e entrar de novo. Ele lia uma vez só no arranque; foi
+        ajustado junto com esta tela, senão o controle mentiria."""
+        alvo = Path.home() / ".config/tarsila/descanso-minutos"
+        try:
+            alvo.parent.mkdir(parents=True, exist_ok=True)
+            alvo.write_text("%d\n" % int(spin.get_value()))
+        except OSError:
+            self._info_dialog("Não foi possível salvar",
+                              "O ajuste do descanso de tela não foi gravado.")
 
     def _on_idioma_changed(self, combo):
         escolha = combo.get_active_id()

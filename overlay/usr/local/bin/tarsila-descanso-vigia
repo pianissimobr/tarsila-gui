@@ -4,11 +4,15 @@
 # custo desprezivel, e nao ha nada mais leve disponivel no repositorio
 # (xautolock e xssstate nao existem no trixie).
 # Desligar: basta comentar a chamada no ~/.config/openbox/autostart.
-MIN="$(cat "$HOME/.config/tarsila/descanso-minutos" 2>/dev/null)"
-case "$MIN" in ''|*[!0-9]*) MIN=10 ;; esac
-[ "$MIN" -lt 1 ] && exit 0            # 0 = desligado
-LIMITE=$(( MIN * 60 * 1000 ))
+# O tempo e relido A CADA VOLTA, nao uma vez so no arranque: a tela de Ajustes
+# grava neste arquivo, e o usuario espera que a mudanca valha na hora, sem ter
+# de sair e entrar de novo. Ler um arquivo de dois digitos a cada 20 s nao
+# custa nada perto disso.
 while sleep 20; do
+    MIN="$(cat "$HOME/.config/tarsila/descanso-minutos" 2>/dev/null)"
+    case "$MIN" in ''|*[!0-9]*) MIN=10 ;; esac
+    [ "$MIN" -lt 1 ] && continue      # 0 = desligado, mas segue vigiando
+    LIMITE=$(( MIN * 60 * 1000 ))
     command -v xprintidle >/dev/null || continue
     ocioso=$(xprintidle 2>/dev/null) || continue
     [ -z "$ocioso" ] && continue
