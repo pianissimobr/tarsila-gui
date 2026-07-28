@@ -188,6 +188,20 @@ class Botao(Gtk.Window):
             y = altura_tela - ALTURA
 
         self.move(x, max(0, y))
+        self._acima_da_dock()
+
+    def _acima_da_dock(self):
+        """Mantém o botão à frente da Dock.
+
+        No rodapé o botão ocupa a mesma faixa da janela do Plank, e o Plank
+        fica acima dele na pilha do gerenciador. Enquanto a Dock está
+        escondida não se nota; mas basta ela reaparecer -- pelo empurrão do
+        mouse na borda de baixo -- para o botão ficar coberto e parecer que
+        sumiu. Subir na pilha resolve, e é uma chamada barata: sem processo
+        novo."""
+        janela = self.get_window()
+        if janela is not None:
+            janela.raise_()
 
     def _dock_na_tela(self):
         """A Dock está aparecendo? A regra principal manda; a escolha
@@ -231,6 +245,10 @@ class Botao(Gtk.Window):
 
     # ---------------------------------------------------------- vigia
     def _vigia(self):
+        # No rodapé o botão divide a faixa com a Dock: reafirmar a frente a
+        # cada volta cobre o caso de ela reaparecer por conta própria.
+        if not self._dock_na_tela():
+            self._acima_da_dock()
         agora = ha_maximizada()
         if agora != self.max_antes:
             # Trocou de estado: a escolha manual é esquecida. Maximizou, some;
