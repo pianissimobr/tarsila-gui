@@ -316,7 +316,28 @@ for name in "${!tile_icon_spec[@]}"; do
     wrapper="$TMP_DIR/wrappers/$wrapper_i.sh"
     cat > "$wrapper" << EOF
 #!/bin/sh
+# Um clique marca o item (e o que os botoes Executar/Desinstalar leem).
+# DOIS cliques seguidos no MESMO item abrem o aplicativo, como em qualquer
+# gerenciador de arquivos.
+#
+# Por que aqui e nao numa opcao do yad: no modo --icons ele so oferece
+# --single-click (ativar com um clique) ou o padrao (ativar com dois). Com
+# dois, o clique simples deixaria de marcar, e os botoes perderiam a
+# referencia do que esta selecionado. Guardando o instante do ultimo clique
+# damos conta dos dois comportamentos.
+AGORA=\$(date +%s%N)
+ANTES=""; QUANDO=0
+[ -f "$SELECTION_FILE" ] && ANTES=\$(cat "$SELECTION_FILE" 2>/dev/null)
+[ -f "$SELECTION_FILE.quando" ] && QUANDO=\$(cat "$SELECTION_FILE.quando" 2>/dev/null)
 printf '%s' "$desktop_file" > "$SELECTION_FILE"
+printf '%s' "\$AGORA" > "$SELECTION_FILE.quando"
+if [ "\$ANTES" = "$desktop_file" ] \\
+   && [ \$(( (AGORA - QUANDO) / 1000000 )) -lt 600 ]; then
+    gio launch "$desktop_file" >/dev/null 2>&1 &
+    # Fecha a grade, como acontece ao usar o botao Executar. Matar o yad faz o
+    # laco principal sair pelo mesmo caminho do X/Esc.
+    pkill -x yad
+fi
 EOF
     chmod +x "$wrapper"
     # Cria arquivo .desktop no TMP_DIR
