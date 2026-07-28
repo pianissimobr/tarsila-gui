@@ -2,12 +2,13 @@
 <openbox_config xmlns="http://openbox.org/3.4/rc">
   <resistance>
     <strength>10</strength>
-    <!-- resistência DESLIGADA: a janela pode ser arrastada por cima da faixa
-         da barra de cima, que era o pedido. Quem decide onde o aplicativo
-         MAXIMIZADO termina continua sendo <margins><top>, que fica fixa na
-         altura da barra -- mexer nela na hora da maximização fazia a janela
-         crescer até o topo e ser reajustada em seguida, com um embaralhado
-         visível na barra. -->
+    <!-- resistência DESLIGADA: a janela pode ser arrastada por cima da
+         faixa da barra de cima, que era o pedido.
+         Quem decide onde o aplicativo MAXIMIZADO termina continua sendo a
+         margem do topo, e ela fica fixa na altura da barra. Alterná-la
+         conforme a maximização fazia a janela crescer até o topo e ser
+         reajustada logo depois: era desenhada duas vezes, e dava um
+         embaralhado visível na barra. -->
     <screen_edge_strength>0</screen_edge_strength>
   </resistance>
   <focus>

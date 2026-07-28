@@ -85,6 +85,22 @@ if not colisoes:
     print("  nenhum")
 PY
 
+# Um rc.xml malformado nao derruba o Openbox: ele recusa o arquivo, abre uma
+# janela de "Erro de Sintaxe" e SEGUE com a configuracao velha. O ajuste
+# parece aplicado (esta la no arquivo) mas nao vale nada. Ja aconteceu: um
+# comentario com dois hifens no meio, que XML nao permite.
+echo
+echo "XML dos arquivos de configuracao:"
+for x in $(find openbox skel overlay -name "*.xml" 2>/dev/null); do
+    if python3 -c "import sys,xml.dom.minidom as m; m.parse(sys.argv[1])" "$x" 2>/dev/null; then
+        printf '  ok      %s\n' "$x"
+    else
+        printf '  QUEBRADO  %s\n' "$x"
+        python3 -c "import sys,xml.dom.minidom as m; m.parse(sys.argv[1])" "$x" 2>&1 | tail -1 | sed 's/^/            /'
+        falhas=$((falhas + 1))
+    fi
+done
+
 if [ "$falhas" -eq 0 ]; then
     echo
     echo "Tudo conferido."
