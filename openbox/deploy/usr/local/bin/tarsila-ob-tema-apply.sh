@@ -17,7 +17,10 @@ CFG="$HOME/.config/tarsila"; mkdir -p "$CFG"
 exec 9>"$CFG/.tema-apply.lock"
 flock -w 10 9 || echo "aviso: outra aplicacao de tema em curso; seguindo" >&2
 case "$TEMA" in
-  padrao)      WP=$PADRAO_WP;                   DOCK=Tarsila-Gelo ;;
+  # Dock no azul-marinho (21,17,40) e nao no gelo (237,241,244): o claro
+  # ficava bonito com a area de trabalho limpa, mas com varias janelas
+  # abertas ele se confundia com elas e a Dock sumia no meio da tela.
+  padrao)      WP=$PADRAO_WP;                   DOCK=Tarsila ;;
   maritimo)    WP=$WALLDIR/tema-maritimo.png;   DOCK=Tarsila-Maritimo ;;
   escuro)      WP=$WALLDIR/tema-escuro.png;     DOCK=Tarsila-Escuro ;;
   brasileiro)  WP=$WALLDIR/tema-brasileiro.png; DOCK=Tarsila-Brasileiro ;;
@@ -27,7 +30,7 @@ case "$TEMA" in
     WP="$HOME/.local/share/tarsila/wallpaper-pessoal.${IMAGEM##*.}"; cp -f "$IMAGEM" "$WP" ;;
   *) echo "tema desconhecido: $TEMA" >&2; exit 1 ;;
 esac
-[ "$TEMA" = personalizado ] && DOCK=Tarsila-Gelo
+[ "$TEMA" = personalizado ] && DOCK=Tarsila
 feh --no-fehbg --bg-fill "$WP" 2>/dev/null
 dconf write /net/launchpad/plank/docks/dock1/theme "'$DOCK'" 2>/dev/null || true
 echo "$TEMA" > "$CFG/tema"; echo "$WP" > "$CFG/tema-wallpaper"

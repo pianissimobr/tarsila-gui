@@ -43,7 +43,7 @@ case "$_tema" in
   maritimo)   _dock=Tarsila-Maritimo ;;
   escuro)     _dock=Tarsila-Escuro ;;
   brasileiro) _dock=Tarsila-Brasileiro ;;
-  *)          _dock=Tarsila-Gelo ;;      # padrao e personalizado
+  *)          _dock=Tarsila ;;      # padrao e personalizado
 esac
 dconf write /net/launchpad/plank/docks/dock1/theme "'$_dock'"
 dconf write /net/launchpad/plank/docks/dock1/position "'bottom'"
