@@ -38,7 +38,8 @@ import cairo
 import gi
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, Gdk, GLib
+gi.require_version("GdkX11", "3.0")
+from gi.repository import Gtk, Gdk, GdkX11, GLib
 
 LARGURA = 46
 ALTURA = 20
@@ -120,12 +121,145 @@ def roda(*args):
         pass
 
 
-def ha_maximizada():
+def estado_da_tela():
+    """(há janela maximizada, id da janela ativa)."""
     try:
         with open(ESTADO_TOPO, encoding="utf-8", errors="ignore") as f:
-            return "MAX=1" in f.read()
+            texto = f.read()
     except OSError:
-        return False
+        return False, None
+    ident = None
+    for linha in texto.splitlines():
+        if linha.startswith("ID="):
+            try:
+                ident = int(linha[3:].strip())
+            except ValueError:
+                ident = None
+    return ("MAX=1" in texto), ident
+
+
+def ha_maximizada():
+    return estado_da_tela()[0]
+
+
+class MemoriaDeJanelas:
+    """Guarda onde cada janela estava antes de ser maximizada.
+
+    O normal é o gerenciador devolver a janela ao lugar de antes quando ela
+    sai do maximizado, e para quase todo aplicativo é o que acontece. Menos
+    para os que redimensionam em passos: o terminal cresce de linha em linha,
+    e o Openbox erra a conta na volta. Medido aqui: um terminal em 817x485
+    voltava com 1357x694 -- praticamente maximizado de novo.
+
+    Então guardamos o quadro enquanto a janela está solta e o repomos quando
+    ela sai do maximizado. Vale SÓ para maximizar e desmaximizar: aplicativo
+    que abre do zero continua nascendo como o programa manda, sem memória de
+    onde esteve da última vez.
+    """
+
+    LIMITE = 40      # janelas lembradas; além disso as mais antigas saem
+
+    def __init__(self):
+        self.quadros = {}
+        self.maximizada = None
+
+    @staticmethod
+    def _janela_ativa():
+        """Id da janela em foco. O arquivo de estado só traz o id quando há
+        maximizada -- fora disso é aqui que descobrimos quem está na frente.
+        Consulta ao X, sem abrir processo."""
+        Gdk.error_trap_push()
+        try:
+            ativa = Gdk.Screen.get_default().get_active_window()
+            return ativa.get_xid() if ativa is not None else None
+        except Exception:
+            return None
+        finally:
+            Gdk.Display.get_default().sync()
+            Gdk.error_trap_pop_ignored()
+
+    @staticmethod
+    def _quadro(xid):
+        """Onde a janela está e de que tamanho, sem abrir processo.
+
+        A posição é a do QUADRO (com a barra de título) e o tamanho é o do
+        CONTEÚDO, que é exatamente o par que o wmctrl espera na volta. Guardar
+        o tamanho do quadro faria a janela engordar a espessura da moldura a
+        cada ida e volta."""
+        # A janela pode ter sido fechada entre uma volta e outra. Perguntar
+        # por uma janela que nao existe mais gera um erro do X, e erro do X
+        # NAO vira excecao em Python: o GDK derruba o processo inteiro. Foi
+        # exatamente o que aconteceu -- o programa morria e levava junto o
+        # botao da Dock e o fundo da barra. A armadilha abaixo engole isso.
+        Gdk.error_trap_push()
+        try:
+            tela = GdkX11.X11Display.get_default()
+            janela = GdkX11.X11Window.foreign_new_for_display(tela, xid)
+            if janela is None:
+                return None
+            moldura = janela.get_frame_extents()
+            _, _, largura, altura = janela.get_geometry()
+            if largura <= 0 or altura <= 0:
+                return None
+            return (moldura.x, moldura.y, largura, altura)
+        except Exception:
+            return None
+        finally:
+            Gdk.Display.get_default().sync()
+            Gdk.error_trap_pop_ignored()
+
+    def acompanhar(self, maximizada, ident):
+        if maximizada:
+            if ident:
+                self.maximizada = ident
+            return
+        if not ident:
+            ident = self._janela_ativa()
+
+        saiu = self.maximizada
+        self.maximizada = None
+        if saiu is not None:
+            guardado = self.quadros.get(saiu)
+            if guardado:
+                x, y, l, a = guardado
+                roda("wmctrl", "-i", "-r", str(saiu),
+                     "-e", "0,%d,%d,%d,%d" % (x, y, l, a))
+                self.quadros.pop(saiu, None)
+                # Nesta volta o quadro na tela ainda é o errado: não guardar.
+                return
+
+        if ident:
+            atual = self._quadro(ident)
+            if atual and not self._parece_maximizada(atual):
+                if len(self.quadros) >= self.LIMITE:
+                    self.quadros.pop(next(iter(self.quadros)), None)
+                self.quadros[ident] = atual
+
+    @staticmethod
+    def _parece_maximizada(quadro):
+        """A janela ocupa praticamente a tela toda?
+
+        Precisamos disto porque o arquivo de estado demora a anotar a
+        maximização: ela acontece sem trocar a janela em foco, e quem escreve
+        o arquivo só relê de tempos em tempos. Nesse intervalo a janela já
+        está maximizada e o arquivo ainda diz que não -- e nós guardávamos o
+        tamanho da tela inteira como se fosse o tamanho solto dela. A volta do
+        maximizar então repunha justamente o que se queria desfazer.
+
+        A conta é por proporção da tela, não por número fixo, e é folgada de
+        propósito: uma janela que o usuário deixou ocupando quase tudo não
+        serve como "lugar de antes" -- e se ela não for lembrada, o pior que
+        acontece é o gerenciador cuidar da volta sozinho, como sempre fez.
+        """
+        _, _, largura, altura = quadro
+        try:
+            tela = Gdk.Screen.get_default()
+            lt, at = tela.get_width(), tela.get_height()
+        except Exception:
+            return False
+        if lt <= 0 or at <= 0:
+            return False
+        return largura >= lt * 0.92 and altura >= at * 0.85
 
 
 class Botao(Gtk.Window):
@@ -165,6 +299,7 @@ class Botao(Gtk.Window):
         self.escondida = False      # escolha manual do usuário
         self.destacado = False      # mouse em cima
         self.max_antes = ha_maximizada()
+        self.memoria = MemoriaDeJanelas()
         self.plank = self._acha_plank()
 
         self.show_all()
@@ -231,13 +366,26 @@ class Botao(Gtk.Window):
 
     # -------------------------------------------------------- posição
     def _acha_plank(self):
+        """A janela da Dock -- a MAIOR entre as do Plank.
+
+        O Plank tem mais de uma janela no X, e a busca devolve todas. Pegar a
+        última dava a janela errada de vez em quando, e o botão ia parar no
+        meio da tela. A Dock é, de longe, a mais larga."""
         try:
             r = subprocess.run(["xdotool", "search", "--class", "plank"],
                                capture_output=True, text=True, timeout=5)
             ids = r.stdout.split()
-            return ids[-1] if ids else None
         except Exception:
             return None
+        melhor, maior = None, 0
+        for xid in ids:
+            quadro = MemoriaDeJanelas._quadro(int(xid))
+            if not quadro:
+                continue
+            area = quadro[2] * quadro[3]
+            if area > maior:
+                melhor, maior = xid, area
+        return melhor or (ids[-1] if ids else None)
 
     def _topo_da_dock(self):
         """Y da borda de cima da Dock, medido -- nada de número fixo."""
@@ -245,14 +393,30 @@ class Botao(Gtk.Window):
             self.plank = self._acha_plank()
         if not self.plank:
             return None
-        try:
-            r = subprocess.run(["xdotool", "getwindowgeometry", "--shell",
-                                self.plank], capture_output=True, text=True,
-                               timeout=5)
-            d = dict(l.split("=", 1) for l in r.stdout.splitlines() if "=" in l)
-            return int(d["Y"])
-        except Exception:
+        topo = self._medir(self.plank)
+        if topo is None:
+            # A Dock pode ter acabado de ser remapeada e a medida vir crua.
+            # Refaz a busca uma vez antes de desistir.
+            self.plank = self._acha_plank()
+            topo = self._medir(self.plank) if self.plank else None
+        return topo
+
+    @staticmethod
+    def _medir(xid):
+        """Y da Dock, se a medida fizer sentido.
+
+        A Dock vive encostada embaixo. Uma leitura que a coloque na metade de
+        cima da tela é lixo -- acontecia logo depois de ela ser remapeada, e
+        jogava o botão para o alto da tela."""
+        quadro = MemoriaDeJanelas._quadro(int(xid))
+        if not quadro:
             return None
+        y = quadro[1]
+        try:
+            altura_tela = Gdk.Screen.get_default().get_height()
+        except Exception:
+            return y
+        return y if y > altura_tela / 2 else None
 
     def _posiciona(self):
         tela = self.get_screen()
@@ -325,6 +489,8 @@ class Botao(Gtk.Window):
 
     # ---------------------------------------------------------- vigia
     def _vigia(self):
+        maximizada, ident = estado_da_tela()
+        self.memoria.acompanhar(maximizada, ident)
         # No rodapé o botão divide a faixa com a Dock: reafirmar a frente a
         # cada volta cobre o caso de ela reaparecer por conta própria.
         if not self._dock_na_tela():
