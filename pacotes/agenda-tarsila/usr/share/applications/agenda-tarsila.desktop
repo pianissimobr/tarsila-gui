@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=Agenda Tarsila
+GenericName=Calendário
+Comment=Calendário nativo integrado ao Google Agenda
+Exec=agenda-tarsila
+Icon=agenda-tarsila
+Terminal=false
+Type=Application
+Categories=Office;Calendar;GTK;
+Keywords=agenda;calendário;calendar;google;eventos;
+StartupNotify=true
+StartupWMClass=agenda-tarsila

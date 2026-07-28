@@ -1,0 +1,14 @@
+#!/bin/sh
+# Nao existe venv nem dependencia externa: roda no python3 do sistema.
+PY=/usr/bin/python3
+[ -x "$PY" ] || PY=$(command -v python3 2>/dev/null)
+if [ -z "$PY" ]; then
+    echo "python3 nao encontrado. Instale: sudo apt install python3" >&2
+    exit 1
+fi
+if ! "$PY" -c 'import gi' >/dev/null 2>&1; then
+    echo "GTK ausente. Instale:" >&2
+    echo "  sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0" >&2
+    exit 1
+fi
+exec "$PY" /opt/agenda-tarsila/agenda_tarsila.py "$@"

@@ -1,2 +1,10 @@
 __pycache__/
 *.pyc
+
+# Credenciais do app da Agenda no Google Cloud: incluem o segredo do cliente.
+# Nao entram no repositorio, nem sendo ele privado.
+credentials.json
+pacotes/**/credentials.json
+
+# Saidas de build
+*.deb

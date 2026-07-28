@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+
+# Restos das versoes 1.x/2.x (venv e script de dependencias) nao sao mais usados.
+rm -rf /opt/agenda-tarsila/venv
+rm -rf /opt/agenda-tarsila/vendor
+rm -rf /opt/agenda-tarsila/__pycache__
+rm -f /usr/bin/agenda-tarsila-dependencias
+
+if [ -f /etc/agenda-tarsila/credentials.json ]; then
+    chmod 644 /etc/agenda-tarsila/credentials.json || true
+fi
+
+if which update-icon-caches >/dev/null 2>&1; then
+    update-icon-caches /usr/share/icons/hicolor >/dev/null 2>&1 || true
+elif which gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -f -t /usr/share/icons/hicolor >/dev/null 2>&1 || true
+fi
+if which update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database -q /usr/share/applications || true
+fi
+exit 0
