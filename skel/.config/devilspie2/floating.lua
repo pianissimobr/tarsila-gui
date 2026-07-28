@@ -59,3 +59,44 @@ if get_window_class() == "Chromium" then
 else
   unmaximize()
 end
+
+-- REDE DE SEGURANCA (2026-07-28): nenhuma janela de dialogo maior que a
+-- area util da tela.
+--
+-- O caso que motivou: o "Salvar como" do AbiWord abre com 822px de altura
+-- numa tela de 768 -- os botoes Salvar e Cancelar caem para fora da tela e
+-- o usuario nao tem como concluir. O tamanho dos dialogos de arquivo e
+-- normalmente governado por uma unica chave do GTK
+-- (org.gtk.Settings.FileChooser window-size), valida para todos os apps
+-- GTK3 de uma vez; mas alguns apps de terceiros dimensionam o proprio
+-- dialogo e ignoram essa chave. Para esses, o unico lugar que ainda pode
+-- agir e aqui.
+--
+-- Isto NAO e o posicionamento em cascata que foi removido em 2026-07-19 e
+-- que nao deve voltar: aquele impunha geometria a TODA janela e acabava
+-- desenhando janela fora da tela. Esta regra faz o inverso e so age quando
+-- a janela JA nao cabe -- se couber, nao encosta nela. Nenhum app e citado
+-- pelo nome, e nenhuma medida e fixa: a area util vem do proprio
+-- gerenciador de janelas (_NET_WORKAREA, que ja desconta a barra de cima).
+local function area_util()
+  local p = io.popen("xprop -root _NET_WORKAREA 2>/dev/null")
+  if not p then return nil end
+  local linha = p:read("*a"); p:close()
+  local x, y, l, a = linha:match("=%s*(%d+),%s*(%d+),%s*(%d+),%s*(%d+)")
+  if not x then return nil end
+  return tonumber(x), tonumber(y), tonumber(l), tonumber(a)
+end
+
+local tipo = get_window_type()
+if tipo == "WINDOW_TYPE_DIALOG" or tipo == "WINDOW_TYPE_UTILITY" then
+  local jx, jy, jl, ja = get_window_geometry()
+  local ax, ay, al, aa = area_util()
+  if al and (jl > al or ja > aa) then
+    -- Encolhe so o que precisa, ate no maximo 4/5 da area util, e
+    -- centraliza no espaco que sobra.
+    local nl = math.min(jl, math.floor(al * 0.8))
+    local na = math.min(ja, math.floor(aa * 0.8))
+    set_window_geometry(math.floor(ax + (al - nl) / 2),
+                        math.floor(ay + (aa - na) / 2), nl, na)
+  end
+end

@@ -1,7 +1,8 @@
 #!/bin/bash
 # Indicador de rede: icone Font Awesome 4 (bytes UTF-8), herda a cor do
 # texto do tema. Clique abre nm-connection-editor (config.ini).
-WIRED=$(printf '\xef\x87\xa6')   # plug (FA4 nao tem ethernet)
+# Cabo = globo (rede/internet); wifi = antenas; sem rede = ban.
+WIRED=$(printf '\xef\x82\xac')   # globe
 WIFI=$(printf '\xef\x87\xab')    # wifi
 OFF=$(printf '\xef\x81\x9e')     # ban
 st=$(nmcli -t -f TYPE,STATE device 2>/dev/null)

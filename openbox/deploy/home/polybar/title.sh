@@ -5,6 +5,18 @@
 RT="${XDG_RUNTIME_DIR:-/tmp}"; STATE="$RT/tarsila-topbar-state.txt"
 emit(){
   id=$(xdotool getactivewindow 2>/dev/null)
+    # O Thunar chama a janela de "pasta - Thunar". O usuario nao conhece esse
+    # nome: para ele o programa se chama Arquivos, e o sufixo so confunde.
+    # Nao ha opcao no Thunar nem no devilspie2 para isso, entao reescrevemos o
+    # titulo aqui -- aproveitando este laco, que ja acorda a cada mudanca de
+    # janela ativa, em vez de criar mais um processo vigiando.
+    if [ -n "$id" ]; then
+      t=$(xdotool getwindowname "$id" 2>/dev/null)
+      case "$t" in
+        *" - Thunar")
+          xdotool set_window --name "${t% - Thunar}" "$id" 2>/dev/null ;;
+      esac
+    fi
   if [ -n "$id" ] && xprop -id "$id" _NET_WM_STATE 2>/dev/null | grep -q MAXIMIZED; then
     name=$(xdotool getwindowname "$id" 2>/dev/null)
     wmclass=$(xprop -id "$id" WM_CLASS 2>/dev/null | sed -n 's/.*"\([^"]*\)", "[^"]*".*/\1/p')

@@ -43,9 +43,53 @@ conferir "configurar-claws-gui"  "$TMP/configurar-claws-gui"  overlay/usr/bin/co
 conferir "agenda_tarsila.py"     pacotes/agenda-tarsila/opt/agenda-tarsila/agenda_tarsila.py \
                                  overlay/opt/agenda-tarsila/agenda_tarsila.py
 
+# ------------------------------------------------------------------
+# O repositório tem TRÊS árvores que instalam arquivos, e cada uma tem o
+# seu instalador:
+#
+#   overlay/         -> /            (install.sh)
+#   skel/            -> ~            (install.sh)
+#   openbox/deploy/  -> / e ~/.config  (openbox/deploy-install.sh)
+#
+# Um mesmo programa em duas delas é armadilha: dependendo de qual
+# instalador rodou por último, a máquina fica com uma versão ou com a
+# outra. Já aconteceu — a polybar existia em openbox/deploy e foi
+# duplicada em skel sem que ninguém notasse.
+echo
+echo "Arquivos em mais de uma árvore:"
+python3 - <<'PY'
+import os
+from collections import defaultdict
+
+# O destino final é o que importa: dois arquivos que pousam no mesmo
+# lugar colidem, mesmo com caminhos diferentes no repositório.
+destinos = defaultdict(list)
+for base, prefixo in (("overlay", "/"),
+                      ("skel", "~/"),
+                      ("openbox/deploy/usr", "/usr/"),
+                      ("openbox/deploy/etc", "/etc/"),
+                      ("openbox/deploy/home", "~/.config/")):
+    if not os.path.isdir(base):
+        continue
+    for raiz, _, arquivos in os.walk(base):
+        for a in arquivos:
+            caminho = os.path.join(raiz, a)
+            destinos[prefixo + os.path.relpath(caminho, base)].append(caminho)
+
+colisoes = {d: c for d, c in destinos.items() if len(c) > 1}
+for destino, copias in sorted(colisoes.items()):
+    print("  COLIDE  %s" % destino)
+    for c in copias:
+        print("            %s" % c)
+if not colisoes:
+    print("  nenhum")
+PY
+
 if [ "$falhas" -eq 0 ]; then
+    echo
     echo "Tudo conferido."
 else
+    echo
     echo "$falhas divergencia(s)."
 fi
 exit $(( falhas > 0 ))

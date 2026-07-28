@@ -27,6 +27,11 @@ dunst &
 ( /usr/local/bin/tarsila-dock-apply.sh 2>/dev/null; exec plank ) &
 
 # regras de janela (workspace lógico 2, unmaximize, exceções) — igual XFCE
+# Tamanho das janelas Abrir/Salvar como (chave unica do GTK, valida para
+# todos os aplicativos). Conserta no login um valor que tenha sido
+# esticado durante o uso.
+/usr/local/bin/tarsila-dialogos &
+
 devilspie2 &
 
 # daemon residente: contagem/sons/renice + alimenta o estado do top bar

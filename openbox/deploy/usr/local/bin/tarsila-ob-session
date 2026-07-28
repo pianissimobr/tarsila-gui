@@ -7,6 +7,5 @@
 export XDG_CURRENT_DESKTOP=Openbox
 export XDG_SESSION_TYPE=x11
 export XDG_SESSION_DESKTOP=tarsila-openbox
-export TARSILA_GPU=0
 # GTK/Qt pegam tema/ícones via xsettingsd (subido no autostart)
 exec openbox-session

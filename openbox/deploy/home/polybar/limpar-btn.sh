@@ -6,7 +6,7 @@
 ICON=$(printf '\xef\x83\x90')   # fa-magic (FontAwesome, %{T3})
 BG='#dbe0e5'
 emit(){
-  n=$(wmctrl -lx 2>/dev/null | grep -viE 'plank|polybar|xfce4-panel|xfdesktop' | wc -l)
+  n=$(wmctrl -lx 2>/dev/null | grep -viE 'plank|polybar|xfce4-panel|xfdesktop|tarsila-aviso|tarsila-barra-menu|Dunst|notification' | wc -l)
   if [ "${n:-0}" -gt 0 ]; then
     printf '%%{B%s} %%{T3}%s%%{T-} %%{B-}\n' "$BG" "$ICON"
   else
