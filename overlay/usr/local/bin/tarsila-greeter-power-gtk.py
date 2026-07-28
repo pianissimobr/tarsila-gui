@@ -101,6 +101,19 @@ def main():
     win.set_skip_taskbar_hint(True)
     win.set_keep_above(True)
     win.set_default_size(26, 26)
+    # NAO aceitar foco -- e o que consertava o clique da tela de login.
+    #
+    # O greeter roda SEM gerenciador de janelas, entao nao existe "clicar para
+    # focar": o foco de teclado fica com quem o pediu. Esta janelinha, sendo
+    # uma janela GTK comum, tomava o foco ao aparecer e nunca devolvia. O campo
+    # de senha ficava sem foco, e o clique esquerdo nele nao surtia efeito --
+    # o usuario precisava clicar com o direito antes, porque o menu de contexto
+    # forcava o foco a mudar.
+    #
+    # Com estas duas linhas ela nunca toma o foco: continua clicavel (clique
+    # nao depende de foco), e o campo de senha permanece pronto para digitar.
+    win.set_accept_focus(False)
+    win.set_focus_on_map(False)
 
     botao = Gtk.Button()
     img = Gtk.Image.new_from_icon_name("system-shutdown-symbolic",
