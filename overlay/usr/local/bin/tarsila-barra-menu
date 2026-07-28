@@ -11,6 +11,7 @@ Fecha ao perder o foco ou com Esc, como todo menu.
 
 Uso:  tarsila-barra-menu som
       tarsila-barra-menu rede
+      tarsila-barra-menu calendario
 """
 
 import re
@@ -126,6 +127,8 @@ class Popup(Gtk.Window):
 
         if modo == "som":
             self._monta_som(caixa)
+        elif modo == "calendario":
+            self._monta_calendario(caixa)
         else:
             self._monta_rede(caixa)
 
@@ -236,6 +239,27 @@ class Popup(Gtk.Window):
         pct, agora = volume_atual()
         self._mostra(pct, agora)
         self._icone_mudo(agora)
+
+    # ---- calendário
+    def _monta_calendario(self, caixa):
+        """Só o calendário do mês, sem nada em volta.
+
+        Quem clica no relógio quer ver "que dia é hoje" ou "em que dia da
+        semana cai o dia 20". Um seletor de mês e ano já bastaria confundir,
+        então ficam só as setas do próprio calendário."""
+        cal = Gtk.Calendar()
+        cal.set_display_options(Gtk.CalendarDisplayOptions.SHOW_HEADING
+                                | Gtk.CalendarDisplayOptions.SHOW_DAY_NAMES)
+        # Clicar num dia não faz nada -- não há para onde ir. Mas o duplo
+        # clique voltaria para o mês de hoje, que é útil depois de navegar.
+        cal.connect("day-selected-double-click", lambda *_: self._hoje(cal))
+        caixa.pack_start(cal, False, False, 0)
+
+    @staticmethod
+    def _hoje(cal):
+        agora = GLib.DateTime.new_now_local()
+        cal.select_month(agora.get_month() - 1, agora.get_year())
+        cal.select_day(agora.get_day_of_month())
 
     # ---- rede
     def _monta_rede(self, caixa):

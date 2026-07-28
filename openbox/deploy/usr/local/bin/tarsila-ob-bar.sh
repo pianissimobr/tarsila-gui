@@ -6,17 +6,21 @@
 # de painel do XFCE.
 CFG="$HOME/.config/tarsila"
 TEMA=padrao; [ -f "$CFG/tema" ] && read -r TEMA < "$CFG/tema"
-# TOP BAR SEMPRE NA COR DO TEMA PADRAO -- decisao de design (2026-07-26).
-# A top bar nao e so uma barra: ela ABRIGA o titulo da janela ativa e os botoes
-# de fechar/restaurar. Essa integracao so fica coerente na cor clara do padrao;
-# em teal, verde ou preto o conjunto titulo+botoes destoa. Entao a cor da barra
-# deixou de acompanhar o tema. O TEMA continua mandando no papel de parede e na
-# Dock -- so a barra ficou fixa.
-# Para voltar a acompanhar o tema, e so devolver as linhas comentadas abaixo:
-#   maritimo)      TB_BG=#194350; TB_FG=#f2f6f7; TB_DIM=#5a7c86 ;;
-#   escuro)        TB_BG=#101014; TB_FG=#e8e8ea; TB_DIM=#55555c ;;
-#   brasileiro)    TB_BG=#1B472C; TB_FG=#f4f7f2; TB_DIM=#5f8a70 ;;
+# A barra voltou a acompanhar o tema, menos no padrao (2026-07-28).
+#
+# Em 26/07 ela tinha sido fixada na cor clara do padrao, porque abriga o titulo
+# da janela ativa e os botoes de fechar/restaurar, e esse conjunto destoava
+# sobre teal, verde ou preto. O que mudou desde entao: sem janela maximizada a
+# barra ficou TRANSPARENTE, e os escritos passaram a cair direto sobre o papel
+# de parede. Nos temas escuros, texto escuro sobre papel escuro nao se le.
+#
+# Por isso os outros temas recebem fonte clara. E o fundo tem de acompanhar:
+# quando ha janela maximizada o retangulo solido volta, e fonte clara sobre
+# fundo claro seria igualmente ilegivel. O padrao fica exatamente como estava.
 case "$TEMA" in
+  maritimo)      TB_BG=#194350; TB_FG=#f2f6f7; TB_DIM=#5a7c86 ;;
+  escuro)        TB_BG=#101014; TB_FG=#e8e8ea; TB_DIM=#55555c ;;
+  brasileiro)    TB_BG=#1B472C; TB_FG=#f4f7f2; TB_DIM=#5f8a70 ;;
   *)             TB_BG=#EDF1F4; TB_FG=#2a2e32; TB_DIM=#9aa4ac ;;
 esac
 H=$(xrandr --query 2>/dev/null | sed -n 's/.* connected \(primary \)\?[0-9]\+x\([0-9]\+\)+.*/\2/p' | head -1)
@@ -51,4 +55,10 @@ sed -e "s/__HEIGHT__/$TB_HEIGHT/g" \
     "$TPL" > "$GEN"
 polybar-msg cmd quit >/dev/null 2>&1
 sleep 0.3
+# O nome do mes no relogio sai pelo idioma do processo, e o polybar nao
+# herdava nenhum: mostrava "28 de July" num sistema em portugues. O LC_TIME
+# vem do idioma escolhido pelo usuario em /etc/default/locale, entao trocar o
+# idioma do sistema continua trocando o mes junto.
+LC_TIME=$(. /etc/default/locale 2>/dev/null; echo "${LC_TIME:-${LANG:-pt_BR.UTF-8}}")
+export LC_TIME
 polybar -c "$GEN" tarsila >/tmp/polybar-tarsila.log 2>&1 &

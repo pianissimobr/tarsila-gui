@@ -3,8 +3,13 @@
 
 # --- bordas ---
 border.width: 1
-window.active.border.color: #dbdfe3
-window.inactive.border.color: #e9ecee
+# A borda era quase branca (#dbdfe3 / #e9ecee) e sumia: sobre o papel de
+# parede claro, ou com duas janelas encostadas, nao dava para ver onde uma
+# terminava e a outra comecava. Agora e um cinza que marca o contorno sem
+# virar moldura -- a janela em foco um pouco mais escura que as outras, para
+# se distinguir delas.
+window.active.border.color: #8b959d
+window.inactive.border.color: #b9c0c6
 
 # --- barra de titulo (cinza claro sutil) ---
 padding.width: 8
