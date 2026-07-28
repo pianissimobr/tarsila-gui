@@ -31,6 +31,12 @@ dunst &
 # Sobe depois do plank porque precisa medir onde a Dock ficou.
 (sleep 4; /usr/local/bin/tarsila-tela-estados) &
 
+# Aquece o cache de disco do navegador enquanto a area de trabalho sobe. Sem
+# isto o Chromium leva ~18s para abrir na primeira vez do dia e ~5s nas
+# seguintes -- medido. O programa espera a area de trabalho terminar de subir,
+# confere se ha memoria sobrando e faz o trabalho fora da tela.
+/usr/local/bin/tarsila-aquecer &
+
 # regras de janela (workspace lógico 2, unmaximize, exceções) — igual XFCE
 # Tamanho das janelas Abrir/Salvar como (chave unica do GTK, valida para
 # todos os aplicativos). Conserta no login um valor que tenha sido
