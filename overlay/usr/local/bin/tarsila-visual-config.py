@@ -202,7 +202,7 @@ def configure_dock_behavior():
     print("\n🔧 Configurando comportamento da Dock...")
     dock_settings = {
         "/net/launchpad/plank/docks/dock1/hide-mode": "'dodge-maximized'",
-        "/net/launchpad/plank/docks/dock1/hide-delay": "3000",
+        "/net/launchpad/plank/docks/dock1/hide-delay": "0",
         "/net/launchpad/plank/docks/dock1/position": "'bottom'",
         "/net/launchpad/plank/docks/dock1/pinned-only": "true",
         "/net/launchpad/plank/docks/dock1/lock-items": "true",

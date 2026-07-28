@@ -17,7 +17,12 @@
 -- deslocou o xfdesktop da tela (0,0) para uma posicao de cascata,
 -- deixando faixas pretas onde devia estar o papel de parede.
 -- Comparado por WM_CLASS (classe, nao instancia).
-local SYSTEM_CLASSES = { Xfdesktop = true, ["Xfce4-panel"] = true, Plank = true }
+local SYSTEM_CLASSES = { Xfdesktop = true, ["Xfce4-panel"] = true,
+                         Plank = true,
+                         -- o botao de mostrar/esconder a Dock e parte
+                         -- do painel: nao muda de area de trabalho nem
+                         -- entra em nenhuma regra de tamanho
+                         ["Tarsila-dock-botao"] = true }
 if SYSTEM_CLASSES[get_window_class()] then
   return
 end

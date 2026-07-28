@@ -1,0 +1,254 @@
+#!/usr/bin/env python3
+"""Botão que mostra e esconde a Dock.
+
+Fica encostado no meio da borda de cima da Dock, com o desenho de um losango
+partido ao meio -- um "v" invertido em cima, um "v" embaixo. Clicou, a Dock
+some e o botão desce para o rodapé da tela, no centro; clicou de novo, a Dock
+volta e o botão sobe com ela.
+
+Ele NÃO manda na regra principal. A Dock some quando há uma janela
+maximizada e volta quando não há mais -- isso é do próprio Plank
+(hide-mode=dodge-maximized) e continua valendo. O que este botão oferece é
+uma escolha manual para o resto do tempo. A cada troca de estado de
+maximização a escolha manual é esquecida: maximizou, some; desmaximizou,
+aparece, não importa o que o botão tenha feito antes.
+
+Enquanto há janela maximizada o botão fica no rodapé e não mexe na Dock --
+nesse caso quem manda é a regra principal, e para espiar a Dock o usuário já
+tem o empurrão do mouse contra a borda de baixo.
+"""
+
+import math
+import os
+import subprocess
+
+import cairo
+import gi
+
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk, Gdk, GLib
+
+LARGURA = 46
+ALTURA = 20
+
+# Onde o tarsila-title.sh anota se há janela maximizada. É a mesma fonte que
+# o devilspie2 e as bolinhas do topo usam -- ler daqui evita perguntar ao X
+# de novo a cada segundo.
+RT = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
+ESTADO_TOPO = os.path.join(RT, "tarsila-topbar-state.txt")
+
+
+def roda(*args):
+    try:
+        subprocess.run(args, capture_output=True, timeout=4)
+    except Exception:
+        pass
+
+
+def ha_maximizada():
+    try:
+        with open(ESTADO_TOPO, encoding="utf-8", errors="ignore") as f:
+            return "MAX=1" in f.read()
+    except OSError:
+        return False
+
+
+class Botao(Gtk.Window):
+    def __init__(self):
+        super().__init__(type=Gtk.WindowType.TOPLEVEL)
+        # DOCK: o gerenciador trata como parte do painel -- não recebe foco,
+        # não entra no Alt+Tab e não é levada para outra área de trabalho
+        # pelas regras do devilspie2.
+        self.set_type_hint(Gdk.WindowTypeHint.DOCK)
+        self.set_decorated(False)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_keep_above(True)
+        self.set_accept_focus(False)
+        self.set_resizable(False)
+        self.set_size_request(LARGURA, ALTURA)
+        self.set_app_paintable(True)
+
+        tela = self.get_screen()
+        visual = tela.get_rgba_visual()
+        if visual is not None:
+            self.set_visual(visual)          # cantos arredondados sem moldura
+
+        area = Gtk.DrawingArea()
+        area.connect("draw", self._desenha)
+        evt = Gtk.EventBox()
+        evt.add(area)
+        evt.set_events(Gdk.EventMask.BUTTON_PRESS_MASK
+                       | Gdk.EventMask.ENTER_NOTIFY_MASK
+                       | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+        evt.connect("button-press-event", self._clique)
+        evt.connect("enter-notify-event", self._entra)
+        evt.connect("leave-notify-event", self._sai)
+        self.add(evt)
+
+        self.escondida = False      # escolha manual do usuário
+        self.destacado = False      # mouse em cima
+        self.max_antes = ha_maximizada()
+        self.plank = self._acha_plank()
+
+        self.show_all()
+        self._posiciona()
+        GLib.timeout_add_seconds(1, self._vigia)
+
+    # ---------------------------------------------------------- desenho
+    def _desenha(self, area, cr):
+        l = area.get_allocated_width()
+        a = area.get_allocated_height()
+        pi = math.pi
+
+        cr.set_operator(cairo.OPERATOR_SOURCE)   # fundo mesmo transparente
+        cr.set_source_rgba(0, 0, 0, 0)
+        cr.paint()
+        cr.set_operator(cairo.OPERATOR_OVER)
+
+        # Aba escura no mesmo tom da Dock: cantos arredondados só em cima,
+        # porque a base encosta na Dock e as duas formam uma peça só.
+        r = 6.0
+        cr.new_sub_path()
+        cr.arc(l - r, r, r, -pi / 2, 0)          # canto superior direito
+        cr.line_to(l, a)
+        cr.line_to(0, a)
+        cr.arc(r, r, r, pi, 3 * pi / 2)          # canto superior esquerdo
+        cr.close_path()
+        # Com janela maximizada quem manda e a regra principal e o botao
+        # nao tem o que fazer. Em vez de nao responder ao clique sem dizer
+        # nada -- o que passa impressao de defeito --, ele fica apagado.
+        inerte = ha_maximizada()
+        opaco = 0.45 if inerte else (1.0 if self.destacado else 0.94)
+        cr.set_source_rgba(0.09, 0.13, 0.25, opaco)
+        cr.fill()
+
+        # O símbolo: um losango partido ao meio -- "v" invertido em cima,
+        # "v" embaixo, com uma fresta entre eles. Serve para os dois
+        # sentidos, então não muda quando a Dock some.
+        cr.set_source_rgba(1, 1, 1, 0.45 if inerte else 0.95)
+        cr.set_line_width(1.7)
+        cr.set_line_cap(cairo.LINE_CAP_ROUND)
+        cr.set_line_join(cairo.LINE_JOIN_ROUND)
+
+        mx = l / 2.0
+        braco = 5.5              # metade da largura de cada "v"
+        altura_v = 3.6           # o quanto cada "v" sobe ou desce
+        folga = 2.2              # fresta entre as duas metades
+
+        meio = a / 2.0
+        # metade de cima: ^
+        cr.move_to(mx - braco, meio - folga)
+        cr.line_to(mx, meio - folga - altura_v)
+        cr.line_to(mx + braco, meio - folga)
+        cr.stroke()
+        # metade de baixo: v
+        cr.move_to(mx - braco, meio + folga)
+        cr.line_to(mx, meio + folga + altura_v)
+        cr.line_to(mx + braco, meio + folga)
+        cr.stroke()
+        return False
+
+    # -------------------------------------------------------- posição
+    def _acha_plank(self):
+        try:
+            r = subprocess.run(["xdotool", "search", "--class", "plank"],
+                               capture_output=True, text=True, timeout=5)
+            ids = r.stdout.split()
+            return ids[-1] if ids else None
+        except Exception:
+            return None
+
+    def _topo_da_dock(self):
+        """Y da borda de cima da Dock, medido -- nada de número fixo."""
+        if not self.plank:
+            self.plank = self._acha_plank()
+        if not self.plank:
+            return None
+        try:
+            r = subprocess.run(["xdotool", "getwindowgeometry", "--shell",
+                                self.plank], capture_output=True, text=True,
+                               timeout=5)
+            d = dict(l.split("=", 1) for l in r.stdout.splitlines() if "=" in l)
+            return int(d["Y"])
+        except Exception:
+            return None
+
+    def _posiciona(self):
+        tela = self.get_screen()
+        largura_tela = tela.get_width()
+        altura_tela = tela.get_height()
+        x = (largura_tela - LARGURA) // 2
+
+        if self._dock_na_tela():
+            topo = self._topo_da_dock()
+            y = (topo - ALTURA) if topo is not None else (altura_tela - ALTURA)
+        else:
+            # Encostado no rodapé, como o usuário pediu.
+            y = altura_tela - ALTURA
+
+        self.move(x, max(0, y))
+
+    def _dock_na_tela(self):
+        """A Dock está aparecendo? A regra principal manda; a escolha
+        manual só vale quando não há janela maximizada."""
+        if ha_maximizada():
+            return False
+        return not self.escondida
+
+    # --------------------------------------------------------- eventos
+    def _clique(self, _w, ev):
+        if ev.button != 1:
+            return False
+        if ha_maximizada():
+            # Regra principal no comando: nada a fazer aqui.
+            return True
+        self.escondida = not self.escondida
+        self._aplica()
+        return True
+
+    def _aplica(self):
+        # Reconsulta sempre: se a Dock foi reiniciada (troca de tema, ajuste
+        # no Gerenciar Dock), o identificador guardado aponta para uma janela
+        # que não existe mais e o clique não faria nada. Clique é raro, então
+        # a consulta não pesa.
+        self.plank = self._acha_plank()
+        if self.plank:
+            roda("xdotool",
+                 "windowunmap" if self.escondida else "windowmap", self.plank)
+        self._posiciona()
+        self.queue_draw()
+
+    def _entra(self, *_a):
+        self.destacado = True
+        self.queue_draw()
+        return False
+
+    def _sai(self, *_a):
+        self.destacado = False
+        self.queue_draw()
+        return False
+
+    # ---------------------------------------------------------- vigia
+    def _vigia(self):
+        agora = ha_maximizada()
+        if agora != self.max_antes:
+            # Trocou de estado: a escolha manual é esquecida. Maximizou, some;
+            # desmaximizou, aparece -- não importa o que o botão fez antes.
+            self.max_antes = agora
+            if self.escondida:
+                self.escondida = False
+                self._aplica()
+            else:
+                self._posiciona()
+            self.queue_draw()      # muda o tom: ativo <-> apagado
+        return True
+
+
+def main():
+    Botao()
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    main()

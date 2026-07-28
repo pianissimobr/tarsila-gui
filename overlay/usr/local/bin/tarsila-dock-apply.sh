@@ -48,10 +48,13 @@ esac
 dconf write /net/launchpad/plank/docks/dock1/theme "'$_dock'"
 dconf write /net/launchpad/plank/docks/dock1/position "'bottom'"
 # visivel com janelas flutuantes; some quando maximizado; reaparece na borda
-# inferior (pressure-reveal) e some 2s depois que o mouse sai da regiao do dock
+# inferior (pressure-reveal) e some depois que o mouse sai da regiao do dock.
+# O hide-delay era 2000: a Dock ficava 2s por cima da janela recem-maximizada
+# antes de sair. Em 0 ela sai junto com o maximizar -- a espera so atrapalhava
+# quem maximizou justamente para ganhar tela.
 dconf write /net/launchpad/plank/docks/dock1/hide-mode "'dodge-maximized'"
 dconf write /net/launchpad/plank/docks/dock1/pressure-reveal true
-dconf write /net/launchpad/plank/docks/dock1/hide-delay 2000
+dconf write /net/launchpad/plank/docks/dock1/hide-delay 0
 dconf write /net/launchpad/plank/docks/dock1/unhide-delay 0
 dconf write /net/launchpad/plank/docks/dock1/icon-size 52
 dconf write /net/launchpad/plank/docks/dock1/pinned-only true
