@@ -4,33 +4,52 @@
 #
 # O GTK guarda esse tamanho numa unica chave por usuario
 # (org.gtk.Settings.FileChooser), compartilhada por AbiWord, Gnumeric,
-# Thunar, Xarchiver, Galculator e companhia. E ele REGRAVA a chave toda vez
-# que a janela e fechada. Basta alguem esticar o dialogo uma vez para que
-# TODOS os aplicativos passem a abrir aquele tamanho, para sempre. Foi o que
-# aconteceu aqui: a chave estava em 1332 de largura numa tela de 1366 -- 97%
-# da tela para escolher um nome de arquivo.
+# Thunar, Xarchiver, Galculator e companhia. O problema e que ele REGRAVA a
+# chave toda vez que a janela e fechada, com o tamanho que ela tinha. Basta
+# UM aplicativo abrir o seu dialogo grande demais para que todos os outros
+# passem a abrir daquele tamanho -- e a chave estava em 1332 de largura numa
+# tela de 1366, isto e, 97% da tela para escolher um nome de arquivo.
 #
-# Rodando no arranque da sessao, um valor estragado se conserta sozinho no
-# proximo login, sem tirar do usuario a liberdade de redimensionar durante o
-# uso.
+# Este ajuste deixa a chave num valor sao a cada login. Ele sozinho nao
+# basta -- a chave desanda de novo dentro da sessao --, e por isso a rede de
+# verdade esta na regra de dialogos do devilspie2, que age sobre a janela ja
+# pronta. Os dois juntos: aqui o valor de partida, la o limite que vale
+# sempre.
 #
 # Nada aqui e medida fixa: tudo sai da resolucao que a tela tiver.
 
 set -uo pipefail
 command -v gsettings >/dev/null 2>&1 || exit 0
 
-# Proporcoes de uma janela de dialogo confortavel: larga o bastante para a
-# lista de arquivos, baixa o bastante para sobrar tela em volta.
+CHAVE=org.gtk.Settings.FileChooser
+
+# Proporcoes de um dialogo confortavel: largo o bastante para a lista de
+# arquivos, baixo o bastante para sobrar tela em volta.
 LARGURA_PCT=60
 ALTURA_PCT=70
 
-geo=$(xdotool getdisplaygeometry 2>/dev/null) || exit 0
-sw=${geo%% *}; sh=${geo##* }
-[ -n "$sw" ] && [ -n "$sh" ] && [ "$sw" -gt 0 ] 2>/dev/null || exit 0
+tamanho_desejado() {
+    local geo sw sh
+    geo=$(xdotool getdisplaygeometry 2>/dev/null) || return 1
+    sw=${geo%% *}; sh=${geo##* }
+    [ -n "$sw" ] && [ "$sw" -gt 0 ] 2>/dev/null || return 1
+    printf '(%d, %d)' "$(( sw * LARGURA_PCT / 100 ))" "$(( sh * ALTURA_PCT / 100 ))"
+}
 
-gsettings set org.gtk.Settings.FileChooser window-size \
-    "($(( sw * LARGURA_PCT / 100 )), $(( sh * ALTURA_PCT / 100 )))" 2>/dev/null
+ajustar() {
+    local alvo
+    alvo=$(tamanho_desejado) || return 1
+    [ "$(gsettings get $CHAVE window-size)" = "$alvo" ] || \
+        gsettings set $CHAVE window-size "$alvo"
+    # (-1, -1) quer dizer "nao lembre de canto nenhum": quem escolhe onde
+    # por e o gerenciador de janelas, ja configurado para centralizar.
+    [ "$(gsettings get $CHAVE window-position)" = "(-1, -1)" ] || \
+        gsettings set $CHAVE window-position "(-1, -1)"
+}
 
-# (-1, -1) quer dizer "nao lembre de canto nenhum": quem escolhe onde por e
-# o gerenciador de janelas, que ja esta configurado para centralizar.
-gsettings set org.gtk.Settings.FileChooser window-position "(-1, -1)" 2>/dev/null
+ajustar || exit 0
+
+# Nao ha vigia aqui: "dconf watch" nao reporta as gravacoes do GTK neste
+# ambiente (testado, inclusive com stdbuf -oL). Quem garante o tamanho
+# durante a sessao e a regra de dialogos do devilspie2, que enxerga a janela
+# ja pronta -- e que de quebra cobre os aplicativos que nem leem esta chave.
