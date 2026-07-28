@@ -27,6 +27,11 @@ else                         TB_HEIGHT=34; TB_FONT=11; TB_ICON=11; TB_DOT=13; TB
 fi
 mkdir -p "$CFG"
 echo "$TB_HEIGHT" > "$CFG/bar-height"
+# A cor solida vai para um arquivo e NAO para a barra: quem a pinta agora e o
+# tarsila-tela-estados, e so quando ha janela maximizada. Sem nada maximizado
+# a barra fica transparente e os icones flutuam sobre o papel de parede.
+echo "$TB_BG" > "$CFG/bar-bg"
+TB_BG=#00000000
 /usr/local/bin/tarsila-ob-margins.sh &
 # cores dos pontos (aceso/apagado) vão por ambiente para o dots.sh
 export TB_FG TB_DIM

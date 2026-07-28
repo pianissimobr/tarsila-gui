@@ -19,10 +19,10 @@
 -- Comparado por WM_CLASS (classe, nao instancia).
 local SYSTEM_CLASSES = { Xfdesktop = true, ["Xfce4-panel"] = true,
                          Plank = true,
-                         -- o botao de mostrar/esconder a Dock e parte
+                         -- o botao da Dock e o fundo da barra sao parte
                          -- do painel: nao muda de area de trabalho nem
                          -- entra em nenhuma regra de tamanho
-                         ["Tarsila-dock-botao"] = true }
+                         ["Tarsila-tela-estados"] = true }
 if SYSTEM_CLASSES[get_window_class()] then
   return
 end

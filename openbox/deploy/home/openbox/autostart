@@ -26,9 +26,10 @@ dunst &
 # dock (reaplica ordem/tema antes de abrir o Plank)
 ( /usr/local/bin/tarsila-dock-apply.sh 2>/dev/null; exec plank ) &
 
-# Botao de mostrar/esconder a Dock, encostado no meio da borda de cima dela.
+# Reage ao estado da tela (com/sem janela maximizada): botao de mostrar e
+# esconder a Dock, fundo da barra de cima e espaco reservado no alto.
 # Sobe depois do plank porque precisa medir onde a Dock ficou.
-(sleep 4; /usr/local/bin/tarsila-dock-botao) &
+(sleep 4; /usr/local/bin/tarsila-tela-estados) &
 
 # regras de janela (workspace lógico 2, unmaximize, exceções) — igual XFCE
 # Tamanho das janelas Abrir/Salvar como (chave unica do GTK, valida para
