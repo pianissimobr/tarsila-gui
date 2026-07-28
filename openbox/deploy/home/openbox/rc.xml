@@ -2,10 +2,13 @@
 <openbox_config xmlns="http://openbox.org/3.4/rc">
   <resistance>
     <strength>10</strength>
-    <!-- resistência forte na borda da área útil: a janela "bate" no início
-         do top bar (y=34, reservado em <margins>) ao ser arrastada p/ cima,
-         em vez de passar por baixo dele -->
-    <screen_edge_strength>2000</screen_edge_strength>
+    <!-- resistência DESLIGADA: a janela pode ser arrastada por cima da faixa
+         da barra de cima, que era o pedido. Quem decide onde o aplicativo
+         MAXIMIZADO termina continua sendo <margins><top>, que fica fixa na
+         altura da barra -- mexer nela na hora da maximização fazia a janela
+         crescer até o topo e ser reajustada em seguida, com um embaralhado
+         visível na barra. -->
+    <screen_edge_strength>0</screen_edge_strength>
   </resistance>
   <focus>
     <focusNew>yes</focusNew>

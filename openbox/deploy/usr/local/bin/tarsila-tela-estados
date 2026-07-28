@@ -17,14 +17,16 @@ máquina.
    cor de fundo ao iniciar: trocar a cor exigiria reiniciar a barra a cada
    maximização, e ela piscaria toda vez.
 
-3. ESPAÇO RESERVADO NO ALTO. Sem nada maximizado, a margem do Openbox vai a
-   zero e a resistência de borda também: as janelas passam a ser arrastadas
-   livremente até o topo, por cima da faixa da barra. Com algo maximizado, a
-   margem volta à altura da barra — senão o aplicativo maximizado cresceria
-   para trás dela e perderia os primeiros pixels do próprio conteúdo.
-
 Regra que vale sobre tudo: havendo janela maximizada, é o estado maximizado
 que manda, mesmo com outras janelas flutuando na tela.
+
+Sobre o topo da tela: a liberdade de arrastar as janelas por cima da faixa
+da barra NÃO é feita aqui. Ela vem de <screen_edge_strength>0 no rc.xml, uma
+vez só. A margem do Openbox continua fixa na altura da barra, e isso é de
+propósito: ela decide onde o aplicativo maximizado termina. Zerá-la na hora
+da maximização fazia a janela crescer até o topo e ser reajustada logo em
+seguida -- ela era desenhada duas vezes, e dava um embaralhado visível na
+barra.
 """
 
 import math
@@ -49,12 +51,6 @@ ESTADO_TOPO = os.path.join(RT, "tarsila-topbar-state.txt")
 
 CASA = os.path.expanduser("~")
 CFG = os.path.join(CASA, ".config", "tarsila")
-RC = os.path.join(CASA, ".config", "openbox", "rc.xml")
-
-# Resistência da borda quando o espaço do alto está reservado. Sem ela a
-# janela atravessava a faixa da barra ao ser arrastada; com o espaço liberado
-# ela precisa sair do caminho, senão a trava continua de pé.
-RESISTENCIA = 2000
 
 
 def altura_da_barra():
@@ -76,57 +72,6 @@ def cor_do_fundo():
     except OSError:
         pass
     return "#EDF1F4"
-
-
-def reservar_espaco(reservar):
-    """Liga/desliga o espaço reservado no alto da tela.
-
-    São dois ajustes do Openbox e não um: a margem decide onde o aplicativo
-    maximizado termina, e a resistência de borda decide se a janela pode ser
-    arrastada por cima da faixa. Mexer só na margem não solta o arraste --
-    conferido na máquina."""
-    try:
-        with open(RC, encoding="utf-8") as f:
-            texto = f.read()
-    except OSError:
-        return
-    alto = altura_da_barra() if reservar else 0
-    forca = RESISTENCIA if reservar else 0
-    novo = re.sub(r"<top>\d+</top>", "<top>%d</top>" % alto, texto, count=1)
-    novo = re.sub(r"<screen_edge_strength>\d+</screen_edge_strength>",
-                  "<screen_edge_strength>%d</screen_edge_strength>" % forca,
-                  novo, count=1)
-    if novo != texto:
-        try:
-            with open(RC, "w", encoding="utf-8") as f:
-                f.write(novo)
-        except OSError:
-            return
-
-    # A área útil é o MAIOR entre a margem do Openbox e o espaço que a barra
-    # declara para si. Mexer só na margem não adianta: a barra reinstala a
-    # reserva dela ao subir, e o Openbox continua respeitando os 34px.
-    _reserva_da_barra(alto)
-    roda("openbox", "--reconfigure")
-
-
-def _reserva_da_barra(alto):
-    """Grava na janela da barra quanto espaço ela pede para si."""
-    try:
-        r = subprocess.run(["xdotool", "search", "--class", "polybar"],
-                           capture_output=True, text=True, timeout=5)
-        ids = r.stdout.split()
-    except Exception:
-        return
-    if not ids:
-        return
-    largura = Gdk.Screen.get_default().get_width() - 1
-    parcial = "0,0,%d,0,0,0,0,0,0,%d,0,0" % (alto, largura if alto else 0)
-    for xid in ids:
-        roda("xprop", "-id", xid, "-f", "_NET_WM_STRUT_PARTIAL", "32c",
-             "-set", "_NET_WM_STRUT_PARTIAL", parcial)
-        roda("xprop", "-id", xid, "-f", "_NET_WM_STRUT", "32c",
-             "-set", "_NET_WM_STRUT", "0,0,%d,0" % alto)
 
 
 class Fundo(Gtk.Window):
@@ -224,7 +169,11 @@ class Botao(Gtk.Window):
 
         self.show_all()
         self._posiciona()
-        GLib.timeout_add_seconds(1, self._vigia)
+        # 250ms, não 1s: o fundo da barra precisa acompanhar a maximização
+        # de perto, senão dá para ver o papel de parede pela barra
+        # transparente no intervalo. Cada volta é a leitura de um arquivo
+        # pequeno -- sem processo novo, sem consulta ao X.
+        GLib.timeout_add(250, self._vigia)
 
     # ---------------------------------------------------------- desenho
     def _desenha(self, area, cr):
@@ -385,9 +334,7 @@ class Botao(Gtk.Window):
             # Trocou de estado: a escolha manual é esquecida. Maximizou, some;
             # desmaximizou, aparece -- não importa o que o botão fez antes.
             self.max_antes = agora
-            # Os três acompanham a mesma virada de estado.
             self.fundo.aplicar(agora)
-            reservar_espaco(agora)
             if self.escondida:
                 self.escondida = False
                 self._aplica()
@@ -403,7 +350,6 @@ def main():
     # Estado de partida: a sessão pode nascer com algo já maximizado.
     agora = ha_maximizada()
     fundo.aplicar(agora)
-    reservar_espaco(agora)
     botao.max_antes = agora
     Gtk.main()
 
