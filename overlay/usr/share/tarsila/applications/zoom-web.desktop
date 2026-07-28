@@ -4,7 +4,7 @@ StartupNotify=true
 Type=Application
 Name=Zoom
 Comment=Zoom Web Client
-Exec=/usr/local/bin/tarsila-abrindo chromium --app=https://app.zoom.us/wc/home
+Exec=/usr/local/bin/tarsila-abrindo /usr/local/bin/tarsila-uma-janela zoom "Zoom" chromium --app=https://app.zoom.us/wc/home
 Icon=/usr/share/tarsila/icons/zoom.png
 Terminal=false
 Categories=Network;VideoConference;
