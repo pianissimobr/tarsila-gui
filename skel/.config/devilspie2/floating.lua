@@ -60,31 +60,35 @@ else
   unmaximize()
 end
 
--- TAMANHO DOS DIALOGOS (2026-07-28): nenhum dialogo desproporcional.
+-- TAMANHO DAS JANELAS (2026-07-28): nada nasce desproporcional.
 --
--- Os dialogos de arquivo ("Abrir", "Salvar como") tem o tamanho guardado
--- numa unica chave do GTK, compartilhada por todos os aplicativos GTK3 da
--- maquina. O GTK REGRAVA essa chave toda vez que um dialogo fecha, com o
--- tamanho que ele tinha: basta um aplicativo abrir o seu grande demais para
--- que todos os outros passem a abrir assim. Ajustar a chave no arranque nao
--- resolve, porque ela desanda dentro da propria sessao; e ha aplicativos
--- (AbiWord, Gnumeric) que nem leem essa chave, dimensionando o proprio
--- dialogo. O unico lugar que enxerga o resultado final e aqui.
+-- A pergunta natural e "cada aplicativo nao tem uma configuracao propria de
+-- tamanho de abertura?". Tem, e e justamente por isso que nao da para
+-- resolver por ali:
 --
--- Casos reais medidos: o "Salvar como" do AbiWord abria com 822px de altura
--- numa tela de 768 -- os botoes Salvar e Cancelar ficavam fora da tela. O do
--- Gnumeric abria com 697 de altura numa area util de 734, ocupando 95% dela
--- para escolher um nome de arquivo.
+--   * O padrao do X para isso e o WM_NORMAL_HINTS, onde o programa declara
+--     tamanho minimo e preferido. E conselho, nao regra, e cada um preenche
+--     como quer: o VLC declara "22 by 22" -- abrir no minimo que ele declara
+--     daria uma janela de selo postal.
+--   * Cada um ainda guarda a propria geometria no seu canto e no seu
+--     formato: o VLC grava a dele em vlc-qt-interface.conf como um bloco
+--     binario @ByteArray do Qt, que nao se edita a mao.
+--
+-- Nao existe lugar comum onde mexer. O unico ponto por onde TODAS as
+-- janelas passam e este. Entao a regra e de proporcao, nao de aplicativo:
+-- quem nasce grande demais para a area util encolhe e vai para o centro.
+--
+-- Casos medidos: "Salvar como" do AbiWord com 822px de altura numa tela de
+-- 768 (botoes Salvar/Cancelar fora da tela); o do Gnumeric com 697 de 734
+-- (95% da altura para escolher um nome de arquivo); o VLC abrindo com
+-- 1366x699, a largura inteira da tela.
 --
 -- Isto NAO e o posicionamento em cascata removido em 2026-07-19 e que nao
--- deve voltar: aquele impunha geometria a TODA janela e acabava desenhando
--- janela fora da tela. Aqui so entram janelas de DIALOGO, e so as que
--- passam de um limite folgado -- uma caixa de dialogo bem comportada nem
--- chega perto dele e nao e tocada. Nenhum aplicativo e citado pelo nome e
--- nenhuma medida e fixa: tudo sai da area util que o proprio gerenciador
--- anuncia (_NET_WORKAREA, que ja desconta a barra de cima).
-local LIMITE_L, LIMITE_A = 0.75, 0.80   -- acima disto, esta desproporcional
-local ALVO_L,   ALVO_A   = 0.60, 0.70   -- tamanho para o qual encolhemos
+-- deve voltar: aquele impunha geometria a TODA janela e desenhava janela
+-- fora da tela. Aqui ninguem e tocado por nascer -- so quem passa de um
+-- limite folgado. Nenhum aplicativo e citado pelo nome e nenhuma medida e
+-- fixa: tudo sai da area util que o proprio gerenciador anuncia
+-- (_NET_WORKAREA, que ja desconta a barra de cima).
 
 local function area_util()
   local p = io.popen("xprop -root _NET_WORKAREA 2>/dev/null")
@@ -95,15 +99,35 @@ local function area_util()
   return tonumber(x), tonumber(y), tonumber(l), tonumber(a)
 end
 
-local tipo = get_window_type()
-if tipo == "WINDOW_TYPE_DIALOG" or tipo == "WINDOW_TYPE_UTILITY" then
+-- Encolhe a janela SE ela passar do limite, e centraliza no que sobrou.
+local function conter(limite_l, limite_a, alvo_l, alvo_a)
   local _, _, jl, ja = get_window_geometry()
   local ax, ay, al, aa = area_util()
-  if al and (jl > al * LIMITE_L or ja > aa * LIMITE_A) then
-    -- Encolhe so o que passou do limite; o que ja estava dentro fica.
-    local nl = math.min(jl, math.floor(al * ALVO_L))
-    local na = math.min(ja, math.floor(aa * ALVO_A))
-    set_window_geometry(math.floor(ax + (al - nl) / 2),
-                        math.floor(ay + (aa - na) / 2), nl, na)
+  if not al then return end
+  if jl <= al * limite_l and ja <= aa * limite_a then return end
+  local nl = math.min(jl, math.floor(al * alvo_l))
+  local na = math.min(ja, math.floor(aa * alvo_a))
+  set_window_geometry(math.floor(ax + (al - nl) / 2),
+                      math.floor(ay + (aa - na) / 2), nl, na)
+end
+
+local tipo = get_window_type()
+
+if tipo == "WINDOW_TYPE_DIALOG" or tipo == "WINDOW_TYPE_UTILITY" then
+  -- Caixa de dialogo: o limite e mais apertado, porque dialogo grande e
+  -- sempre desconfortavel -- ele deveria caber sobre a janela que o chamou.
+  conter(0.75, 0.80, 0.60, 0.70)
+
+elseif tipo == "WINDOW_TYPE_NORMAL" and not get_window_is_maximized() then
+  -- Janela comum: limite bem folgado, so para pegar quem abre ocupando a
+  -- tela inteira sem estar maximizado. Quem foi maximizado de proposito
+  -- (o Chromium) nao entra aqui.
+  --
+  -- As telas do proprio Tarsila ficam de fora: elas ja nascem no tamanho
+  -- que combinamos, e algumas sao altas de proposito (a de Ajustes vai
+  -- quase ate a barra de cima porque o usuario pediu assim).
+  local classe = (get_window_class() or ""):lower()
+  if not classe:match("^tarsila") then
+    conter(0.90, 0.90, 0.70, 0.75)
   end
 end
