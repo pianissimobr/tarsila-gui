@@ -1,8 +1,9 @@
 __pycache__/
 *.pyc
 
-# Credenciais do app da Agenda no Google Cloud: incluem o segredo do cliente.
-# Nao entram no repositorio, nem sendo ele privado.
+# Credenciais do app da Agenda no Google Cloud. So a versao cifrada
+# (credentials.json.gpg) entra no repositorio -- ver pacotes/segredo.sh.
+# O texto claro nunca, nem sendo o repositorio privado.
 credentials.json
 pacotes/**/credentials.json
 
