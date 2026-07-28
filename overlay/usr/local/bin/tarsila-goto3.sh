@@ -5,6 +5,9 @@ wmctrl -k off
 id=$(xdotool getactivewindow 2>/dev/null)
 if [ -n "$id" ]; then
   wmctrl -ir "$id" -b add,maximized_vert,maximized_horz
+  sleep 0.12
+  echo "$id" > "${XDG_RUNTIME_DIR:-/tmp}/tarsila-undecorated"
+  xdotool key --clearmodifiers super+u
 fi
 echo 3 > "$STATE_FILE"
 

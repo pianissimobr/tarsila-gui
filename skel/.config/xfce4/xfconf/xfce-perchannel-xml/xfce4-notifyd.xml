@@ -6,7 +6,6 @@
     <property name="known_applications" type="array">
       <value type="string" value="notify-send"/>
       <value type="string" value="org.freedesktop.network-manager-applet"/>
-      <value type="string" value="Strawberry"/>
       <value type="string" value="Tarsila Store"/>
       <value type="string" value="Xfce volume control"/>
       <value type="string" value="xfce4-settings-helper"/>

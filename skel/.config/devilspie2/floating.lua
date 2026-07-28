@@ -54,11 +54,8 @@ if wclass == "Yad"
 end
 
 if get_window_class() == "Chromium" then
-  -- maximize() e idempotente (nao faz nada se ja maximizada) - nao
-  -- depende de is_maximized(), que nao existe nesta versao do
-  -- devilspie2 (erro "attempt to call global 'is_maximized' (a nil
-  -- value)"), o que antes fazia o script inteiro abortar em erro.
   maximize()
+  undecorate()
 else
   unmaximize()
 end

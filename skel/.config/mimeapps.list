@@ -5,6 +5,9 @@ text/x-python3=org.xfce.mousepad.desktop;
 application/x-desktop=org.xfce.mousepad.desktop;
 text/markdown=org.xfce.mousepad.desktop;
 application/x-executable=org.xfce.mousepad.desktop;
+video/mp4=mpv.desktop;vlc.desktop;
+x-scheme-handler/freetube=freetube.desktop;
 
 [Default Applications]
 application/x-executable=org.xfce.mousepad.desktop
+x-scheme-handler/freetube=freetube.desktop
