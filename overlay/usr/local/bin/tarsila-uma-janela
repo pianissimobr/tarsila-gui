@@ -55,4 +55,12 @@ for _ in 1 2 3 4 5 6 7 8; do
         exit 0
     fi
 done
-exit 0
+
+# Esperamos e nao veio janela nenhuma: a trava esta velha. Isso acontece
+# quando o aplicativo deixa um processo em segundo plano que herdou o
+# descritor da trava e sobreviveu a ele -- a Tarsila Store fez exatamente
+# isso, e ficou horas sem abrir, sem dizer nada ao usuario.
+#
+# Entre "talvez abrir duas janelas" e "nao abrir nunca", abrir e melhor: o
+# usuario clicou e espera ver alguma coisa.
+exec "$@"
