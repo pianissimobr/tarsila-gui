@@ -283,6 +283,40 @@ def xsettings_set(chave, valor, texto=True):
     return True
 
 
+def tela_modos():
+    """(saida, [modos], atual, preferida) da tela conectada, pelo xrandr."""
+    saida = atual = preferida = ""
+    modos = []
+    ok, out, _ = run_ok(["xrandr", "--query"])
+    if not ok:
+        return "", [], "", ""
+    dentro = False
+    for linha in out.splitlines():
+        if linha and not linha[0].isspace():
+            dentro = " connected" in linha
+            if dentro and not saida:
+                saida = linha.split()[0]
+                for p in linha.split():
+                    if "x" in p and "+" in p:
+                        atual = p.split("+")[0]
+                        break
+            continue
+        if dentro:
+            partes = linha.split()
+            if partes and "x" in partes[0]:
+                modos.append(partes[0])
+                if "+" in linha:
+                    preferida = partes[0]
+    return saida, modos, atual, preferida
+
+
+def tela_aplicar(modo):
+    saida, _, _, _ = tela_modos()
+    if not saida:
+        return False
+    return run_ok(["xrandr", "--output", saida, "--mode", modo])[0]
+
+
 DUNSTRC = Path.home() / ".config/dunst/dunstrc"
 
 
@@ -1324,6 +1358,63 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         add_row(lb, "zoom-in", "Tamanho do texto",
                 "Aumenta as letras em todo o sistema", font_scale)
 
+    def _on_resolucao(self, combo):
+        """Aplica e PERGUNTA se ficou bom, voltando sozinho se ninguem responder.
+
+        Numa TV isto nao e luxo: um modo que o aparelho aceita listar mas nao
+        consegue exibir deixa a tela preta, e aí o usuário nao tem como clicar
+        em "desfazer" -- ele nao ve nada. A volta automatica e a unica saida
+        que nao exige enxergar."""
+        novo = combo.get_active_id()
+        anterior = getattr(self, "_resolucao_anterior", "")
+        if not novo or novo == anterior:
+            return
+        if not tela_aplicar(novo):
+            self._info_dialog("Não foi possível trocar",
+                              "A tela continua como estava.")
+            return
+
+        dlg = Gtk.MessageDialog(
+            transient_for=self, modal=True,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.NONE,
+            text="Está enxergando bem?")
+        dlg.add_button("Voltar como estava", Gtk.ResponseType.CANCEL)
+        dlg.add_button("Manter assim", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.CANCEL)
+        restam = [15]
+
+        def tick():
+            restam[0] -= 1
+            if restam[0] <= 0:
+                dlg.response(Gtk.ResponseType.CANCEL)
+                return False
+            dlg.format_secondary_text(
+                "Volta sozinho para %s em %d segundos." % (anterior, restam[0]))
+            return True
+
+        dlg.format_secondary_text(
+            "Volta sozinho para %s em %d segundos." % (anterior, restam[0]))
+        fonte = GLib.timeout_add_seconds(1, tick)
+        resposta = dlg.run()
+        GLib.source_remove(fonte)
+        dlg.destroy()
+
+        if resposta == Gtk.ResponseType.OK:
+            self._resolucao_anterior = novo
+            try:
+                alvo = Path.home() / ".config/tarsila/resolucao"
+                alvo.parent.mkdir(parents=True, exist_ok=True)
+                alvo.write_text(novo + "\n")
+            except OSError:
+                pass
+        else:
+            if anterior:
+                tela_aplicar(anterior)
+            combo.handler_block_by_func(self._on_resolucao)
+            combo.set_active_id(anterior)
+            combo.handler_unblock_by_func(self._on_resolucao)
+
     def _on_aviso_tempo(self, spin):
         aviso_tempo_set(spin.get_value())
 
@@ -1568,9 +1659,23 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
     def _page_tela(self, box):
         card, lb = make_card("Tela")
         box.pack_start(card, False, False, 0)
-        add_tool_row(lb, "video-display", "Ajustar a tela",
-                     "Tamanho dos itens, segundo monitor ou TV",
-                     ["xfce4-display-settings"], "Ajustar ›")
+        # Antes: botao abrindo o xfce4-display-settings. Ele ate mexia (usa
+        # xrandr direto), mas gravava no xfconf -- ninguem reaplicava no login
+        # seguinte -- e era uma janela com cara de XFCE dentro de um produto
+        # que se quer 100% Tarsila. Agora e um seletor proprio.
+        saida, modos, atual, preferida = tela_modos()
+        if len(modos) > 1:
+            combo = Gtk.ComboBoxText()
+            for m in modos:
+                combo.append(m, m + ("  (recomendada)" if m == preferida else ""))
+            combo.set_active_id(atual if atual in modos else preferida)
+            self._resolucao_anterior = atual
+            combo.connect("changed", self._on_resolucao)
+            add_row(lb, "video-display", "Resolução da tela",
+                    "A recomendada é a que a sua TV pediu", combo)
+        else:
+            add_row(lb, "video-display", "Resolução da tela",
+                    "Esta TV oferece só %s" % (atual or "um modo"))
 
         card, lb = make_card("Energia")
         box.pack_start(card, False, False, 0)

@@ -21,6 +21,14 @@ dunst &
 
 # papel de parede + adaptação à resolução real da TV (grava geometria da
 # barra em ~/.config/tarsila/ e sobe o polybar no fim)
+# Resolucao preferida do usuario, escolhida na tela de Ajustes.
+# TEM de vir ANTES do wallpaper-apply: e ele quem calcula a geometria da barra
+# a partir da altura da tela. Se rodasse depois, a barra sairia dimensionada
+# para a resolucao errada.
+# So aplica se o modo existir na TV ligada agora -- em outra TV, sai calado e
+# vale a negociacao automatica por EDID.
+/usr/local/bin/tarsila-resolucao-apply.sh
+
 /usr/local/bin/tarsila-wallpaper-apply.sh &
 
 # dock (reaplica ordem/tema antes de abrir o Plank)
