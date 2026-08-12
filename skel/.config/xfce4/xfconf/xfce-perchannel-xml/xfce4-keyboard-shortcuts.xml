@@ -22,7 +22,10 @@
       <property name="Print" type="empty"/>
       <property name="&lt;Alt&gt;Print" type="empty"/>
       <property name="&lt;Shift&gt;Print" type="empty"/>
+      <property name="&lt;Primary&gt;Print" type="empty"/>
+      <property name="&lt;Super&gt;d" type="empty"/>
       <property name="&lt;Super&gt;e" type="empty"/>
+      <property name="&lt;Super&gt;l" type="empty"/>
       <property name="&lt;Primary&gt;&lt;Alt&gt;f" type="empty"/>
       <property name="&lt;Primary&gt;&lt;Alt&gt;Escape" type="empty"/>
       <property name="&lt;Primary&gt;&lt;Shift&gt;Escape" type="empty"/>
@@ -30,6 +33,12 @@
         <property name="startup-notify" type="empty"/>
       </property>
       <property name="&lt;Alt&gt;&lt;Super&gt;s" type="empty"/>
+      <property name="XF86AudioRaiseVolume" type="empty"/>
+      <property name="XF86AudioLowerVolume" type="empty"/>
+      <property name="XF86AudioMute" type="empty"/>
+      <property name="XF86AudioPlay" type="empty"/>
+      <property name="XF86AudioNext" type="empty"/>
+      <property name="XF86AudioPrev" type="empty"/>
     </property>
     <property name="custom" type="empty">
       <property name="&lt;Alt&gt;F2" type="string" value="xfce4-appfinder --collapsed">
@@ -44,7 +53,8 @@
       <property name="&lt;Alt&gt;F3" type="string" value="xfce4-appfinder">
         <property name="startup-notify" type="bool" value="true"/>
       </property>
-      <property name="Print" type="string" value="xfce4-screenshooter"/>
+      <property name="Print" type="string" value="xfce4-screenshooter -f -s ~/Imagens"/>
+      <property name="&lt;Primary&gt;Print" type="string" value="xfce4-screenshooter -f -c"/>
       <property name="&lt;Primary&gt;Escape" type="string" value="xfdesktop --menu"/>
       <property name="&lt;Shift&gt;Print" type="string" value="xfce4-screenshooter -r"/>
       <property name="&lt;Primary&gt;&lt;Alt&gt;Delete" type="string" value="xfce4-session-logout"/>
@@ -52,13 +62,21 @@
       <property name="&lt;Primary&gt;&lt;Alt&gt;t" type="string" value="exo-open --launch TerminalEmulator"/>
       <property name="&lt;Primary&gt;&lt;Alt&gt;f" type="string" value="thunar"/>
       <property name="&lt;Primary&gt;&lt;Alt&gt;l" type="string" value="xflock4"/>
+      <property name="&lt;Super&gt;l" type="string" value="xflock4"/>
       <property name="&lt;Alt&gt;F1" type="string" value="xfce4-popup-applicationsmenu"/>
       <property name="&lt;Super&gt;p" type="string" value="xfce4-display-settings --minimal"/>
+      <property name="&lt;Super&gt;d" type="string" value="xfdesktop --windowlist"/>
       <property name="&lt;Primary&gt;&lt;Shift&gt;Escape" type="string" value="xfce4-taskmanager"/>
       <property name="&lt;Super&gt;e" type="string" value="thunar"/>
       <property name="&lt;Primary&gt;&lt;Alt&gt;Escape" type="string" value="xkill"/>
       <property name="HomePage" type="string" value="exo-open --launch WebBrowser"/>
       <property name="XF86Display" type="string" value="xfce4-display-settings --minimal"/>
+      <property name="XF86AudioRaiseVolume" type="string" value="amixer set Master 5%+ unmute"/>
+      <property name="XF86AudioLowerVolume" type="string" value="amixer set Master 5%- unmute"/>
+      <property name="XF86AudioMute" type="string" value="amixer set Master toggle"/>
+      <property name="XF86AudioPlay" type="string" value="playerctl play-pause"/>
+      <property name="XF86AudioNext" type="string" value="playerctl next"/>
+      <property name="XF86AudioPrev" type="string" value="playerctl previous"/>
       <property name="override" type="bool" value="true"/>
     </property>
   </property>

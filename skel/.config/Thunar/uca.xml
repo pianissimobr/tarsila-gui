@@ -1,15 +1,30 @@
-<?xml version='1.0' encoding='UTF-8'?>
+<?xml version="1.0" encoding="UTF-8"?>
 <actions>
 <action>
 	<icon>utilities-terminal</icon>
-	<name>Open Terminal Here</name>
-	<submenu />
-	<unique-id>1784106950010373-1</unique-id>
+	<name>Abrir terminal aqui</name>
+	<submenu></submenu>
+	<unique-id>1786540180106809-1</unique-id>
 	<command>exo-open --working-directory %f --launch TerminalEmulator</command>
-	<description>Example for a custom action</description>
-	<range />
+	<description>Abrir terminal neste diretório</description>
+	<range></range>
 	<patterns>*</patterns>
-	<startup-notify />
-	<directories />
+	<directories/>
 </action>
-<action><icon>emblem-shared</icon><name>Copiar Link Público</name><unique-id>1785094332059136-0</unique-id><command>/home/alan/.local/bin/nc-share.py %f</command><description>Nextcloud</description><patterns>*</patterns><audio-files /><image-files /><other-files /><text-files /><video-files /></action><action><icon>system-users</icon><name>Editar com a Equipe (Online)</name><unique-id>1785094332059136-1</unique-id><command>/home/alan/.local/bin/nc-edit-online.py %f</command><description>Nextcloud</description><patterns>*</patterns><audio-files /><image-files /><other-files /><text-files /><video-files /></action><action><icon>network-server</icon><name>Conectar / Configurar Nextcloud</name><unique-id>1785094332059136-2</unique-id><command>/home/alan/.local/bin/nc-setup.py</command><description>Nextcloud</description><patterns>*</patterns><directories /><audio-files /><image-files /><other-files /><text-files /><video-files /></action></actions>
+<action>
+	<icon>xarchiver</icon>
+	<name>Compactar...</name>
+	<submenu></submenu>
+	<unique-id>1786540180106879-2</unique-id>
+	<command>xarchiver -a %f</command>
+	<description>Criar arquivo compactado</description>
+	<range></range>
+	<patterns>*</patterns>
+	<directories/>
+	<audio-files/>
+	<image-files/>
+	<other-files/>
+	<text-files/>
+	<video-files/>
+</action>
+</actions>

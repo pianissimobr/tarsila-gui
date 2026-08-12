@@ -23,12 +23,35 @@ def save_credentials(url, user, password):
     os.chmod(CONFIG_FILE, 0o600)
 
 def remote_path_of(filepath):
-    """Caminho remoto (depois de /remote.php/webdav) a partir do local."""
+    """Caminho remoto (depois de /remote.php/webdav) a partir do local.
+
+    Opção B: arquivos sob ~/Nextcloud (symlink gvfs) ou URI dav://.
+    """
+    from urllib.parse import unquote
+    import os, subprocess
     prefix = "/remote.php/webdav"
+    nc_home = os.path.expanduser("~/Nextcloud")
+
+    # 1) caminho explícito com /remote.php/webdav
     idx = filepath.find(prefix)
     if idx != -1:
-        return unquote(filepath[idx + len(prefix):])
-    # montagem via gvfs: descobre a URI real (dav://...) do arquivo
+        return unquote(filepath[idx + len(prefix):]) or "/"
+
+    # 2) sob ~/Nextcloud (symlink → gvfs) — opção B
+    try:
+        real_nc = os.path.realpath(nc_home)
+        real_p = os.path.realpath(filepath)
+        if real_p == real_nc or real_p.startswith(real_nc + os.sep):
+            rel = real_p[len(real_nc):] or "/"
+            return unquote(rel)
+        # também se o path lógico começa com ~/Nextcloud
+        if filepath == nc_home or filepath.startswith(nc_home + os.sep):
+            rel = filepath[len(nc_home):] or "/"
+            return unquote(rel)
+    except Exception:
+        pass
+
+    # 3) montagem gvfs: URI real dav://...
     try:
         out = subprocess.check_output(
             ["gio", "info", "-a", "standard::target-uri", filepath],
@@ -38,7 +61,7 @@ def remote_path_of(filepath):
                 real = unquote(line.split("target-uri:", 1)[1].strip())
                 j = real.find(prefix)
                 if j != -1:
-                    return real[j + len(prefix):]
+                    return real[j + len(prefix):] or "/"
     except Exception:
         pass
     return None

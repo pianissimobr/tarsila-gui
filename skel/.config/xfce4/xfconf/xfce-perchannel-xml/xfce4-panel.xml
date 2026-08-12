@@ -140,7 +140,7 @@
       <property name="digital-layout" type="uint" value="1"/>
       <property name="digital-time-format" type="string" value="%H:%M"/>
       <property name="digital-time-font" type="string" value="Sans Bold 10"/>
-      <property name="digital-date-format" type="string" value="%a %d"/>
+      <property name="digital-date-format" type="string" value="%d/%m/%Y"/>
       <property name="digital-date-font" type="string" value="Sans 6.5"/>
     </property>
     <property name="plugin-44" type="string" value="genmon">
