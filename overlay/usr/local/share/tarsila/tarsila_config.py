@@ -283,6 +283,81 @@ def xsettings_set(chave, valor, texto=True):
     return True
 
 
+DUNSTRC = Path.home() / ".config/dunst/dunstrc"
+
+
+def aviso_tempo_get(padrao=8):
+    """Segundos que um aviso fica na tela (secao [urgency_normal] do dunst)."""
+    try:
+        dentro = False
+        for linha in DUNSTRC.read_text(encoding="utf-8").splitlines():
+            alvo = linha.strip()
+            if alvo.startswith("["):
+                dentro = alvo == "[urgency_normal]"
+            elif dentro and alvo.startswith("timeout"):
+                return int(alvo.split("=", 1)[1].strip())
+    except (OSError, ValueError):
+        pass
+    return padrao
+
+
+def aviso_tempo_set(segundos):
+    """Grava o tempo nas urgencias baixa e normal e recarrega o dunst.
+
+    A urgencia CRITICA fica de fora de proposito: timeout 0 significa que o
+    aviso so sai quando o usuario clica. Sao os avisos que ele nao pode perder
+    (bateria no fim, disco cheio) -- somem sozinhos seria pior."""
+    try:
+        linhas = DUNSTRC.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return False
+    secao, saida = "", []
+    for linha in linhas:
+        alvo = linha.strip()
+        if alvo.startswith("["):
+            secao = alvo
+        if secao in ("[urgency_low]", "[urgency_normal]") and alvo.startswith("timeout"):
+            saida.append("    timeout = %d" % int(segundos))
+        else:
+            saida.append(linha)
+    try:
+        DUNSTRC.write_text("\n".join(saida) + "\n", encoding="utf-8")
+    except OSError:
+        return False
+    # "dunstctl reload" reaplica o arquivo no processo que ja esta rodando.
+    # NAO usar pkill+start aqui: o dunst e ativado por D-Bus, entao mata-lo faz
+    # o barramento subir outro na hora -- e o nosso start somava um terceiro.
+    # Testado: tres cliques seguidos deixavam tres dunst vivos, cada um
+    # mostrando o mesmo aviso.
+    subprocess.run(["dunstctl", "reload"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return True
+
+
+def entrada_get(nome, padrao):
+    """Le um ajuste de teclado/mouse de ~/.config/tarsila/<nome>.
+
+    Mesmo padrao de descanso-minutos e bar-height: um arquivo por ajuste, so
+    com o valor. Quem reaplica no login e o tarsila-entrada-apply.sh."""
+    try:
+        return int((Path.home() / ".config/tarsila" / nome).read_text().strip())
+    except (OSError, ValueError):
+        return padrao
+
+
+def entrada_set(nome, valor):
+    """Grava o ajuste e o aplica na hora, sem esperar o proximo login."""
+    try:
+        alvo = Path.home() / ".config/tarsila" / nome
+        alvo.parent.mkdir(parents=True, exist_ok=True)
+        alvo.write_text("%d\n" % int(valor))
+    except OSError:
+        return False
+    subprocess.run(["/usr/local/bin/tarsila-entrada-apply.sh"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return True
+
+
 def reiniciar_barra():
     """Faz a barra de cima recarregar.
 
@@ -1219,12 +1294,21 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         self._add_font_size_row(lb)
 
 
-        if which("xfce4-appearance-settings"):
-            card, lb = make_card("Mais opções")
-            box.pack_start(card, False, False, 0)
-            add_tool_row(lb, "preferences-desktop-theme", "Aparência avançada",
-                         "Ícones, fontes e estilo das janelas",
-                         ["xfce4-appearance-settings"])
+        # Antes: botao "Aparencia avancada" abrindo o xfce4-appearance-settings,
+        # que grava no xfconf. Aqui quem le tema e fonte e o xsettingsd, entao
+        # nada do que se mexesse ali chegava a tela. O que aquela janela tinha
+        # de util e que ainda nao estava nesta pagina era o tamanho do cursor,
+        # que numa TV vista de longe faz diferenca de verdade.
+        card, lb = make_card("Mais opções")
+        box.pack_start(card, False, False, 0)
+        cursor = Gtk.SpinButton.new_with_range(16, 64, 8)
+        try:
+            cursor.set_value(int(xsettings_get("Gtk/CursorThemeSize", "32")))
+        except ValueError:
+            cursor.set_value(32)
+        cursor.connect("value-changed", self._on_cursor_size)
+        add_row(lb, "input-mouse", "Tamanho do cursor",
+                "A setinha do mouse, para enxergar de longe na TV", cursor)
 
     def _add_font_size_row(self, lb):
         """Tamanho do texto — usado em Aparência e em Acessibilidade,
@@ -1239,6 +1323,23 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         font_scale.connect("value-changed", self._on_font_size_changed, cur_font)
         add_row(lb, "zoom-in", "Tamanho do texto",
                 "Aumenta as letras em todo o sistema", font_scale)
+
+    def _on_aviso_tempo(self, spin):
+        aviso_tempo_set(spin.get_value())
+
+    def _on_cursor_size(self, spin):
+        xsettings_set("Gtk/CursorThemeSize", int(spin.get_value()), texto=False)
+
+    def _on_mouse_vel(self, spin):
+        entrada_set("mouse-velocidade", spin.get_value())
+
+    def _on_teclado_rep(self, spin):
+        entrada_set("teclado-repeticao", spin.get_value())
+
+    def _on_aderencia(self, switch, state):
+        entrada_set("teclas-aderencia", 1 if state else 0)
+        switch.set_state(state)
+        return True
 
     def _on_dark_toggle(self, switch, state):
         # Escuro e alto contraste disputam a MESMA chave (o nome do tema):
@@ -1386,13 +1487,16 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                      "Ajuste fino de entradas, saídas e microfone",
                      ["pavucontrol"], "Abrir ›")
 
-        if which("xfce4-notifyd-config"):
-            card, lb = make_card("Notificações")
-            box.pack_start(card, False, False, 0)
-            add_tool_row(lb, "preferences-system-notifications",
-                         "Avisos na tela",
-                         "Quais aplicativos podem mostrar avisos e por quanto tempo",
-                         ["xfce4-notifyd-config"], "Configurar ›")
+        # Antes isto abria o xfce4-notifyd-config. Quem mostra os avisos nesta
+        # sessao e o dunst, nao o xfce4-notifyd: a janela abria, o usuario
+        # mexia e nada mudava. Agora o controle edita o dunstrc de verdade.
+        card, lb = make_card("Notificações")
+        box.pack_start(card, False, False, 0)
+        tempo = Gtk.SpinButton.new_with_range(3, 30, 1)
+        tempo.set_value(aviso_tempo_get())
+        tempo.connect("value-changed", self._on_aviso_tempo)
+        add_row(lb, "preferences-system-notifications", "Avisos na tela",
+                "Por quantos segundos um aviso fica visível", tempo)
 
     @staticmethod
     def _sink_amigavel(name, desc):
@@ -1563,12 +1667,22 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
     def _page_dispositivos(self, box):
         card, lb = make_card("Mouse e teclado")
         box.pack_start(card, False, False, 0)
-        add_tool_row(lb, "input-mouse", "Mouse",
-                     "Velocidade do ponteiro e rolagem",
-                     ["xfce4-mouse-settings"], "Ajustar ›")
-        add_tool_row(lb, "input-keyboard", "Teclado",
-                     "Idioma do teclado e acentuação",
-                     ["xfce4-keyboard-settings"], "Ajustar ›")
+        # Antes estas duas linhas abriam o xfce4-mouse-settings e o
+        # xfce4-keyboard-settings. Nesta sessao nao ha xfsettingsd: as duas
+        # gravavam no xfconf e nada era aplicado. Agora sao controles nativos,
+        # que mexem via xset e persistem em ~/.config/tarsila/.
+        vel = Gtk.SpinButton.new_with_range(1, 10, 1)
+        vel.set_value(entrada_get("mouse-velocidade", 2))
+        vel.connect("value-changed", self._on_mouse_vel)
+        add_row(lb, "input-mouse", "Velocidade do ponteiro",
+                "Quanto o ponteiro anda para cada movimento da mão", vel)
+
+        rep = Gtk.SpinButton.new_with_range(200, 2000, 100)
+        rep.set_value(entrada_get("teclado-repeticao", 600))
+        rep.connect("value-changed", self._on_teclado_rep)
+        add_row(lb, "input-keyboard", "Espera para a tecla repetir",
+                "Aumente se sai letra repetida sem querer (em milésimos de segundo)",
+                rep)
 
         # Um guarda-chuva so: impressora, scanner, camera e microfone eram
         # tres cartoes separados dizendo a mesma coisa -- "coisas que voce
@@ -1731,13 +1845,27 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
 
         self._add_font_size_row(lb)
 
-        if which("xfce4-accessibility-settings"):
-            card, lb = make_card("Mais opções")
-            box.pack_start(card, False, False, 0)
-            add_tool_row(lb, "preferences-desktop-accessibility",
-                         "Outras opções de acessibilidade",
-                         "Teclas de aderência e teclado na tela",
-                         ["xfce4-accessibility-settings"])
+        # Antes havia aqui um botao "Outras opcoes" abrindo o
+        # xfce4-accessibility-settings. Ele grava no xfconf, que nesta sessao
+        # ninguem le -- o usuario ligava teclas de aderencia e nada acontecia.
+        # As duas opcoes que aquela janela oferecia viraram controles proprios.
+        card, lb = make_card("Teclado e mãos")
+        box.pack_start(card, False, False, 0)
+
+        aderencia = Gtk.Switch()
+        ligada = entrada_get("teclas-aderencia", 0) == 1
+        aderencia.set_active(ligada)
+        aderencia.set_state(ligada)
+        aderencia.connect("state-set", self._on_aderencia)
+        add_row(lb, "preferences-desktop-accessibility",
+                "Teclas de aderência",
+                "Apertar Ctrl, Alt e Shift uma de cada vez, sem segurar junto",
+                aderencia)
+
+        if which("onboard"):
+            add_tool_row(lb, "input-keyboard", "Teclado na tela",
+                         "Digitar clicando, sem usar o teclado de verdade",
+                         ["onboard"], "Abrir ›")
 
     # ---- Conta e Segurança ----
     # ---- Conta: nome de exibição e foto ----
@@ -2539,9 +2667,14 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                      ["xfce4-terminal"])
         add_tool_row(lb, "utilities-system-monitor", "Gerenciador de tarefas", "",
                      ["xfce4-taskmanager"])
-        add_tool_row(lb, "applications-utilities",
-                     "Editor de configurações (xfconf)", "",
-                     ["xfce4-settings-editor"])
+        # O "Editor de configuracoes (xfconf)" foi RETIRADO em 12/08/2026.
+        # O xfconf e o deposito de ajustes do XFCE, e esta sessao e Openbox:
+        # nao roda xfsettingsd, ninguem le aquele banco. O editor abria, mostrava
+        # arvore de chaves e deixava mexer em tudo -- sem que nada surtisse
+        # efeito. Nao ha equivalente a "fazer funcionar" aqui: o que ele editava
+        # simplesmente nao e usado. Os ajustes reais desta sessao estao em
+        # ~/.config/xsettingsd/xsettingsd.conf, ~/.config/openbox/rc.xml e
+        # ~/.config/tarsila/.
 
         card, lb = make_card("Painel e Dock")
         box.pack_start(card, False, False, 0)

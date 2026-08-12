@@ -100,9 +100,10 @@ command -v tint2 >/dev/null 2>&1 && tint2 &
 # tarsila-dispositivos so avisa (notify-send), nao monta.
 udiskie --automount --notify --no-tray --file-manager=thunar &
 
-# Desliga o atalho de Sticky Keys (5x Shift), que liga sozinho sem querer e
-# deixa o teclado "grudado" -- o leigo nao entende o que houve nem como sair.
-# Nao da para desligar por XkbOptions; precisa do xkbset. O "exp 1 =a" impede
-# que o X reative sozinho depois de um tempo.
-(sleep 2; xkbset -a; xkbset exp 1 =a) &
+# Velocidade do ponteiro, repeticao de tecla e teclas de aderencia, como
+# escolhidos na tela de Ajustes. O xset aplica mas nao persiste entre sessoes
+# e aqui nao ha xfsettingsd para reaplicar -- por isso este script.
+# As teclas de aderencia (5x Shift) ficam DESLIGADAS por padrao: ligam sozinhas
+# sem querer, deixam o teclado "grudado" e o leigo nao entende o que houve.
+(sleep 2; /usr/local/bin/tarsila-entrada-apply.sh) &
 
