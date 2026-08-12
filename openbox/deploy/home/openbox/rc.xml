@@ -74,6 +74,32 @@
          ao maximizar/restaurar (nao sao atalhos p/ o usuario) -->
     <keybind key="W-u"><action name="Undecorate"/></keybind>
     <keybind key="W-i"><action name="Decorate"/></keybind>
+
+    <!-- Foto da tela. O scrot ja vem instalado. A notificacao existe porque
+         sem ela o usuario aperta a tecla e nao tem nenhum sinal de que algo
+         aconteceu, e nao vai procurar na pasta Imagens por conta propria. -->
+    <keybind key="Print">
+      <action name="Execute">
+        <command>sh -c 'mkdir -p ~/Imagens &amp;&amp; scrot -o ~/Imagens/tela-%Y-%m-%d-%H%M%S.png &amp;&amp; notify-send -a Tarsila -i camera-photo "Foto da tela salva" "Esta na pasta Imagens"'</command>
+      </action>
+    </keybind>
+    <keybind key="A-Print">
+      <action name="Execute">
+        <command>sh -c 'mkdir -p ~/Imagens &amp;&amp; scrot -u -o ~/Imagens/janela-%Y-%m-%d-%H%M%S.png &amp;&amp; notify-send -a Tarsila -i camera-photo "Foto da janela salva" "Esta na pasta Imagens"'</command>
+      </action>
+    </keybind>
+
+    <!-- Teclas de volume do teclado/controle. O -l 1.0 impede passar de 100%,
+         que na caixinha da TV distorce o som. -->
+    <keybind key="XF86AudioRaiseVolume">
+      <action name="Execute"><command>wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+ -l 1.0</command></action>
+    </keybind>
+    <keybind key="XF86AudioLowerVolume">
+      <action name="Execute"><command>wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-</command></action>
+    </keybind>
+    <keybind key="XF86AudioMute">
+      <action name="Execute"><command>wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle</command></action>
+    </keybind>
   </keyboard>
   <mouse>
     <dragThreshold>4</dragThreshold>

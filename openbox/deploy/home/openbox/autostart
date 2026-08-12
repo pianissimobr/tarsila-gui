@@ -93,3 +93,16 @@ command -v tint2 >/dev/null 2>&1 && tint2 &
 # Roda na sessao do usuario de proposito: assim ja tem o DBUS das notificacoes
 # e nao precisa de regra de udev com root.
 /usr/local/bin/tarsila-dispositivos &
+
+# Monta pendrive/cartao/HD sozinho ao espetar e abre o gerenciador de arquivos.
+# Sem isto nada montava: o udisks2 da a CAPACIDADE de montar, mas quem montava
+# automaticamente no XFCE era o thunar-volman, que nao roda nesta sessao. O
+# tarsila-dispositivos so avisa (notify-send), nao monta.
+udiskie --automount --notify --no-tray --file-manager=thunar &
+
+# Desliga o atalho de Sticky Keys (5x Shift), que liga sozinho sem querer e
+# deixa o teclado "grudado" -- o leigo nao entende o que houve nem como sair.
+# Nao da para desligar por XkbOptions; precisa do xkbset. O "exp 1 =a" impede
+# que o X reative sozinho depois de um tempo.
+(sleep 2; xkbset -a; xkbset exp 1 =a) &
+
