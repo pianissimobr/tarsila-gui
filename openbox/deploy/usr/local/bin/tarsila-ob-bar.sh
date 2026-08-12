@@ -55,8 +55,11 @@ pkill -f "polybar/title.sh" 2>/dev/null || true
 pkill -f "polybar/buttons.sh" 2>/dev/null || true
 pkill -f "polybar/dots.sh" 2>/dev/null || true
 
-# Limpa modo anterior para forcar Estado B no login
-rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/tarsila-polybar-mode.txt"
+# O tarsila-polybar-mode.txt foi abandonado em 06/08 (podia mentir e travar a
+# troca para "full"). Ninguem o escreve desde entao, entao nao ha o que
+# limpar aqui. O "rm -f" que existia neste ponto so mantinha o arquivo
+# permanentemente ausente -- e o topbar.sh, que ainda o lia, imprimia um
+# erro de shell na barra a cada 2 s por causa disso.
 printf "MAX=0\nID=\n" > "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/tarsila-topbar-state.txt"
 
 # Boot = Estado B (compact).

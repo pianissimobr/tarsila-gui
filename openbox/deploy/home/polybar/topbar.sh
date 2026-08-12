@@ -4,19 +4,24 @@
 # Estado A (full, MAX=1):  ✕  restaurar  Nome do App
 RT="${XDG_RUNTIME_DIR:-/tmp}"
 STATE="$RT/tarsila-topbar-state.txt"
-MODE_FILE="$RT/tarsila-polybar-mode.txt"
 CLOSE=$(printf "\xef\x80\x8d")
 RESTORE=$(printf "\xef\x81\xa6")
 
 emit(){
-  local mode max id name wmclass t
-  mode=$(tr -d "[:space:]" <"$MODE_FILE" 2>/dev/null || true)
+  local max id name wmclass t
   max=0; id=""
   if [ -f "$STATE" ]; then
     max=$(sed -n "s/^MAX=//p" "$STATE" | head -1)
     id=$(sed -n "s/^ID=//p" "$STATE" | head -1)
   fi
-  if [ "$mode" != "full" ] && [ "$max" != "1" ]; then
+  # Fonte de verdade e o MAX do state file. O antigo MODE_FILE
+  # (tarsila-polybar-mode.txt) foi ABANDONADO em 06/08 porque podia mentir,
+  # e desde entao ninguem o escreve -- mas esta linha continuava lendo. Como
+  # o redirecionamento "<arquivo" e feito pelo SHELL, o 2>/dev/null (que vale
+  # para o tr) nao silenciava nada: o bash imprimia "linha 13: ... Arquivo ou
+  # diretorio inexistente" a cada 2 s, e o polybar mostrava esse texto
+  # piscando no lugar do titulo da janela.
+  if [ "$max" != "1" ]; then
     echo " "
     return
   fi
