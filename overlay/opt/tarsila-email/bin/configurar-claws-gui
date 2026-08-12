@@ -1,0 +1,326 @@
+#!/usr/bin/env python3
+"""Assistente Tarsila Email — Gmail (fase 1).
+
+O usuario escolhe Gmail, gera senha de aplicativo no navegador ao lado,
+cola e-mail + senha aqui. Servidores IMAP/SMTP sao preenchidos pelo motor.
+"""
+import os
+import re
+import subprocess
+import sys
+import threading
+
+import gi
+
+gi.require_version('Gtk', '3.0')
+from gi.repository import GLib, Gtk
+
+RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MOTOR = os.path.join(RAIZ, 'bin', 'configurar-claws')
+EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+
+GMAIL = (
+    'Gmail',
+    'gmail',
+    'https://myaccount.google.com/apppasswords',
+    ('imap.gmail.com', 993, 1, 'smtp.gmail.com', 465, 1),
+)
+
+INSTRUCAO_GMAIL = (
+    'Abri a pagina do Google ao lado. Entre na sua conta e crie uma '
+    '<b>senha de aplicativo</b>: copie os 16 caracteres que aparecerem '
+    'e cole aqui embaixo.'
+)
+
+AVISO_2FA = (
+    '<b>Antes de continuar</b>\n\n'
+    'O Gmail so permite senha de aplicativo se a '
+    '<b>verificacao em duas etapas (2FA)</b> estiver ativa na sua conta.\n\n'
+    'Se ainda nao ativou, faca isso primeiro em '
+    '<i>Conta Google → Seguranca → Verificacao em duas etapas</i>.\n\n'
+    'Continuar para gerar a senha de aplicativo?'
+)
+
+
+def motor(*args, senha=None, email=None, substituir=False):
+    amb = dict(os.environ)
+    if senha is not None:
+        amb['CLAWS_SENHA'] = senha
+    if email is not None:
+        amb['CLAWS_EMAIL'] = email
+    if substituir:
+        amb['TARSILA_SUBSTITUIR'] = '1'
+    try:
+        p = subprocess.run([MOTOR, *args], env=amb, capture_output=True,
+                           text=True, timeout=90)
+        return p.returncode, (p.stderr or p.stdout or '').strip()
+    except Exception as exc:
+        return 1, str(exc)
+
+
+class Assistente(Gtk.Window):
+    def __init__(self):
+        super().__init__(title='Tarsila Email')
+        self.set_resizable(False)
+        self.set_position(Gtk.WindowPosition.CENTER)
+        try:
+            self.set_wmclass('tarsila-email-setup', 'Tarsila-email')
+        except Exception:
+            pass
+        self.set_icon_name('internet-mail')
+
+        self.caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        self.caixa.set_border_width(18)
+        self.add(self.caixa)
+
+        self.provedor = GMAIL
+        self.largura_coluna = 470
+        self.tela_inicio()
+
+    def limpar(self):
+        for filho in self.caixa.get_children():
+            self.caixa.remove(filho)
+
+    def titulo(self, texto, dica=None):
+        rot = Gtk.Label()
+        rot.set_markup('<big><b>%s</b></big>' % texto)
+        self.caixa.pack_start(rot, False, False, 0)
+        if dica:
+            sub = Gtk.Label()
+            sub.set_markup('<small>%s</small>' % dica)
+            sub.set_line_wrap(True)
+            sub.set_justify(Gtk.Justification.CENTER)
+            self.caixa.pack_start(sub, False, False, 0)
+
+    def rodape(self, esquerda, direita, acao):
+        linha = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        if esquerda:
+            b = Gtk.Button(label=esquerda[0])
+            b.connect('clicked', esquerda[1])
+            linha.pack_start(b, False, False, 0)
+            linha.pack_start(Gtk.Box(), True, True, 0)
+        else:
+            linha.set_halign(Gtk.Align.CENTER)
+        ok = Gtk.Button(label=direita)
+        ok.get_style_context().add_class('suggested-action')
+        ok.connect('clicked', acao)
+        ok.set_can_default(True)
+        linha.pack_start(ok, False, False, 0)
+        self.caixa.pack_start(linha, False, False, 0)
+        self.set_default(ok)
+
+    def encostar_na_esquerda(self):
+        largura = 470
+        rc, saida = motor('--geometria-login')
+        if rc == 0 and len(saida.split()) == 4:
+            _l, _a, x, _y = (int(v) for v in saida.split())
+            largura = max(380, min(500, x - 26))
+        self.largura_coluna = largura
+        self.set_position(Gtk.WindowPosition.NONE)
+        self.resize(largura, 1)
+        self.move(12, 96)
+
+    def tela_inicio(self):
+        self.limpar()
+        self.set_default_size(420, 280)
+        self.resize(420, 280)
+        self.titulo('Configurar Gmail')
+        img = Gtk.Image.new_from_icon_name('gmail', Gtk.IconSize.DIALOG)
+        img.set_pixel_size(72)
+        img.set_halign(Gtk.Align.CENTER)
+        self.caixa.pack_start(img, False, False, 0)
+        info = Gtk.Label()
+        info.set_markup(
+            '<small>Voce vai entrar na sua conta Google, criar uma '
+            '<b>senha de aplicativo</b> e colar aqui. Depois o e-mail '
+            'abre sozinho.</small>'
+        )
+        info.set_line_wrap(True)
+        info.set_max_width_chars(44)
+        self.caixa.pack_start(info, False, False, 0)
+        self.rodape(None, 'Continuar', self.confirmar_2fa)
+        self.show_all()
+
+    def confirmar_2fa(self, _b):
+        dlg = Gtk.MessageDialog(
+            transient_for=self,
+            modal=True,
+            message_type=Gtk.MessageType.INFO,
+            buttons=Gtk.ButtonsType.NONE,
+            text='Verificacao em duas etapas',
+        )
+        dlg.format_secondary_markup(AVISO_2FA)
+        dlg.add_button('Cancelar', Gtk.ResponseType.CANCEL)
+        dlg.add_button('Continuar', Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        if dlg.run() != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return
+        dlg.destroy()
+        subprocess.Popen([MOTOR, '--abrir', self.provedor[2]],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.encostar_na_esquerda()
+        self.tela_login()
+
+    def tela_login(self):
+        rotulo, icone = self.provedor[0], self.provedor[1]
+        self.limpar()
+
+        cab = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        cab.set_halign(Gtk.Align.CENTER)
+        img = Gtk.Image.new_from_icon_name(icone, Gtk.IconSize.DIALOG)
+        img.set_pixel_size(40)
+        cab.pack_start(img, False, False, 0)
+        nome = Gtk.Label()
+        nome.set_markup('<big><b>%s</b></big>' % GLib.markup_escape_text(rotulo))
+        cab.pack_start(nome, False, False, 0)
+        self.caixa.pack_start(cab, False, False, 0)
+
+        texto = Gtk.Label()
+        texto.set_markup('<small>%s</small>' % INSTRUCAO_GMAIL)
+        texto.set_line_wrap(True)
+        texto.set_max_width_chars(46)
+        self.caixa.pack_start(texto, False, False, 0)
+
+        grade = Gtk.Grid(column_spacing=10, row_spacing=8)
+        grade.set_hexpand(True)
+        grade.attach(Gtk.Label(label='E-mail:', xalign=1), 0, 0, 1, 1)
+        self.campo_email = Gtk.Entry()
+        self.campo_email.set_placeholder_text('voce@gmail.com')
+        self.campo_email.set_hexpand(True)
+        self.campo_email.set_activates_default(True)
+        grade.attach(self.campo_email, 1, 0, 1, 1)
+
+        grade.attach(Gtk.Label(label='Senha:', xalign=1), 0, 1, 1, 1)
+        self.campo_senha = Gtk.Entry()
+        self.campo_senha.set_visibility(False)
+        self.campo_senha.set_hexpand(True)
+        self.campo_senha.set_activates_default(True)
+        grade.attach(self.campo_senha, 1, 1, 1, 1)
+        self.caixa.pack_start(grade, False, False, 0)
+
+        ver = Gtk.CheckButton(label='Mostrar senha')
+        ver.connect('toggled',
+                    lambda c: self.campo_senha.set_visibility(c.get_active()))
+        ver.set_halign(Gtk.Align.END)
+        self.caixa.pack_start(ver, False, False, 0)
+
+        self.aviso = Gtk.Label()
+        self.aviso.set_line_wrap(True)
+        self.caixa.pack_start(self.aviso, False, False, 0)
+
+        self.rodape(('Voltar', lambda _b: self.tela_inicio()), 'Salvar', self.salvar)
+        self.show_all()
+        self.resize(self.largura_coluna, 1)
+        self.campo_email.grab_focus()
+
+    def erro(self, texto):
+        self.aviso.set_markup(
+            '<span foreground="#c01c28"><b>%s</b></span>'
+            % GLib.markup_escape_text(texto))
+
+    def salvar(self, _b=None):
+        email = self.campo_email.get_text().strip()
+        senha = self.campo_senha.get_text()
+        if not EMAIL_RE.match(email):
+            self.erro('Confira o endereco: falta algo como voce@gmail.com')
+            self.campo_email.grab_focus()
+            return
+        if not senha:
+            self.erro('Digite a senha de aplicativo.')
+            self.campo_senha.grab_focus()
+            return
+
+        self.aviso.set_markup('<small>Testando conexao com o Gmail…</small>')
+        self.set_sensitive(False)
+
+        entrada, porta_e, ssl_e, saida, porta_s, ssl_s = self.provedor[3]
+
+        def trabalho():
+            rc, msg = motor('--testar-imap', entrada, str(porta_e),
+                            senha=senha, email=email)
+            if rc != 0:
+                GLib.idle_add(self.falha_teste, msg)
+                return
+            GLib.idle_add(self.gravar, email, senha)
+
+        threading.Thread(target=trabalho, daemon=True).start()
+
+    def falha_teste(self, msg):
+        self.set_sensitive(True)
+        self.erro(
+            'Nao consegui entrar no Gmail. Confira e-mail, senha de '
+            'aplicativo (16 caracteres) e se a verificacao em 2 etapas '
+            'esta ativa.'
+        )
+        return False
+
+    def gravar(self, email, senha):
+        self.set_sensitive(True)
+        self.aviso.set_markup('<small>Salvando conta…</small>')
+        entrada, porta_e, ssl_e, saida, porta_s, ssl_s = self.provedor[3]
+        nome = email.split('@')[0]
+        rc, _ = motor('--gravar', self.provedor[0], nome, email,
+                      entrada, str(porta_e), str(ssl_e),
+                      saida, str(porta_s), str(ssl_s),
+                      senha=senha, substituir=True)
+        if rc not in (0, 2):
+            self.erro('Nao consegui salvar a conta. Tente de novo.')
+            return False
+        self.fechar_login_navegador()
+        self.tela_pronto(email, rc == 2)
+        return False
+
+    def fechar_login_navegador(self):
+        try:
+            saida = subprocess.run(['wmctrl', '-lx'], capture_output=True,
+                                   text=True, timeout=5).stdout
+        except Exception:
+            return
+        for linha in saida.splitlines():
+            campos = linha.split(None, 3)
+            if len(campos) > 2 and campos[2].endswith('Tarsila-login'):
+                subprocess.run(['wmctrl', '-i', '-c', campos[0]], timeout=5)
+
+    def tela_pronto(self, email, senha_fora):
+        self.limpar()
+        img = Gtk.Image.new_from_icon_name('emblem-ok', Gtk.IconSize.DIALOG)
+        img.set_pixel_size(56)
+        self.caixa.pack_start(img, False, False, 0)
+        self.titulo('Tudo pronto!', GLib.markup_escape_text(email))
+        if senha_fora:
+            extra = Gtk.Label()
+            extra.set_markup(
+                '<small>Se o E-mail pedir a senha de novo, ela esta '
+                'copiada: use Ctrl+V.</small>'
+            )
+            extra.set_line_wrap(True)
+            self.caixa.pack_start(extra, False, False, 0)
+        sub = Gtk.Label()
+        sub.set_markup('<small>Abrindo o e-mail…</small>')
+        self.caixa.pack_start(sub, False, False, 0)
+        self.show_all()
+        self.resize(self.largura_coluna, 1)
+        GLib.timeout_add(1200, self.abrir_claws)
+
+    def abrir_claws(self):
+        env = dict(os.environ)
+        env.setdefault('DISPLAY', ':0')
+        env.setdefault('XAUTHORITY', os.path.expanduser('~/.Xauthority'))
+        fetch = os.path.join(RAIZ, 'bin', 'tarsila-email-fetch-recent.py')
+        if os.path.isfile(fetch):
+            subprocess.run([sys.executable, fetch], env=env, timeout=120,
+                           capture_output=True)
+        subprocess.Popen(
+            ['claws-mail'], env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        self.destroy()
+        return False
+
+
+if __name__ == '__main__':
+    janela = Assistente()
+    janela.connect('destroy', Gtk.main_quit)
+    Gtk.main()

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tarsila Email</title>
+  <link rel="stylesheet" href="/css/gmail.css">
+</head>
+<body>
+  <div id="app">
+    <aside class="sidebar">
+      <div class="logo">Tarsila Email</div>
+      <button class="btn-compose" id="btn-compose">✎ Escrever</button>
+      <nav id="folder-nav"></nav>
+      <div class="sidebar-foot sync-wrap">
+        <button class="btn-sync" id="btn-sync">↻ Sincronizar e-mail</button>
+        <div id="sync-toast" class="sync-toast hidden"></div>
+      </div>
+    </aside>
+    <main class="main">
+      <header class="toolbar">
+        <input type="search" id="search" placeholder="Buscar e-mails">
+        <div class="profile-wrap">
+          <span id="account-label" class="account-label"></span>
+          <button id="btn-profile" class="profile-btn" title="Conta">
+            <img id="profile-img" class="profile-img hidden" alt="">
+            <span id="profile-icon" class="profile-icon">👤</span>
+          </button>
+          <div id="profile-menu" class="profile-menu hidden">
+            <button id="menu-accounts">Adicionar/Alterar conta</button>
+            <button id="menu-logout" class="danger">Sair</button>
+          </div>
+        </div>
+      </header>
+      <div class="content">
+        <section class="list-pane" id="list-pane">
+          <div id="loading" class="loading">Carregando…</div>
+          <ul id="msg-list" class="msg-list"></ul>
+          <button id="btn-more" class="btn-more hidden">Mais antigos</button>
+        </section>
+        <section class="read-pane" id="read-pane">
+          <div class="read-empty">Selecione um e-mail</div>
+          <article id="read-view" class="read-view hidden"></article>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="accounts-modal" class="modal hidden">
+    <div class="accounts-box">
+      <header class="accounts-head">
+        <span>Contas</span>
+        <button id="accounts-close">×</button>
+      </header>
+      <ul id="accounts-list" class="accounts-list"></ul>
+      <button id="btn-add-account" class="btn-add-account">+ Adicionar conta</button>
+    </div>
+  </div>
+
+  <div id="compose-modal" class="modal hidden">
+    <div class="compose-box">
+      <header class="compose-head">
+        <span>Nova mensagem</span>
+        <button id="compose-close">×</button>
+      </header>
+      <div class="compose-fields">
+        <input type="email" id="compose-to" placeholder="Para">
+        <input type="text" id="compose-subject" placeholder="Assunto">
+        <textarea id="compose-body" placeholder="Escreva sua mensagem…" rows="12"></textarea>
+        <label class="attach-label">
+          📎 Anexar <input type="file" id="compose-files" multiple hidden>
+        </label>
+        <ul id="attach-list"></ul>
+      </div>
+      <footer class="compose-foot">
+        <button id="compose-draft" class="btn-secondary">Rascunho</button>
+        <button id="compose-send" class="btn-primary">Enviar</button>
+      </footer>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>

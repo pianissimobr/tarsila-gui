@@ -1,0 +1,312 @@
+#!/bin/bash
+# Motor Tarsila Email — Gmail/IMAP, adaptado a Openbox.
+set -uo pipefail
+
+APP_TITLE="Tarsila Email"
+CLAWS_DIR="$HOME/.claws-mail"
+ACCOUNTRC="$CLAWS_DIR/accountrc"
+FOLDERLIST="$CLAWS_DIR/folderlist.xml"
+MBOX="Mailbox"
+MDIR="$HOME/Mail"
+BKP="$CLAWS_DIR/backups-assistente"
+CHROMIUM_PROFILE="$HOME/.config/tarsila-email-chromium"
+SEP=$'\x1f'
+
+command -v yad >/dev/null 2>&1 && GUI=yad || GUI=zenity
+if [ "$GUI" = yad ]; then YOPT=(--center --on-top); else YOPT=(); fi
+
+info(){ "$GUI" "${YOPT[@]}" --info     --title="$APP_TITLE" --width=470 --text="$1" >/dev/null 2>&1 || true; }
+erro(){ "$GUI" "${YOPT[@]}" --error    --title="$APP_TITLE" --width=470 --text="$1" >/dev/null 2>&1 || true; }
+perg(){ "$GUI" "${YOPT[@]}" --question --title="$APP_TITLE" --width=470 --text="$1" >/dev/null 2>&1; }
+
+clip(){
+  if   command -v wl-copy >/dev/null 2>&1; then printf '%s' "$1" | wl-copy 2>/dev/null
+  elif command -v xclip   >/dev/null 2>&1; then printf '%s' "$1" | xclip -selection clipboard 2>/dev/null
+  elif command -v xsel    >/dev/null 2>&1; then printf '%s' "$1" | xsel  --clipboard --input 2>/dev/null
+  fi
+}
+
+tem_agente_polkit(){
+  pgrep -f 'polkit-(gnome|mate|kde|xfce|lxqt)-authentication-agent|lxpolkit|polkit-agent-helper' \
+    >/dev/null 2>&1
+}
+terminal_de(){
+  local t
+  for t in x-terminal-emulator lxterminal xfce4-terminal mate-terminal tilix \
+           konsole gnome-terminal alacritty kitty urxvt uxterm xterm; do
+    command -v "$t" >/dev/null 2>&1 && { echo "$t"; return 0; }
+  done
+  return 1
+}
+escalar_root(){
+  local T pw
+  [ "$(id -u)" -eq 0 ] && { "$@"; return $?; }
+  if command -v pkexec >/dev/null 2>&1 && tem_agente_polkit; then pkexec "$@"; return $?; fi
+  if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then sudo "$@"; return $?; fi
+  if T=$(terminal_de) && command -v sudo >/dev/null 2>&1; then
+    "$T" -e "sh -c 'sudo $*; echo; printf \"Pressione Enter para fechar...\"; read _'" \
+      >/dev/null 2>&1
+    return 0
+  fi
+  pw=$("$GUI" "${YOPT[@]}" --entry --hide-text --title="$APP_TITLE" \
+       --text="Senha de administrador (sudo):" 2>/dev/null) || return 1
+  printf '%s\n' "$pw" | sudo -S -p '' "$@"
+}
+garantir_mime_navegador(){
+  command -v xdg-mime >/dev/null 2>&1 || return 0
+  [ -n "$(xdg-mime query default x-scheme-handler/https 2>/dev/null)" ] && return 0
+  local d
+  for d in firefox firefox-esr chromium chromium-browser epiphany-browser \
+           midori falkon netsurf-gtk; do
+    [ -f "/usr/share/applications/$d.desktop" ] || continue
+    xdg-mime default "$d.desktop" x-scheme-handler/http x-scheme-handler/https \
+      text/html 2>/dev/null
+    return 0
+  done
+  return 0
+}
+
+LOGIN_CLASS="Tarsila-login"
+COL_ASSISTENTE=520
+
+geometria_login(){
+  local sw=1366 sh=768 l a x y g
+  if command -v xdotool >/dev/null 2>&1; then
+    g=$(xdotool getdisplaygeometry 2>/dev/null)
+    [ -n "$g" ] && { sw=${g%% *}; sh=${g##* }; }
+  fi
+  l=$(( sw - COL_ASSISTENTE - 30 ))
+  [ "$l" -gt 1100 ] && l=1100; [ "$l" -lt 640 ] && l=640
+  a=$(( sh - 120 )); [ "$a" -gt 760 ] && a=760; [ "$a" -lt 480 ] && a=480
+  x=$(( sw - l - 12 )); [ "$x" -lt 0 ] && x=0
+  y=$(( (sh - a) / 2 ))
+  [ "$y" -lt 40 ] && y=40
+  echo "$l $a $x $y"
+}
+
+ajustar_janela_login(){
+  local antes="$1" l="$2" a="$3" x="$4" y="$5" i id cls resto novo=""
+  command -v wmctrl >/dev/null 2>&1 || return 0
+  for i in $(seq 1 60); do
+    sleep 1
+    while read -r id _ cls resto; do
+      case "$cls" in
+        *Yad|*Xfdesktop|*Xfce4-panel|*Plank|*Tarsila-*|*laws-mail) continue ;;
+      esac
+      case " $antes " in *" $id "*) continue ;; esac
+      novo="$id"
+    done < <(wmctrl -lx 2>/dev/null)
+    [ -n "$novo" ] || continue
+    wmctrl -i -r "$novo" -b remove,maximized_vert,maximized_horz >/dev/null 2>&1
+    wmctrl -i -r "$novo" -e "0,$x,$y,$l,$a" >/dev/null 2>&1
+    return 0
+  done
+}
+
+abrir_url(){
+  local u="$1" b l a x y antes
+  garantir_mime_navegador
+  read -r l a x y <<< "$(geometria_login)"
+  antes=$(wmctrl -lx 2>/dev/null | cut -d" " -f1 | tr "\n" " ")
+  ajustar_janela_login "$antes" "$l" "$a" "$x" "$y" &
+  mkdir -p "$CHROMIUM_PROFILE"
+
+  if [ -n "${BROWSER:-}" ] && command -v "${BROWSER%% *}" >/dev/null 2>&1; then
+    setsid $BROWSER "$u" >/dev/null 2>&1 & sleep 1; return 0
+  fi
+  for b in chromium chromium-browser; do
+    command -v "$b" >/dev/null 2>&1 || continue
+    setsid "$b" --user-data-dir="$CHROMIUM_PROFILE" --class="$LOGIN_CLASS" \
+      --window-size="$l,$a" --window-position="$x,$y" --no-first-run \
+      --hide-crash-restore-bubble "$u" >/dev/null 2>&1 &
+    sleep 1; return 0
+  done
+  if command -v xdg-open >/dev/null 2>&1; then
+    setsid xdg-open "$u" >/dev/null 2>&1 & sleep 1; return 0
+  fi
+  for b in gio exo-open x-www-browser sensible-browser firefox firefox-esr \
+           epiphany-browser midori surf netsurf-gtk dillo; do
+    command -v "$b" >/dev/null 2>&1 || continue
+    if [ "$b" = gio ]; then setsid gio open "$u" >/dev/null 2>&1 &
+    else setsid "$b" "$u" >/dev/null 2>&1 & fi
+    sleep 1; return 0
+  done
+  clip "$u"
+  "$GUI" "${YOPT[@]}" --entry --title="$APP_TITLE" \
+    --text="Nenhum navegador detectado.\nEndereco copiado; abra manualmente:" \
+    --entry-text="$u" >/dev/null 2>&1
+  return 1
+}
+
+instalar_claws(){
+  command -v claws-mail-instalar-offline >/dev/null 2>&1 || {
+    erro "Instalador nao encontrado."; return 1; }
+  if { command -v pkexec >/dev/null 2>&1 && tem_agente_polkit; } || \
+     { command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; }; then
+    ( escalar_root claws-mail-instalar-offline ) 2>&1 | \
+      "$GUI" "${YOPT[@]}" --progress --pulsate --auto-close --no-cancel \
+        --title="$APP_TITLE" --text="Instalando Claws Mail..." >/dev/null 2>&1
+  else
+    escalar_root claws-mail-instalar-offline
+    info "Se a instalacao terminou na janela do terminal, clique em OK."
+  fi
+}
+
+if ! command -v claws-mail >/dev/null 2>&1; then
+  if perg "O Claws Mail ainda nao esta instalado.\n\nEle vem <b>embutido neste pacote</b> — instalacao <b>offline</b>, sem internet.\n\nInstalar agora?"; then
+    instalar_claws
+  fi
+  command -v claws-mail >/dev/null 2>&1 || {
+    erro "Nao concluido.\nTente no terminal:\n<tt>sudo claws-mail-instalar-offline</tt>"; exit 1; }
+fi
+
+passcrypt(){
+  local pw="$1" k="passkey0" i a b x n hex="" LC_ALL=C
+  command -v xxd >/dev/null 2>&1 || return 1
+  n=${#pw}; [ "$n" -eq 0 ] && return 1
+  for (( i=0; i<n; i++ )); do
+    printf -v a '%d' "'${pw:$i:1}"
+    printf -v b '%d' "'${k:$(( i % 8 )):1}"
+    x=$(( a ^ b ))
+    printf -v hex '%s%02x' "$hex" "$x"
+  done
+  printf '%s' "$hex" | xxd -r -p | base64 -w0 2>/dev/null || \
+    printf '%s' "$hex" | xxd -r -p | base64 | tr -d '\n'
+}
+
+tem_contas(){ [ -s "$ACCOUNTRC" ] && grep -q '^\[Account: ' "$ACCOUNTRC"; }
+prox_id(){
+  local m=0 n
+  while read -r n; do [ "$n" -gt "$m" ] && m=$n; done \
+    < <(grep -o '^\[Account: [0-9]*' "$ACCOUNTRC" 2>/dev/null | grep -o '[0-9]*')
+  echo $(( m + 1 ))
+}
+backup(){ [ -f "$1" ] && { mkdir -p "$BKP"; cp -f "$1" "$BKP/$(basename "$1").$(date +%Y%m%d-%H%M%S)"; }; return 0; }
+limpar_legado(){ grep -q '^\[Default\]' "$ACCOUNTRC" 2>/dev/null && { backup "$ACCOUNTRC"; : > "$ACCOUNTRC"; }; return 0; }
+
+mailbox(){
+  mkdir -p "$MDIR"/inbox "$MDIR"/outbox "$MDIR"/draft "$MDIR"/queue "$MDIR"/trash
+  [ -f "$FOLDERLIST" ] && return 0
+  cat > "$FOLDERLIST" << EOL
+<?xml version="1.0" encoding="UTF-8"?>
+<folderlist>
+  <folder type="mh" name="$MBOX" path="$(basename "$MDIR")" collapsed="0" sort="0">
+    <folderitem type="inbox"  name="inbox"  path="inbox"  mtime="0" new="0" unread="0" total="0" />
+    <folderitem type="outbox" name="outbox" path="outbox" mtime="0" new="0" unread="0" total="0" />
+    <folderitem type="draft"  name="draft"  path="draft"  mtime="0" new="0" unread="0" total="0" />
+    <folderitem type="queue"  name="queue"  path="queue"  mtime="0" new="0" unread="0" total="0" />
+    <folderitem type="trash"  name="trash"  path="trash"  mtime="0" new="0" unread="0" total="0" />
+  </folder>
+</folderlist>
+EOL
+}
+
+fechar_silencioso(){
+  pgrep -x claws-mail >/dev/null 2>&1 || return 0
+  claws-mail --exit >/dev/null 2>&1
+  local i
+  for i in $(seq 1 20); do
+    pgrep -x claws-mail >/dev/null 2>&1 || return 0
+    sleep 0.5
+  done
+  return 0
+}
+
+testar_imap(){
+  local mail="$1" pw="$2" host="${3:-imap.gmail.com}" port="${4:-993}"
+  python3 - "$mail" "$pw" "$host" "$port" <<'PY'
+import imaplib, sys
+email, pw, host, port = sys.argv[1:5]
+pw = pw.replace(" ", "")
+M = imaplib.IMAP4_SSL(host, int(port), timeout=20)
+M.login(email, pw)
+M.logout()
+PY
+}
+
+grava(){
+  local rot="$1" nom="$2" mail="$3" pw="$4" im="$5" ip="$6" is="$7" sm="$8" sp="$9" ss="${10}"
+  local id def=0 enc
+  mkdir -p "$CLAWS_DIR"; limpar_legado; mailbox; backup "$ACCOUNTRC"
+
+  if [ "${TARSILA_SUBSTITUIR:-0}" = 1 ]; then
+    : > "$ACCOUNTRC"
+    def=1
+  else
+    tem_contas || def=1
+  fi
+
+  id=$(prox_id)
+  enc=$(passcrypt "$pw") || enc=""
+  { [ -s "$ACCOUNTRC" ] && echo ""
+    cat << EOL
+[Account: $id]
+account_name=$rot ($mail)
+is_default=$def
+name=$nom
+address=$mail
+organization=
+protocol=1
+receive_server=$im
+smtp_server=$sm
+user_id=$mail
+password=$enc
+config_version=5
+inbox=#mh/$MBOX/inbox
+local_inbox=#mh/$MBOX/inbox
+imap_auth_method=0
+ssl_imap=$is
+ssl_smtp=$ss
+ssl_certs_auto_accept=1
+use_nonblocking_ssl=1
+set_imapport=1
+imapport=$ip
+imap_port=$ip
+set_smtpport=1
+smtpport=$sp
+smtp_port=$sp
+use_smtp_auth=1
+smtp_auth_method=0
+smtp_user_id=$mail
+imap_subsonly=1
+filter_on_receive=0
+receive_at_get_all=0
+low_bandwidth=1
+imap_batch_size=25
+autochk_use_default=0
+autochk_use_custom=1
+autochk_interval=86400
+signature_type=0
+sig_sep=--
+EOL
+  } >> "$ACCOUNTRC"
+  chmod 600 "$ACCOUNTRC"
+  [ -n "$enc" ]
+}
+
+case "${1:-}" in
+  --geometria-login) geometria_login; exit 0 ;;
+  --abrir)           abrir_url "${2:-}"; exit $? ;;
+  --testar-imap)
+    testar_imap "${CLAWS_EMAIL:-}" "${CLAWS_SENHA:-}" "${2:-imap.gmail.com}" "${3:-993}"
+    exit $? ;;
+  --gravar)
+    shift
+    fechar_silencioso
+    grava "${1:-}" "${2:-}" "${3:-}" "${CLAWS_SENHA:-}" "${4:-}" "${5:-}" \
+          "${6:-}" "${7:-}" "${8:-}" "${9:-}"
+    rc_gravar=$?
+    tem_contas || exit 1
+    [ "$rc_gravar" -eq 0 ] || { clip "${CLAWS_SENHA:-}"; exit 2; }
+    clip "${CLAWS_SENHA:-}"
+    exit 0 ;;
+esac
+
+RAIZ="$(cd "$(dirname "$0")/.." && pwd)"
+GUI_BIN="$RAIZ/bin/configurar-claws-gui"
+if [ -x "$GUI_BIN" ] && python3 -c "import gi" >/dev/null 2>&1; then
+  exec "$GUI_BIN"
+fi
+
+erro "Interface grafica indisponivel."
+exit 1

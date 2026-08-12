@@ -1,0 +1,264 @@
+/* Tarsila Email — GTK theme (Gmail reverse-engineered) */
+* {
+  font-family: Roboto, "Noto Sans", sans-serif;
+}
+
+window, dialog, messagedialog, label, button, entry, textview,
+combobox, menuitem, treeview, notebook, headerbar {
+  font-family: Roboto, "Noto Sans", sans-serif;
+}
+
+.tarsila-window {
+  background-color: #f6f8fc;
+  font-family: Roboto, "Noto Sans", sans-serif;
+}
+
+.tarsila-sidebar {
+  background-color: #eef1f5;
+  border-right: 1px solid #e0e4ea;
+}
+
+.tarsila-logo {
+  color: #1a73e8;
+  font-weight: 600;
+  font-size: 18px;
+  padding: 8px 12px 16px 12px;
+}
+
+.tarsila-compose-btn {
+  background-color: #c2e7ff;
+  color: #202124;
+  font-weight: 600;
+  font-size: 14px;
+  border-radius: 16px;
+  padding: 14px 20px;
+  margin: 0 8px 16px 8px;
+  border: none;
+  box-shadow: none;
+}
+
+.tarsila-compose-btn:hover {
+  background-color: #a8daff;
+}
+
+.tarsila-sync-btn {
+  background-color: #ffffff;
+  border: 1px solid #e0e4ea;
+  border-radius: 8px;
+  font-size: 12px;
+  padding: 8px 12px;
+}
+
+.tarsila-sync-btn:hover {
+  background-color: #f1f3f4;
+}
+
+.tarsila-folder-row {
+  padding: 8px 16px;
+  border-radius: 0 24px 24px 0;
+  margin: 2px 0;
+}
+
+.tarsila-folder-row:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+.tarsila-folder-row.active {
+  background-color: #d3e3fd;
+  font-weight: 600;
+}
+
+.tarsila-folder-label {
+  font-size: 14px;
+  color: #202124;
+}
+
+.tarsila-toolbar {
+  background-color: #ffffff;
+  border-bottom: 1px solid #e0e4ea;
+  padding: 8px 16px;
+}
+
+.tarsila-search {
+  background-color: #f1f3f4;
+  border-radius: 8px;
+  border: none;
+  padding: 10px 16px;
+  font-size: 14px;
+  min-height: 36px;
+}
+
+.tarsila-account-label {
+  color: #202124;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.tarsila-profile-btn {
+  border-radius: 50%;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+}
+
+.tarsila-list-pane {
+  background-color: #ffffff;
+  border-right: 1px solid #e0e4ea;
+}
+
+.tarsila-read-pane {
+  background-color: #ffffff;
+  padding: 24px;
+}
+
+.tarsila-read-empty {
+  color: #5f6368;
+  font-size: 14px;
+}
+
+.tarsila-msg-row {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e0e4ea;
+}
+
+.tarsila-msg-row:hover {
+  background-color: #fafafa;
+  box-shadow: inset 1px 0 0 #dadce0, inset -1px 0 0 #dadce0, inset 0 1px 0 #dadce0;
+}
+
+.tarsila-msg-row.selected {
+  background-color: #e8f0fe;
+}
+
+.tarsila-msg-from {
+  font-size: 14px;
+  color: #202124;
+}
+
+.tarsila-msg-from.unread {
+  font-weight: 700;
+}
+
+.tarsila-msg-subject {
+  font-size: 13px;
+  color: #202124;
+}
+
+.tarsila-msg-subject.unread {
+  font-weight: 700;
+}
+
+.tarsila-msg-snippet {
+  font-size: 12px;
+  color: #5f6368;
+}
+
+.tarsila-msg-date {
+  font-size: 11px;
+  color: #5f6368;
+}
+
+.tarsila-star-btn {
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: #dadce0;
+  padding: 0;
+  min-width: 24px;
+  min-height: 24px;
+}
+
+.tarsila-star-btn.on {
+  color: #f4b400;
+}
+
+.tarsila-more-btn {
+  border-radius: 20px;
+  border: 1px solid #e0e4ea;
+  font-size: 13px;
+  padding: 8px 20px;
+  margin: 12px;
+}
+
+.tarsila-read-subject {
+  font-size: 22px;
+  font-weight: 400;
+  color: #202124;
+}
+
+.tarsila-read-meta {
+  font-size: 13px;
+  color: #5f6368;
+  margin-top: 8px;
+  margin-bottom: 16px;
+}
+
+.tarsila-read-body {
+  font-size: 14px;
+  color: #202124;
+}
+
+.tarsila-action-btn {
+  border: 1px solid #e0e4ea;
+  border-radius: 8px;
+  font-size: 13px;
+  padding: 8px 16px;
+  background-color: #ffffff;
+}
+
+.tarsila-action-btn:hover {
+  background-color: #f1f3f4;
+}
+
+.tarsila-action-danger {
+  color: #d93025;
+}
+
+.tarsila-toast {
+  background-color: #3c4043;
+  color: #ffffff;
+  font-size: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.tarsila-toast.error {
+  background-color: #5f2120;
+}
+
+.tarsila-compose-head {
+  background-color: #404040;
+  color: #ffffff;
+  padding: 12px 16px;
+  font-weight: 600;
+}
+
+.tarsila-btn-primary {
+  background-color: #1a73e8;
+  color: #ffffff;
+  font-weight: 600;
+  border-radius: 20px;
+  padding: 10px 24px;
+  border: none;
+}
+
+.tarsila-btn-primary:hover {
+  background-color: #1765cc;
+}
+
+.tarsila-btn-secondary {
+  border: 1px solid #e0e4ea;
+  border-radius: 20px;
+  padding: 10px 20px;
+  background-color: #ffffff;
+}
+
+.tarsila-account-row.active {
+  background-color: #e8f0fe;
+}
+
+.tarsila-loading {
+  color: #5f6368;
+  font-size: 14px;
+  padding: 24px;
+}

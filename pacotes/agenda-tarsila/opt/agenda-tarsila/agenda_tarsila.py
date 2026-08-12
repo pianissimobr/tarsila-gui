@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Agenda Tarsila - cliente nativo GTK3 do Google Agenda (stdlib apenas)."""
+"""Agenda Tarsila - calendario local GTK3 com Google Agenda opcional (stdlib)."""
 
 import base64
 import calendar as pycal
@@ -26,14 +26,17 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 APP_NAME = "Agenda Tarsila"
 APP_ID = "agenda-tarsila"
-APP_VERSION = "4.0.0"
+APP_VERSION = "5.0.0"
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+GOOGLE_ICON = os.path.join(APP_DIR, "icons", "google-20.png")
+GOOGLE_ICON_FALLBACK = os.path.join(APP_DIR, "icons", "google.png")
 
 # --------------------------------------------------------------------- GTK
 try:
     import gi
     gi.require_version("Gtk", "3.0")
     gi.require_version("PangoCairo", "1.0")
-    from gi.repository import Gtk, Gdk, GLib, Pango, PangoCairo
+    from gi.repository import Gtk, Gdk, GLib, Pango, PangoCairo, GdkPixbuf
 except Exception as exc:                                    # pragma: no cover
     sys.stderr.write("\n[ERRO] Modulo GTK3/gi indisponivel: %s\n" % exc)
     sys.stderr.write("Interpretador: %s\n\n" % sys.executable)
@@ -64,7 +67,9 @@ CREDENTIAL_PATHS = [USER_CREDENTIALS,
                     "/etc/agenda-tarsila/credentials.json",
                     "/opt/agenda-tarsila/credentials.json"]
 
-SCHEMA_VERSION = "4"
+SCHEMA_VERSION = "5"
+LOCAL_CAL_ID = "local:default"
+LOCAL_CAL_NAME = "Minha agenda"
 HORIZON_BACK = 400          # dias sincronizados para tras
 HORIZON_FWD = 800           # dias sincronizados para frente
 AUTOSYNC_SECONDS = 180
@@ -97,6 +102,23 @@ def hex_rgb(value, fallback=(0.10, 0.45, 0.91)):
 
 
 EVENT_COLORS = dict((k, hex_rgb(v)) for k, v in EVENT_COLORS_HEX.items())
+LOCAL_COLOR = hex_rgb("#2a9d8f")
+
+
+def is_local_cal(cal_id):
+    return cal_id == LOCAL_CAL_ID or (cal_id or "").startswith("local:")
+
+
+def new_local_event_id():
+    return "local-" + secrets.token_hex(8)
+
+
+def event_source_label(ev):
+    if getattr(ev, "synced", False):
+        return "Local (sincronizado com Google)"
+    if getattr(ev, "source", "google") == "local":
+        return "Agenda local"
+    return "Google Agenda"
 
 
 def rgb_to_hex(color):
@@ -113,6 +135,33 @@ def luminance(c):
 
 def readable_on(c):
     return (1, 1, 1) if luminance(c) < 0.62 else (0.12, 0.12, 0.12)
+
+
+def google_g_image(px=20):
+    """Icone Google (Flaticon / Magnific) para o botao de login."""
+    path = os.path.join(APP_DIR, "icons", "google-%d.png" % px)
+    if not os.path.isfile(path):
+        path = GOOGLE_ICON if os.path.isfile(GOOGLE_ICON) else GOOGLE_ICON_FALLBACK
+    try:
+        if os.path.isfile(path):
+            pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, px, px, True)
+            return Gtk.Image.new_from_pixbuf(pb)
+    except Exception:
+        pass
+    return Gtk.Image.new_from_icon_name("web-browser-symbolic", Gtk.IconSize.BUTTON)
+
+
+def make_google_login_button(on_clicked):
+    """Botao azul: [G] Faça login na sua conta Google."""
+    btn = Gtk.Button.new_with_label("Faça login na sua conta Google")
+    btn.set_image(google_g_image(20))
+    btn.set_always_show_image(True)
+    btn.set_image_position(Gtk.PositionType.LEFT)
+    btn.get_style_context().add_class("suggested-action")
+    btn.get_style_context().add_class("at-google-login")
+    btn.set_tooltip_text("Conectar Google Agenda")
+    btn.connect("clicked", lambda *_a: on_clicked())
+    return btn
 
 
 def local_iso(value):
@@ -323,13 +372,13 @@ def api_error_text(exc):
 
 
 PAGE_OK = ("<!doctype html><html><head><meta charset='utf-8'><title>Agenda Tarsila</title>"
-           "<style>body{font-family:sans-serif;text-align:center;padding:60px;color:#202124}"
+           "<style>body{font-family:Roboto,\"Noto Sans\",sans-serif;text-align:center;padding:60px;color:#202124}"
            "h1{color:#1a73e8}</style></head><body><h1>Tudo pronto!</h1>"
            "<p>Autenticacao concluida. Volte para o <b>Agenda Tarsila</b>.</p>"
            "<p><small>Voce pode fechar esta aba.</small></p></body></html>")
 
 PAGE_FAIL = ("<!doctype html><html><head><meta charset='utf-8'><title>Agenda Tarsila</title>"
-             "<style>body{font-family:sans-serif;text-align:center;padding:60px;color:#202124}"
+             "<style>body{font-family:Roboto,\"Noto Sans\",sans-serif;text-align:center;padding:60px;color:#202124}"
              "h1{color:#d93025}</style></head><body><h1>Autorizacao cancelada</h1>"
              "<p>Nenhum acesso foi concedido. Feche esta aba e tente novamente.</p>"
              "</body></html>")
@@ -434,7 +483,7 @@ def text(cr, x, y, value, size=11.0, bold=False, color=(0, 0, 0), width=None,
          height=None, align="left", wrap=False, alpha=1.0):
     layout = PangoCairo.create_layout(cr)
     fd = Pango.FontDescription()
-    fd.set_family("Sans")
+    fd.set_family("Roboto")
     fd.set_absolute_size(size * Pango.SCALE)
     if bold:
         fd.set_weight(Pango.Weight.BOLD)
@@ -468,6 +517,30 @@ def rrect(cr, x, y, w, h, r=4.0):
     cr.close_path()
 
 
+def paint_event_rect(cr, x, y, w, h, ev, radius=4.0):
+    """Desenha bloco de evento com estilo por origem (local / google / sync)."""
+    src = getattr(ev, "source", "google")
+    synced = getattr(ev, "synced", False)
+    rrect(cr, x, y, w, h, radius)
+    cr.set_source_rgba(ev.color[0], ev.color[1], ev.color[2], 0.90)
+    cr.fill()
+    if src == "local" and not synced:
+        cr.set_line_width(1.2)
+        cr.set_dash([4.0, 3.0], 0)
+        cr.set_source_rgba(ev.color[0] * 0.55, ev.color[1] * 0.55, ev.color[2] * 0.55, 0.95)
+        rrect(cr, x + 0.6, y + 0.6, w - 1.2, h - 1.2, max(2.0, radius - 1))
+        cr.stroke()
+        cr.set_dash([], 0)
+    elif synced:
+        cr.set_line_width(1.0)
+        cr.set_source_rgba(1, 1, 1, 0.35)
+        cr.move_to(x + w - 10, y + 4)
+        cr.line_to(x + w - 4, y + 10)
+        cr.line_to(x + w - 14, y + 10)
+        cr.close_path()
+        cr.stroke()
+
+
 class Palette(object):
     """Cores derivadas do tema GTK (funciona em tema claro e escuro)."""
 
@@ -497,12 +570,15 @@ class Palette(object):
 # MODELO
 # =============================================================================
 class Ev(object):
-    def __init__(self, raw, cal_id, cal_name, color, editable=True):
+    def __init__(self, raw, cal_id, cal_name, color, editable=True,
+                 source="google", synced=False):
         self.raw = raw or {}
         self.id = self.raw.get("id", "")
         self.cal_id = cal_id
         self.cal_name = cal_name
         self.editable = editable
+        self.source = source
+        self.synced = synced
         self.summary = (self.raw.get("summary") or "(sem titulo)").strip()
         self.description = self.raw.get("description") or ""
         self.location = self.raw.get("location") or ""
@@ -629,19 +705,53 @@ class Store(object):
                 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
                 CREATE TABLE IF NOT EXISTS calendars (
                     id TEXT PRIMARY KEY, summary TEXT, color TEXT,
-                    editable INT, prim INT, pos INT);
+                    editable INT, prim INT, pos INT, source TEXT DEFAULT 'google');
                 CREATE TABLE IF NOT EXISTS sync (
                     cal_id TEXT PRIMARY KEY, token TEXT,
                     h0 INT, h1 INT, at REAL);
                 CREATE TABLE IF NOT EXISTS events (
                     cal_id TEXT, id TEXT, d0 INT, d1 INT, payload TEXT,
                     PRIMARY KEY (cal_id, id));
+                CREATE TABLE IF NOT EXISTS sync_links (
+                    local_id TEXT PRIMARY KEY,
+                    google_cal_id TEXT, google_event_id TEXT, synced_at REAL);
                 CREATE INDEX IF NOT EXISTS idx_ev_range ON events (d1, d0);
             """)
             self.db.commit()
-        if self.get_meta("schema") != SCHEMA_VERSION:
-            self.wipe()
-            self.set_meta("schema", SCHEMA_VERSION)
+        self._migrate_schema()
+        self.ensure_local_calendar()
+
+    def _migrate_schema(self):
+        cur = self.get_meta("schema")
+        if cur == SCHEMA_VERSION:
+            return
+        with self.lock:
+            cols = [r[1] for r in self.db.execute("PRAGMA table_info(calendars)")]
+            if "source" not in cols:
+                self.db.execute(
+                    "ALTER TABLE calendars ADD COLUMN source TEXT DEFAULT 'google'")
+            self.db.executescript("""
+                CREATE TABLE IF NOT EXISTS sync_links (
+                    local_id TEXT PRIMARY KEY,
+                    google_cal_id TEXT, google_event_id TEXT, synced_at REAL);
+            """)
+            self.db.execute(
+                "UPDATE calendars SET source='google' WHERE source IS NULL")
+            self.db.commit()
+        self.set_meta("schema", SCHEMA_VERSION)
+
+    def ensure_local_calendar(self):
+        with self.lock:
+            row = self.db.execute(
+                "SELECT id FROM calendars WHERE id=?", (LOCAL_CAL_ID,)).fetchone()
+            if row:
+                return
+            self.db.execute(
+                "INSERT INTO calendars(id,summary,color,editable,prim,pos,source) "
+                "VALUES(?,?,?,?,?,?,?)",
+                (LOCAL_CAL_ID, LOCAL_CAL_NAME, rgb_to_hex(LOCAL_COLOR),
+                 1, 0, -1, "local"))
+            self.db.commit()
 
     # ------------------------------------------------------------------- meta
     def get_meta(self, key):
@@ -659,38 +769,62 @@ class Store(object):
     def wipe(self):
         with self.lock:
             self.db.executescript("DELETE FROM events; DELETE FROM sync; "
+                                  "DELETE FROM sync_links; "
                                   "DELETE FROM calendars; DELETE FROM meta;")
             self.db.commit()
         self.set_meta("schema", SCHEMA_VERSION)
+        self.ensure_local_calendar()
+
+    def wipe_google(self):
+        """Remove cache Google; preserva agenda local."""
+        with self.lock:
+            self.db.execute("DELETE FROM events WHERE cal_id NOT LIKE 'local:%'")
+            self.db.execute("DELETE FROM sync")
+            self.db.execute("DELETE FROM sync_links")
+            self.db.execute("DELETE FROM calendars WHERE id NOT LIKE 'local:%'")
+            self.db.commit()
+        for key in ("google_account", "last_sync"):
+            with self.lock:
+                self.db.execute("DELETE FROM meta WHERE k=?", (key,))
+                self.db.commit()
 
     def ensure_account(self, email):
-        """O cache e por conta: trocar de conta invalida tudo."""
+        """Trocar conta Google invalida so o cache Google."""
         if not email:
             return
-        if self.get_meta("account") != email:
-            self.wipe()
-            self.set_meta("account", email)
+        if self.get_meta("google_account") != email:
+            self.wipe_google()
+            self.set_meta("google_account", email)
 
     # -------------------------------------------------------------- calendarios
     def save_calendars(self, cals):
+        """Atualiza agendas Google; preserva a agenda local."""
         with self.lock:
-            self.db.execute("DELETE FROM calendars")
-            self.db.executemany(
-                "INSERT INTO calendars(id,summary,color,editable,prim,pos) "
-                "VALUES(?,?,?,?,?,?)",
-                [(c["id"], c["summary"], rgb_to_hex(c["rgb"]),
-                  int(c["editable"]), int(c["primary"]), i)
-                 for i, c in enumerate(cals)])
+            self.db.execute("DELETE FROM calendars WHERE source='google' "
+                            "OR (source IS NULL AND id NOT LIKE 'local:%')")
+            rows = [(c["id"], c["summary"], rgb_to_hex(c["rgb"]),
+                     int(c["editable"]), int(c["primary"]), i, "google")
+                    for i, c in enumerate(cals)]
+            if rows:
+                self.db.executemany(
+                    "INSERT INTO calendars(id,summary,color,editable,prim,pos,source) "
+                    "VALUES(?,?,?,?,?,?,?)", rows)
             self.db.commit()
+        self.ensure_local_calendar()
 
     def load_calendars(self):
         with self.lock:
-            rows = self.db.execute("SELECT * FROM calendars ORDER BY pos").fetchall()
+            rows = self.db.execute(
+                "SELECT * FROM calendars ORDER BY "
+                "CASE WHEN source='local' THEN 0 ELSE 1 END, pos").fetchall()
         return [{"id": r["id"], "summary": r["summary"], "rgb": hex_rgb(r["color"]),
-                 "editable": bool(r["editable"]), "primary": bool(r["prim"])}
+                 "editable": bool(r["editable"]), "primary": bool(r["prim"]),
+                 "source": (r["source"] if "source" in r.keys() else "google") or "google"}
                 for r in rows]
 
     def drop_calendar(self, cal_id):
+        if is_local_cal(cal_id):
+            return
         with self.lock:
             self.db.execute("DELETE FROM events WHERE cal_id=?", (cal_id,))
             self.db.execute("DELETE FROM sync WHERE cal_id=?", (cal_id,))
@@ -787,6 +921,71 @@ class Store(object):
             except Exception:
                 pass
         return out
+
+    def upsert_local_event(self, raw):
+        cal_id = LOCAL_CAL_ID
+        ev_id = raw.get("id") or new_local_event_id()
+        raw = dict(raw)
+        raw["id"] = ev_id
+        span = event_day_span(raw)
+        if span is None:
+            raise ValueError("Evento local com data invalida.")
+        with self.lock:
+            self.db.execute(self._UPSERT,
+                            (cal_id, ev_id, span[0], span[1],
+                             json.dumps(raw, separators=(",", ":"))))
+            self.db.commit()
+        return ev_id, raw
+
+    def delete_local_event(self, ev_id):
+        with self.lock:
+            self.db.execute("DELETE FROM events WHERE cal_id=? AND id=?",
+                            (LOCAL_CAL_ID, ev_id))
+            self.db.execute("DELETE FROM sync_links WHERE local_id=?", (ev_id,))
+            self.db.commit()
+
+    def get_sync_link(self, local_id):
+        with self.lock:
+            row = self.db.execute(
+                "SELECT * FROM sync_links WHERE local_id=?", (local_id,)).fetchone()
+        if not row:
+            return None
+        return {"google_cal_id": row["google_cal_id"],
+                "google_event_id": row["google_event_id"],
+                "synced_at": row["synced_at"]}
+
+    def set_sync_link(self, local_id, google_cal_id, google_event_id):
+        with self.lock:
+            self.db.execute(
+                "INSERT INTO sync_links(local_id,google_cal_id,google_event_id,synced_at) "
+                "VALUES(?,?,?,?) ON CONFLICT(local_id) DO UPDATE SET "
+                "google_cal_id=excluded.google_cal_id, "
+                "google_event_id=excluded.google_event_id, "
+                "synced_at=excluded.synced_at",
+                (local_id, google_cal_id, google_event_id, time.time()))
+            self.db.commit()
+
+    def list_unsynced_local(self, day0=None, day1=None):
+        sql = ("SELECT e.id, e.payload FROM events e LEFT JOIN sync_links s "
+               "ON e.id=s.local_id WHERE e.cal_id=? AND s.local_id IS NULL")
+        args = [LOCAL_CAL_ID]
+        if day0 and day1:
+            sql += " AND e.d1>=? AND e.d0<=?"
+            args.extend([day0.toordinal(), day1.toordinal()])
+        with self.lock:
+            rows = self.db.execute(sql, args).fetchall()
+        out = []
+        for row in rows:
+            try:
+                out.append((row["id"], json.loads(row["payload"])))
+            except Exception:
+                pass
+        return out
+
+    def synced_local_ids(self):
+        with self.lock:
+            rows = self.db.execute("SELECT local_id FROM sync_links").fetchall()
+        return set(r["local_id"] for r in rows)
 
     def count(self):
         with self.lock:
@@ -1035,6 +1234,7 @@ class Controller(object):
     def __init__(self, plugin):
         self.plugin = plugin
         self.store = Store()
+        self.store.ensure_local_calendar()
         self.settings = load_settings()
         self.view = self.settings.get("view", "week")
         if self.view not in ("day", "week", "month"):
@@ -1046,10 +1246,12 @@ class Controller(object):
         self.calendars = self.store.load_calendars()
         self.events = []
         self.syncing = False
+        self.pushing = False
         self.error = None
         self.last_sync = self.store.get_meta("last_sync")
         self._listeners = []
         self._sync_lock = threading.Lock()
+        self._synced_ids = self.store.synced_local_ids()
 
     # ---------------------------------------------------------------- listeners
     def connect(self, callback):
@@ -1108,13 +1310,20 @@ class Controller(object):
         d0, d1 = self.window_days()
         meta = dict((c["id"], c) for c in self.calendars)
         ids = self.enabled_ids
+        synced = self.store.synced_local_ids()
         events = []
         for cal_id, raw in self.store.raw_between(d0, d1, ids):
             cal = meta.get(cal_id)
             if cal is None:
                 continue
-            events.append(Ev(raw, cal_id, cal["summary"], cal["rgb"], cal["editable"]))
+            src = cal.get("source", "google")
+            if is_local_cal(cal_id):
+                src = "local"
+            ev_id = raw.get("id", "")
+            events.append(Ev(raw, cal_id, cal["summary"], cal["rgb"], cal["editable"],
+                             source=src, synced=ev_id in synced))
         self.events = events
+        self._synced_ids = synced
         self.notify()
 
     def events_visible(self):
@@ -1126,6 +1335,21 @@ class Controller(object):
 
     def writable_calendars(self):
         return [c for c in self.calendars if c["editable"]]
+
+    def google_calendars(self):
+        return [c for c in self.calendars
+                if c.get("source", "google") == "google" and not is_local_cal(c["id"])]
+
+    def primary_google_calendar(self):
+        for cal in self.google_calendars():
+            if cal.get("primary"):
+                return cal["id"]
+        g = self.google_calendars()
+        return g[0]["id"] if g else None
+
+    def unsynced_local_count(self):
+        d0, d1 = self.window_days()
+        return len(self.store.list_unsynced_local(d0, d1))
 
     # -------------------------------------------------------------- horizonte
     @staticmethod
@@ -1139,7 +1363,7 @@ class Controller(object):
             return False
         d0, d1 = self.window_days()
         for cal in self.calendars:
-            if cal["id"] in self.hidden:
+            if cal["id"] in self.hidden or is_local_cal(cal["id"]):
                 continue
             state = self.store.sync_state(cal["id"])
             if not state:
@@ -1312,15 +1536,23 @@ class Controller(object):
         return False
 
     def hard_reset(self):
-        self.store.wipe()
-        self.calendars = []
+        self.store.wipe_google()
+        self.store.ensure_local_calendar()
+        self.calendars = self.store.load_calendars()
         self.events = []
         self.last_sync = None
         self.notify()
 
     # ---------------------------------------------------------------- escrita
     def save_event(self, cal_id, body, ev=None, on_error=None):
-        """Insere, altera ou move um evento; sincroniza so as agendas tocadas."""
+        if is_local_cal(cal_id):
+            self._save_local_event(body, ev, on_error)
+            return
+        if not self.plugin.authenticated:
+            if on_error:
+                on_error("Conecte o Google Agenda para salvar nesta agenda.")
+            return
+
         def work():
             touched = [cal_id]
             try:
@@ -1339,7 +1571,33 @@ class Controller(object):
                     GLib.idle_add(on_error, msg)
         threading.Thread(target=work, daemon=True).start()
 
+    def _save_local_event(self, body, ev=None, on_error=None):
+        try:
+            raw = dict(body)
+            if ev is not None:
+                raw["id"] = ev.id
+            else:
+                raw["id"] = new_local_event_id()
+            self.store.upsert_local_event(raw)
+            GLib.idle_add(self.load_window)
+        except Exception as exc:
+            if on_error:
+                on_error(str(exc))
+
     def delete_event(self, ev, on_error=None):
+        if is_local_cal(ev.cal_id):
+            try:
+                self.store.delete_local_event(ev.id)
+                GLib.idle_add(self.load_window)
+            except Exception as exc:
+                if on_error:
+                    on_error(str(exc))
+            return
+        if not self.plugin.authenticated:
+            if on_error:
+                on_error("Conecte o Google Agenda para excluir desta agenda.")
+            return
+
         def work():
             try:
                 self.plugin.delete_event(ev.cal_id, ev.id)
@@ -1349,6 +1607,60 @@ class Controller(object):
                 if on_error:
                     GLib.idle_add(on_error, msg)
         threading.Thread(target=work, daemon=True).start()
+
+    def push_local_to_google(self, target_cal_id=None, on_done=None):
+        """Fase D/E: envia eventos locais nao sincronizados para o Google."""
+        if not self.plugin.authenticated:
+            if on_done:
+                on_done(False, "Conecte o Google Agenda primeiro.")
+            return
+        if not self._sync_lock.acquire(blocking=False):
+            return
+        self.pushing = True
+        self.notify()
+
+        def work():
+            errors = []
+            sent = 0
+            cal_id = target_cal_id or self.primary_google_calendar()
+            try:
+                if not cal_id:
+                    raise ApiError("Nenhuma agenda Google editavel encontrada.")
+                items = self.store.list_unsynced_local()
+                for local_id, raw in items:
+                    try:
+                        resp = self.plugin.insert_event(cal_id, raw)
+                        gid = resp.get("id")
+                        if gid:
+                            self.store.set_sync_link(local_id, cal_id, gid)
+                            sent += 1
+                    except Exception as exc:
+                        title = raw.get("summary", local_id)
+                        errors.append("%s: %s" % (title, api_error_text(exc)))
+                if sent:
+                    GLib.idle_add(self.sync, [cal_id])
+            except Exception as exc:
+                errors.append(api_error_text(exc))
+            finally:
+                self._sync_lock.release()
+            GLib.idle_add(self._push_done, sent, errors, on_done)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _push_done(self, sent, errors, on_done):
+        self.pushing = False
+        self.load_window()
+        if errors:
+            self.error = "\n".join(errors)
+        if on_done:
+            if errors and not sent:
+                on_done(False, "\n".join(errors))
+            else:
+                msg = "%d evento(s) enviado(s) ao Google." % sent
+                if errors:
+                    msg += "\n" + "\n".join(errors)
+                on_done(True, msg)
+        return False
 
 
 # =============================================================================
@@ -1521,7 +1833,10 @@ class EventEditor(Gtk.Dialog):
         else:
             self.allday_switch.set_active(all_day)
             if self.cal_ids:
-                self.cal_combo.set_active(0)
+                idx = 0
+                if LOCAL_CAL_ID in self.cal_ids:
+                    idx = self.cal_ids.index(LOCAL_CAL_ID)
+                self.cal_combo.set_active(idx)
 
         self.allday_switch.connect("notify::active", self._allday_toggled)
         self._allday_toggled()
@@ -1616,6 +1931,7 @@ class EventDetails(Gtk.Dialog):
             when = "%s\n%s" % (fmt_dia_longo(ev.start.date()), ev.hour_label())
         wrap.pack_start(self._line("Quando", when), False, False, 0)
         wrap.pack_start(self._line("Agenda", ev.cal_name), False, False, 0)
+        wrap.pack_start(self._line("Origem", event_source_label(ev)), False, False, 0)
         if ev.location:
             wrap.pack_start(self._line("Local", ev.location), False, False, 0)
         if ev.description:
@@ -1626,7 +1942,7 @@ class EventDetails(Gtk.Dialog):
             scroll.set_shadow_type(Gtk.ShadowType.IN)
             scroll.add(view)
             wrap.pack_start(scroll, True, True, 0)
-        if ev.link:
+        if ev.link and ev.source != "local":
             link = Gtk.LinkButton.new_with_label(ev.link, "Abrir no Google Agenda")
             link.set_halign(Gtk.Align.START)
             wrap.pack_start(link, False, False, 0)
@@ -1793,15 +2109,30 @@ class Sidebar(Gtk.Box):
         self.pack_start(self.mini, False, False, 0)
         self.pack_start(Gtk.Separator(), False, False, 2)
 
-        lbl = Gtk.Label(xalign=0.0)
-        lbl.set_markup("<b><small>MINHAS AGENDAS</small></b>")
-        self.pack_start(lbl, False, False, 0)
+        self.pack_start(Gtk.Separator(), False, False, 2)
+
+        self.connect_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.push_btn = Gtk.Button.new_with_label("Enviar locais ao Google")
+        self.push_btn.connect("clicked", lambda *_a: window.push_local_events())
+        self.connect_box.pack_start(self.push_btn, False, False, 0)
+        self.pack_start(self.connect_box, False, False, 0)
+        self.pack_start(Gtk.Separator(), False, False, 2)
 
         scroll = Gtk.ScrolledWindow()
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self.list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         scroll.add(self.list)
         self.pack_start(scroll, True, True, 0)
+
+        legend = Gtk.Label(xalign=0.0)
+        legend.set_line_wrap(True)
+        legend.set_markup(
+            "<small><b>Legenda</b>\n"
+            "<span foreground='%s'>\u25cf</span> local   "
+            "<span foreground='%s'>\u25cf</span> Google   "
+            "<span foreground='%s'>\u25cf</span> local sincronizado</small>"
+            % (rgb_to_hex(LOCAL_COLOR), "#4285f4", rgb_to_hex(mix(LOCAL_COLOR, (1, 1, 1), 0.3))))
+        self.pack_start(legend, False, False, 0)
 
         self.status = Gtk.Label(xalign=0.0)
         self.status.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
@@ -1813,23 +2144,41 @@ class Sidebar(Gtk.Box):
 
     def refresh(self):
         self.mini.refresh()
-        self.status.set_markup(
-            "<small>%s\nsincronizado %s</small>"
-            % (GLib.markup_escape_text(self.ctrl.plugin.email or "conectado"),
-               fmt_relogio(self.ctrl.last_sync)))
-        signature = [(c["id"], c["summary"], rgb_to_hex(c["rgb"]),
-                      c["id"] not in self.ctrl.hidden) for c in self.ctrl.calendars]
+        auth = self.ctrl.plugin.authenticated
+        self.push_btn.set_visible(auth)
+        self.connect_box.set_visible(auth)
+        n_unsync = self.ctrl.unsynced_local_count()
+        if auth:
+            self.push_btn.set_sensitive(n_unsync > 0 and not self.ctrl.pushing)
+            if n_unsync:
+                self.push_btn.set_label("Enviar %d local(is) ao Google" % n_unsync)
+            else:
+                self.push_btn.set_label("Enviar locais ao Google")
+        if auth:
+            self.status.set_markup(
+                "<small>Google: %s\nsincronizado %s</small>"
+                % (GLib.markup_escape_text(self.ctrl.plugin.email or "conectado"),
+                   fmt_relogio(self.ctrl.last_sync)))
+        else:
+            self.status.set_markup("<small>Modo local — sem Google conectado</small>")
+
+        local_cals = [c for c in self.ctrl.calendars if is_local_cal(c["id"])]
+        google_cals = [c for c in self.ctrl.calendars if not is_local_cal(c["id"])]
+        signature = ("L", local_cals, "G", google_cals, auth,
+                     sorted(self.ctrl.hidden), n_unsync)
         if signature == self._signature:
             return
         self._signature = signature
         self._building = True
         for child in self.list.get_children():
             self.list.remove(child)
-        if not self.ctrl.calendars:
-            empty = Gtk.Label(xalign=0.0)
-            empty.set_markup("<small>Sincronizando agendas...</small>")
-            self.list.pack_start(empty, False, False, 4)
-        for cal in self.ctrl.calendars:
+
+        def add_section(title):
+            lbl = Gtk.Label(xalign=0.0)
+            lbl.set_markup("<b><small>%s</small></b>" % title)
+            self.list.pack_start(lbl, False, False, 4)
+
+        def add_cal(cal):
             check = Gtk.CheckButton()
             check.set_active(cal["id"] not in self.ctrl.hidden)
             label = Gtk.Label(xalign=0.0)
@@ -1840,6 +2189,19 @@ class Sidebar(Gtk.Box):
             check.add(label)
             check.connect("toggled", self._toggled, cal["id"])
             self.list.pack_start(check, False, False, 0)
+
+        add_section("AGENDA LOCAL")
+        for cal in local_cals:
+            add_cal(cal)
+        if auth:
+            add_section("GOOGLE")
+            if google_cals:
+                for cal in google_cals:
+                    add_cal(cal)
+            else:
+                wait = Gtk.Label(xalign=0.0)
+                wait.set_markup("<small>Sincronizando agendas...</small>")
+                self.list.pack_start(wait, False, False, 4)
         self.list.show_all()
         self._building = False
 
@@ -1960,8 +2322,7 @@ class TimeGridView(Gtk.Box):
             w = (last - first + 1) * colw - 4
             y = 54.0 + lane * 20
             rrect(cr, x, y, w, 17, 4)
-            cr.set_source_rgba(ev.color[0], ev.color[1], ev.color[2], 0.92)
-            cr.fill()
+            paint_event_rect(cr, x, y, w, 17, ev, 4)
             text(cr, x + 6, y, ev.summary, size=10.0, color=readable_on(ev.color),
                  width=w - 10, height=17)
             self._head_hits.append((x, y, w, 17, "event", ev))
@@ -2029,11 +2390,7 @@ class TimeGridView(Gtk.Box):
                 y = m0 / 60.0 * self.hour_h
                 h = max(18.0, (m1 - m0) / 60.0 * self.hour_h - 2)
                 rrect(cr, x, y, w, h, 4)
-                cr.set_source_rgba(ev.color[0], ev.color[1], ev.color[2], 0.90)
-                cr.fill()
-                rrect(cr, x, y, 3, h, 2)
-                cr.set_source_rgb(ev.color[0] * 0.7, ev.color[1] * 0.7, ev.color[2] * 0.7)
-                cr.fill()
+                paint_event_rect(cr, x, y, w, h, ev, 4)
                 fg = readable_on(ev.color)
                 text(cr, x + 7, y + 2, ev.summary, size=10.0, bold=True, color=fg,
                      width=w - 10)
@@ -2149,16 +2506,17 @@ class MonthView(Gtk.DrawingArea):
                     break
                 cy = top + pos * self.CHIP_H
                 if ev.multiday:
-                    rrect(cr, x + 3, cy, cw - 6, self.CHIP_H - 3, 3)
-                    cr.set_source_rgba(ev.color[0], ev.color[1], ev.color[2], 0.92)
-                    cr.fill()
+                    paint_event_rect(cr, x + 3, cy, cw - 6, self.CHIP_H - 3, ev, 3)
                     text(cr, x + 8, cy, ev.summary, size=9.5,
                          color=readable_on(ev.color), width=cw - 16,
                          height=self.CHIP_H - 3)
                 else:
                     cr.set_source_rgb(*ev.color)
+                    if ev.source == "local" and not ev.synced:
+                        cr.set_dash([2.0, 2.0], 0)
                     cr.arc(x + 9, cy + 7, 3.5, 0, 6.2832)
                     cr.fill()
+                    cr.set_dash([], 0)
                     text(cr, x + 16, cy,
                          "%s  %s" % (ev.start.strftime("%H:%M"), ev.summary),
                          size=9.5, color=pal.fg, width=cw - 22, height=self.CHIP_H - 3)
@@ -2188,85 +2546,84 @@ class MonthView(Gtk.DrawingArea):
 
 
 # =============================================================================
-# TELA DE LOGIN
+# CONECTAR GOOGLE (dialog opcional)
 # =============================================================================
-class LoginPage(Gtk.Box):
-    def __init__(self, window):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        self.window = window
-        self.set_halign(Gtk.Align.CENTER)
-        self.set_valign(Gtk.Align.CENTER)
+class ConnectGoogleDialog(Gtk.Dialog):
+    def __init__(self, parent_win):
+        super().__init__(title="Conectar Google Agenda", transient_for=parent_win,
+                         modal=True)
+        self.parent_win = parent_win
+        self.set_default_size(520, -1)
+        self.add_button("Cancelar", Gtk.ResponseType.CANCEL)
+        self.login_btn = self.add_button("Conectar", Gtk.ResponseType.OK)
+        self.login_btn.get_style_context().add_class("suggested-action")
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=16)
+        self.get_content_area().pack_start(box, True, True, 0)
 
         icon = Gtk.Image.new_from_icon_name(APP_ID, Gtk.IconSize.DIALOG)
-        icon.set_pixel_size(96)
-        self.pack_start(icon, False, False, 0)
+        icon.set_pixel_size(72)
+        box.pack_start(icon, False, False, 0)
 
         title = Gtk.Label()
-        title.set_markup("<span size='xx-large' weight='bold'>%s</span>" % APP_NAME)
-        self.pack_start(title, False, False, 0)
+        title.set_markup("<span size='large' weight='bold'>Google Agenda</span>")
+        box.pack_start(title, False, False, 0)
 
         sub = Gtk.Label()
-        sub.set_markup("<span size='small'>Seu Google Agenda, nativo e leve no Linux"
-                       "</span>")
-        self.pack_start(sub, False, False, 0)
+        sub.set_line_wrap(True)
+        sub.set_markup("<small>Veja compromissos da nuvem e envie eventos locais "
+                       "para o Google quando quiser.</small>")
+        box.pack_start(sub, False, False, 0)
 
         self.status = Gtk.Label()
         self.status.set_line_wrap(True)
-        self.status.set_max_width_chars(60)
+        self.status.set_max_width_chars(56)
         self.status.set_justify(Gtk.Justification.CENTER)
-        self.pack_start(self.status, False, False, 6)
+        box.pack_start(self.status, False, False, 6)
 
         self.spinner = Gtk.Spinner()
-        self.pack_start(self.spinner, False, False, 0)
-
-        self.login_btn = Gtk.Button.new_with_label("Conectar com o Google")
-        self.login_btn.get_style_context().add_class("suggested-action")
-        self.login_btn.connect("clicked", lambda *_a: self.window.start_login())
-        self.pack_start(self.login_btn, False, False, 0)
+        box.pack_start(self.spinner, False, False, 0)
 
         self.pick_btn = Gtk.Button.new_with_label("Selecionar credentials.json...")
-        self.pick_btn.connect("clicked", lambda *_a: self.window.pick_credentials())
-        self.pack_start(self.pick_btn, False, False, 0)
+        self.pick_btn.connect("clicked",
+                              lambda *_a: self.parent_win.pick_credentials(self))
+        box.pack_start(self.pick_btn, False, False, 0)
 
-        expander = Gtk.Expander(label="Como obter o credentials.json")
+        expander = Gtk.Expander(label="Configuracao avancada (credentials.json)")
         help_text = Gtk.Label(xalign=0.0)
         help_text.set_markup(
             "<small>"
-            "1. Acesse <b>console.cloud.google.com</b> e crie/selecione um projeto\n"
-            "2. Ative a <b>Google Calendar API</b> (APIs e servicos &gt; Biblioteca)\n"
-            "3. Tela de permissao OAuth: tipo <b>Externo</b>, modo <b>Teste</b>,\n"
-            "   e adicione seu e-mail em <b>Usuarios de teste</b>\n"
-            "4. Credenciais &gt; Criar credenciais &gt; <b>ID do cliente OAuth</b>\n"
-            "   Tipo de aplicativo: <b>App para desktop</b> (nao use 'Aplicativo Web')\n"
-            "5. Baixe o JSON e selecione-o no botao acima"
+            "1. Acesse <b>console.cloud.google.com</b>\n"
+            "2. Ative a <b>Google Calendar API</b>\n"
+            "3. OAuth externo, modo Teste, seu e-mail em Usuarios de teste\n"
+            "4. Credencial OAuth tipo <b>App para desktop</b>\n"
+            "5. Baixe o JSON e selecione acima"
             "</small>")
         help_text.set_line_wrap(True)
         help_text.set_margin_top(6)
         expander.add(help_text)
-        self.pack_start(expander, False, False, 6)
+        box.pack_start(expander, False, False, 0)
         self.refresh()
 
     def refresh(self):
-        kind = self.window.plugin.credentials_kind()
+        kind = self.parent_win.plugin.credentials_kind()
         if kind == "installed":
             self.status.set_markup(
-                "<small>Credenciais encontradas em\n<tt>%s</tt></small>"
-                % GLib.markup_escape_text(self.window.plugin.credentials_file))
+                "<small>Credenciais em\n<tt>%s</tt></small>"
+                % GLib.markup_escape_text(self.parent_win.plugin.credentials_file))
             self.login_btn.set_sensitive(True)
         elif kind == "web":
             self.status.set_markup(
-                "<b>credentials.json incompativel</b>\n<small>O arquivo encontrado e de "
-                "um cliente OAuth do tipo <b>Aplicativo Web</b>.\nCrie um cliente do "
-                "tipo <b>App para desktop</b> e selecione o novo arquivo.</small>")
+                "<b>credentials.json incompativel</b>\n"
+                "<small>Use cliente OAuth <b>App para desktop</b>.</small>")
             self.login_btn.set_sensitive(False)
         elif kind == "invalido":
-            self.status.set_markup("<b>credentials.json invalido.</b>\n"
-                                   "<small>Selecione outro arquivo.</small>")
+            self.status.set_markup("<b>Arquivo invalido.</b>")
             self.login_btn.set_sensitive(False)
         else:
             self.status.set_markup(
-                "<small>Nenhum <tt>credentials.json</tt> encontrado.\n"
-                "Selecione o arquivo do seu cliente OAuth (App para desktop).</small>")
+                "<small>Nenhum credentials.json. Selecione o arquivo ou "
+                "instale em /etc/agenda-tarsila/.</small>")
             self.login_btn.set_sensitive(False)
 
     def set_busy(self, busy, message=None):
@@ -2274,7 +2631,7 @@ class LoginPage(Gtk.Box):
             self.spinner.start()
         else:
             self.spinner.stop()
-        ready = self.window.plugin.credentials_kind() == "installed"
+        ready = self.parent_win.plugin.credentials_kind() == "installed"
         self.login_btn.set_sensitive(not busy and ready)
         self.pick_btn.set_sensitive(not busy)
         if message:
@@ -2334,6 +2691,10 @@ class MainWindow(Gtk.Window):
         self.title_label = Gtk.Label()
         self.header.pack_start(self.title_label)
 
+        self.source_chip = Gtk.Label()
+        self.source_chip.get_style_context().add_class("dim-label")
+        self.header.pack_start(self.source_chip)
+
         self.spinner = Gtk.Spinner()
         self.header.pack_end(self.spinner)
 
@@ -2346,30 +2707,22 @@ class MainWindow(Gtk.Window):
 
         self.refresh_btn = Gtk.Button.new_from_icon_name("view-refresh-symbolic",
                                                          Gtk.IconSize.BUTTON)
-        self.refresh_btn.set_tooltip_text("Sincronizar agora")
+        self.refresh_btn.set_tooltip_text("Baixar novidades do Google")
         self.refresh_btn.connect("clicked", lambda *_a: self.ctrl.sync())
         self.header.pack_end(self.refresh_btn)
+
+        # [G Faça login…] imediatamente à esquerda da engrenagem (ferramenta)
+        self.tool_trail = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.google_login_btn = make_google_login_button(self.open_connect_google)
+        self.google_login_btn.set_no_show_all(True)
+        self.tool_trail.pack_start(self.google_login_btn, False, False, 0)
 
         self.menu_btn = Gtk.MenuButton()
         self.menu_btn.add(Gtk.Image.new_from_icon_name("preferences-system-symbolic",
                                                        Gtk.IconSize.BUTTON))
         self.menu_btn.set_popover(self.build_menu())
-        self.header.pack_end(self.menu_btn)
-
-        self.stack = Gtk.Stack()
-        self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
-        # A barra de ferramentas entra no topo do conteudo, acima da pilha.
-        raiz = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        raiz.pack_start(self.header, False, False, 0)
-        raiz.pack_start(self.stack, True, True, 0)
-        self.add(raiz)
-        # Na tela de boas-vindas os botoes da barra nao existem, e ela ficava
-        # como uma faixa cinza vazia sob o titulo. Some junto com eles.
-        self.stack.connect("notify::visible-child-name",
-                           self._ajusta_barra_ferramentas)
-
-        self.login_page = LoginPage(self)
-        self.stack.add_named(self.login_page, "login")
+        self.tool_trail.pack_start(self.menu_btn, False, False, 0)
+        self.header.pack_end(self.tool_trail)
 
         body = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         self.sidebar_revealer = Gtk.Revealer()
@@ -2400,7 +2753,11 @@ class MainWindow(Gtk.Window):
         app_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         app_page.pack_start(self.infobar, False, False, 0)
         app_page.pack_start(body, True, True, 0)
-        self.stack.add_named(app_page, "app")
+
+        raiz = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        raiz.pack_start(self.header, False, False, 0)
+        raiz.pack_start(app_page, True, True, 0)
+        self.add(raiz)
 
     # -------------------------------------------------------------------- menu
     def build_menu(self):
@@ -2419,12 +2776,21 @@ class MainWindow(Gtk.Window):
         box.pack_start(monday, False, False, 0)
 
         box.pack_start(Gtk.Separator(), False, False, 4)
-        for label, action in (
-                ("Ressincronizar tudo", lambda: self.ctrl.sync(full=True)),
+        menu_items = [
+            ("Enviar eventos locais ao Google", self.push_local_events),
+        ]
+        if self.plugin.authenticated:
+            menu_items.extend([
+                ("Baixar do Google agora", lambda: self.ctrl.sync()),
+                ("Ressincronizar tudo (Google)", lambda: self.ctrl.sync(full=True)),
                 ("Abrir Google Agenda no navegador",
                  lambda: webbrowser.open("https://calendar.google.com")),
-                ("Sair da conta", self.logout),
-                ("Sobre", self.show_about)):
+                ("Desconectar Google", self.logout),
+            ])
+        else:
+            menu_items.append(("Conectar Google Agenda", self.open_connect_google))
+        menu_items.append(("Sobre", self.show_about))
+        for label, action in menu_items:
             btn = Gtk.Button.new_with_label(label)
             btn.set_relief(Gtk.ReliefStyle.NONE)
             btn.connect("clicked", lambda _b, fn=action: fn())
@@ -2438,47 +2804,39 @@ class MainWindow(Gtk.Window):
         dlg = Gtk.AboutDialog(transient_for=self, modal=True)
         dlg.set_program_name(APP_NAME)
         dlg.set_version(APP_VERSION)
-        dlg.set_comments("Cliente nativo GTK3 para o Google Agenda.\n"
-                         "Sem dependencias externas; sync incremental local.")
+        dlg.set_comments("Calendario local GTK3 com Google Agenda opcional.\n"
+                         "Sem dependencias externas; sync incremental.\n\n"
+                         "Google icons created by Magnific - Flaticon\n"
+                         "https://www.flaticon.com/free-icons/google")
         dlg.set_logo_icon_name(APP_ID)
         dlg.run()
         dlg.destroy()
 
     # ------------------------------------------------------------------ estado
     def post_show(self):
-        self.show_header_widgets(False)
-        self.stack.set_visible_child_name("login")
-        self.login_page.set_busy(True, "Verificando sessao salva...")
+        self.enter_app()
 
         def work():
             ok = self.plugin.silent_login()
             GLib.idle_add(finish, ok)
 
         def finish(ok):
-            self.login_page.set_busy(False)
             if ok:
-                self.enter_app()
-            else:
-                self.login_page.refresh()
+                self.ctrl.store.ensure_account(self.plugin.email)
+                self.ctrl.calendars = self.ctrl.store.load_calendars()
+                self.ctrl.sync()
+            self.on_state_changed()
             return False
 
         threading.Thread(target=work, daemon=True).start()
 
-    def show_header_widgets(self, visible):
-        for widget in (self.today_btn, self.nav_box, self.title_label,
-                       self.view_combo, self.refresh_btn, self.menu_btn,
-                       self.sidebar_btn):
-            widget.set_visible(visible)
-
     def enter_app(self):
-        self.show_header_widgets(True)
-        self.stack.set_visible_child_name("app")
-        self.ctrl.store.ensure_account(self.plugin.email)
+        self.ctrl.store.ensure_local_calendar()
         self.ctrl.calendars = self.ctrl.store.load_calendars()
         self.ctrl.last_sync = self.ctrl.store.get_meta("last_sync")
-        self.ctrl.load_window()               # pinta o cache imediatamente
+        self.ctrl.load_window()
         self.sidebar.refresh()
-        self.ctrl.sync()                      # delta em background
+        self.on_state_changed()
         if self._autosync is None:
             self._autosync = GLib.timeout_add_seconds(AUTOSYNC_SECONDS, self._tick_sync)
 
@@ -2490,7 +2848,28 @@ class MainWindow(Gtk.Window):
     def on_state_changed(self):
         self.title_label.set_markup(
             "<b>%s</b>" % GLib.markup_escape_text(self.ctrl.title_text().capitalize()))
-        if self.ctrl.syncing:
+        if self.plugin.authenticated:
+            chip = "Local + Google · %s" % (self.plugin.email or "conectado")
+        else:
+            chip = "Local"
+        self.source_chip.set_markup("<small><i>%s</i></small>"
+                                    % GLib.markup_escape_text(chip))
+        if self.plugin.authenticated:
+            self.google_login_btn.hide()
+        else:
+            # set_no_show_all(True) foi posto no botao para ele NAO aparecer
+            # no show_all() da janela (senao piscaria antes de sabermos se a
+            # conta ja esta conectada). Mas esse mesmo sinalizador faz o
+            # show_all() do PROPRIO botao nao surtir efeito -- o GTK sai
+            # cedo da funcao. Resultado: o botao "Faca login na sua conta
+            # Google" nunca aparecia, e nao havia erro nenhum para indicar
+            # isso. Verificado no GTK 3: com no_show_all ligado, show_all()
+            # deixa visible=False; so show() muda. Desligamos o sinalizador
+            # aqui, quando ja e hora de mostrar de verdade.
+            self.google_login_btn.set_no_show_all(False)
+            self.google_login_btn.show_all()
+        self.refresh_btn.set_sensitive(self.plugin.authenticated)
+        if self.ctrl.syncing or self.ctrl.pushing:
             self.spinner.start()
             self.spinner.show()
         else:
@@ -2522,45 +2901,84 @@ class MainWindow(Gtk.Window):
         self.ctrl.set_view({0: "day", 1: "week", 2: "month"}[combo.get_active()])
 
     def new_event(self, day=None, start_minute=None, all_day=False):
-        if not self.plugin.authenticated:
-            return
         if not self.ctrl.writable_calendars():
             error_dialog(self, "Nenhuma agenda editavel",
-                         "As agendas ainda estao sincronizando ou voce nao tem "
-                         "permissao de escrita em nenhuma delas.")
+                         "Nao ha agenda disponivel para criar eventos.")
             return
         editor = EventEditor(self, self.ctrl, day=day or self.ctrl.selected,
                              start_minute=start_minute, all_day=all_day)
         editor.run_and_save()
         editor.destroy()
 
+    def open_connect_google(self):
+        dlg = ConnectGoogleDialog(self)
+        dlg.show_all()
+        resp = dlg.run()
+        dlg.destroy()
+        if resp != Gtk.ResponseType.OK:
+            return
+        wait = Gtk.MessageDialog(transient_for=self, modal=True,
+                                 message_type=Gtk.MessageType.INFO,
+                                 buttons=Gtk.ButtonsType.CANCEL,
+                                 text="Conectando ao Google Agenda...")
+        wait.format_secondary_text("Complete a autorizacao no navegador.")
+        wait.show_all()
+
+        def work():
+            err = None
+            try:
+                self.plugin.interactive_login()
+            except Exception as exc:
+                err = api_error_text(exc)
+            GLib.idle_add(finish, err)
+
+        def finish(err):
+            wait.destroy()
+            if err:
+                error_dialog(self, "Nao foi possivel conectar", err)
+            else:
+                self.ctrl.store.ensure_account(self.plugin.email)
+                self.ctrl.calendars = self.ctrl.store.load_calendars()
+                self.ctrl.sync()
+                self.on_state_changed()
+            return False
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def push_local_events(self):
+        if not self.plugin.authenticated:
+            self.open_connect_google()
+            return
+        n = self.ctrl.unsynced_local_count()
+        if n == 0:
+            info = Gtk.MessageDialog(transient_for=self, modal=True,
+                                     message_type=Gtk.MessageType.INFO,
+                                     buttons=Gtk.ButtonsType.OK,
+                                     text="Nenhum evento local pendente.")
+            info.format_secondary_text(
+                "Todos os eventos locais visiveis ja foram enviados ao Google.")
+            info.run()
+            info.destroy()
+            return
+
+        def done(ok, msg):
+            typ = Gtk.MessageType.INFO if ok else Gtk.MessageType.WARNING
+            dlg = Gtk.MessageDialog(transient_for=self, modal=True,
+                                    message_type=typ, buttons=Gtk.ButtonsType.OK,
+                                    text="Sincronizacao local → Google")
+            dlg.format_secondary_text(msg)
+            dlg.run()
+            dlg.destroy()
+            self.on_state_changed()
+
+        self.ctrl.push_local_to_google(on_done=done)
+
     def open_event(self, ev):
         dlg = EventDetails(self, self.ctrl, ev)
         dlg.run_actions()
         dlg.destroy()
 
-    def start_login(self):
-        self.login_page.set_busy(True, "Aguardando autorizacao no navegador...")
-
-        def work():
-            try:
-                self.plugin.interactive_login()
-                GLib.idle_add(done, None)
-            except Exception as exc:
-                GLib.idle_add(done, api_error_text(exc))
-
-        def done(err):
-            self.login_page.set_busy(False)
-            if err:
-                self.login_page.refresh()
-                error_dialog(self, "Nao foi possivel conectar", err)
-            else:
-                self.enter_app()
-            return False
-
-        threading.Thread(target=work, daemon=True).start()
-
-    def pick_credentials(self):
+    def pick_credentials(self, dialog=None):
         chooser = Gtk.FileChooserDialog(title="Selecione o credentials.json",
                                         transient_for=self,
                                         action=Gtk.FileChooserAction.OPEN)
@@ -2582,28 +3000,20 @@ class MainWindow(Gtk.Window):
             self.plugin.install_credentials(path)
         except Exception as exc:
             error_dialog(self, "Arquivo invalido", str(exc))
-            self.login_page.refresh()
+            if dialog:
+                dialog.refresh()
             return
-        self.login_page.refresh()
-        self.start_login()
+        if dialog:
+            dialog.refresh()
 
     def logout(self):
         self.plugin.logout()
         self.ctrl.hard_reset()
-        self.show_header_widgets(False)
-        self.login_page.refresh()
-        self.stack.set_visible_child_name("login")
+        self.on_state_changed()
 
     # ----------------------------------------------------------------- teclado
-    def _ajusta_barra_ferramentas(self, *_a):
-        """Barra de ferramentas so na tela do calendario."""
-        self.header.set_visible(
-            self.stack.get_visible_child_name() == "app")
-
     def on_key(self, _w, event):
         if isinstance(self.get_focus(), (Gtk.Entry, Gtk.TextView)):
-            return False
-        if self.stack.get_visible_child_name() != "app":
             return False
         name = (Gdk.keyval_name(event.keyval) or "").lower()
         if name in ("d", "1"):
@@ -2631,8 +3041,30 @@ class MainWindow(Gtk.Window):
 # CSS / DIAGNOSTICO / MAIN
 # =============================================================================
 CSS = b"""
+* {
+  font-family: Roboto, "Noto Sans", sans-serif;
+}
+window, dialog, messagedialog, label, button, entry, textview,
+combobox, menuitem, treeview, notebook, headerbar, popover {
+  font-family: Roboto, "Noto Sans", sans-serif;
+}
 .at-sidebar { background-color: @theme_bg_color; }
 headerbar label { margin-left: 6px; margin-right: 6px; }
+headerbar button.at-google-login {
+  min-width: 260px;
+  padding-left: 10px;
+  padding-right: 14px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+headerbar button.at-google-login label {
+  font-weight: bold;
+  opacity: 1;
+}
+headerbar button.at-google-login image {
+  margin-right: 6px;
+  opacity: 1;
+}
 """
 
 
@@ -2664,7 +3096,7 @@ def diagnostico():
         store = Store()
         print("cache         : %s" % CACHE_DB)
         print("eventos       : %d" % store.count())
-        print("conta         : %s" % (store.get_meta("account") or "-"))
+        print("conta Google  : %s" % (store.get_meta("google_account") or "-"))
         print("ultimo sync   : %s" % fmt_relogio(store.get_meta("last_sync")))
         cals = store.load_calendars()
         if cals:
