@@ -1,0 +1,43 @@
+#!/bin/sh
+# Fixa a politica de frequencia da GPU. Roda no boot e quando um devfreq
+# aparece tarde.
+#
+# ESTRATEGIA -- escolha uma:
+#   performance  a GPU fica sempre no clock maximo. Medido nesta box:
+#                +21,6% de vazao grafica (glxgears 329 -> 400 FPS).
+#   piso         mantem o simple_ondemand e so eleva o piso. Custa energia o
+#                tempo todo, porem menos que o performance.
+ESTRATEGIA=performance
+PISO_HZ=666666666        # so vale quando ESTRATEGIA=piso
+
+# SO NOS DA GPU. Isto nao e preciosismo: o devfreq tambem governa
+# controlador de memoria (o "dmc" dos Rockchip), NPU e outros blocos. Escrever
+# "performance" num controlador de DDR e uma decisao completamente diferente --
+# e pior. Por isso filtramos pelo driver, e nao escrevemos em tudo que aparece.
+e_gpu() {
+    # 1) o caminho tem "gpu" no nome (Amlogic: fe400000.gpu)
+    case "${1##*/}" in *gpu*) return 0 ;; esac
+    # 2) ou o driver do dispositivo e um driver de GPU conhecido
+    drv=$(sed -n 's/^DRIVER=//p' "$1/device/uevent" 2>/dev/null)
+    case "$drv" in panfrost|lima|mali*|panthor|etnaviv) return 0 ;; esac
+    return 1
+}
+
+for d in /sys/class/devfreq/*/; do
+    [ -e "$d/governor" ] || continue
+    e_gpu "$d" || continue
+
+    if [ "$ESTRATEGIA" = "piso" ]; then
+        echo simple_ondemand > "$d/governor" 2>/dev/null || true
+        # O piso nunca pode passar do teto: em SoC com clock maximo menor que
+        # o nosso, escrever um piso alto demais e recusado e deixa o no como
+        # estava -- pior que nao mexer.
+        teto=$(cat "$d/max_freq" 2>/dev/null || echo 0)
+        alvo=$PISO_HZ
+        [ "$teto" -gt 0 ] && [ "$alvo" -gt "$teto" ] && alvo=$teto
+        echo "$alvo" > "$d/min_freq" 2>/dev/null || true
+    else
+        echo performance > "$d/governor" 2>/dev/null || true
+    fi
+done
+exit 0

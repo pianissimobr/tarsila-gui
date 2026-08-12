@@ -24,8 +24,11 @@ from gi.repository import Gtk, Gdk, GLib, GdkPixbuf
 GLib.set_prgname("tarsila-config")
 GLib.set_application_name("Ajustes")
 
+import cairo
 import json
+import math
 import os
+import pwd
 import shutil
 import subprocess
 import threading
@@ -37,6 +40,14 @@ from pathlib import Path
 CONFIG_DIR = Path.home() / ".config" / "tarsila-config"
 STATE_FILE = CONFIG_DIR / "state.json"
 WALLPAPER_DEFAULT = "/usr/share/backgrounds/tarsila-wallpaper.png"
+
+# Foto do perfil. Fora do home de propósito: a tela de login roda como o
+# usuário "lightdm" e o home aqui é 700 — uma foto guardada em ~/.face
+# apareceria no painel e não apareceria no login. Quem escreve neste
+# caminho é o tarsila-perfil (root); o painel só lê.
+FOTO_PERFIL = Path("/var/lib/tarsila/perfil.png")
+LADO_FOTO = 256          # o que vai para o disco
+NOME_MAX = 32            # o mesmo limite que o tarsila-perfil confere
 
 # Temas visuais (Aparência > Tema). Aplicados por tarsila-tema-apply.sh;
 # a escolha fica em ~/.config/tarsila/tema. O "personalizado" não entra
@@ -89,6 +100,76 @@ def run_ok(argv, timeout=8):
         return r.returncode == 0, r.stdout.strip(), r.stderr.strip()
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
         return False, "", str(exc)
+
+
+def conta_do_usuario():
+    """(nome de exibição, login).
+
+    O nome de exibição mora no campo GECOS do /etc/passwd — o mesmo que a
+    tela de login mostra. Quem nunca trocou o nome vê o login, que é o que
+    esta tela mostrava antes de existir o botão de alterar."""
+    login = os.environ.get("USER") or os.environ.get("LOGNAME") or "?"
+    try:
+        gecos = pwd.getpwnam(login).pw_gecos or ""
+    except KeyError:
+        return login, login
+    # O GECOS tem subcampos separados por vírgula (nome, sala, telefones);
+    # só o primeiro é o nome.
+    nome = gecos.split(",")[0].strip()
+    return (nome or login), login
+
+
+def imagem_do_perfil(tamanho):
+    """A foto em círculo, ou o boneco padrão quando não há foto.
+
+    O recorte redondo é feito aqui, na hora de mostrar: o arquivo em disco
+    fica quadrado e inteiro, para continuar servindo à tela de login, que
+    faz o próprio recorte."""
+    if FOTO_PERFIL.is_file():
+        try:
+            pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                str(FOTO_PERFIL), tamanho, tamanho, False)
+            superficie = cairo.ImageSurface(cairo.FORMAT_ARGB32, tamanho, tamanho)
+            cr = cairo.Context(superficie)
+            cr.arc(tamanho / 2, tamanho / 2, tamanho / 2, 0, 2 * math.pi)
+            cr.clip()
+            Gdk.cairo_set_source_pixbuf(cr, pb, 0, 0)
+            cr.paint()
+            return Gtk.Image.new_from_surface(superficie)
+        except GLib.Error:
+            # Arquivo corrompido ou formato que o GdkPixbuf não lê: cai no
+            # boneco padrão em vez de deixar a tela sem nada.
+            pass
+    img = Gtk.Image.new_from_icon_name("avatar-default", Gtk.IconSize.DIALOG)
+    img.set_pixel_size(tamanho)
+    return img
+
+
+def foto_para_png(caminho):
+    """Lê a imagem que a pessoa escolheu e devolve os bytes de um PNG
+    quadrado de LADO_FOTO, ou (None, motivo).
+
+    Corta pelo centro em vez de espremer: uma foto 16:9 espremida num
+    quadrado deforma o rosto."""
+    try:
+        pb = GdkPixbuf.Pixbuf.new_from_file(caminho)
+    except GLib.Error:
+        return None, "Não consegui abrir essa imagem."
+    # Foto de celular costuma vir deitada, com a rotação só anotada dentro
+    # do arquivo; sem isto ela entraria de lado.
+    pb = pb.apply_embedded_orientation() or pb
+    lado = min(pb.get_width(), pb.get_height())
+    if lado < 1:
+        return None, "Essa imagem está vazia."
+    pb = pb.new_subpixbuf((pb.get_width() - lado) // 2,
+                          (pb.get_height() - lado) // 2, lado, lado)
+    pb = pb.scale_simple(LADO_FOTO, LADO_FOTO, GdkPixbuf.InterpType.BILINEAR)
+    if pb is None:
+        return None, "Não consegui preparar essa imagem."
+    ok, dados = pb.save_to_bufferv("png", [], [])
+    if not ok:
+        return None, "Não consegui salvar essa imagem."
+    return dados, ""
 
 
 def xfconf_get(channel, prop, default=None):
@@ -398,6 +479,8 @@ SEARCH_TOPICS = [
     ("dispositivos", "Bluetooth", "bluetooth parear fone sem fio caixinha controle"),
     ("acessibilidade", "Alto contraste", "alto contraste enxergar visao daltonismo"),
     ("acessibilidade", "Tamanho do texto", "texto grande letra grande fonte lupa"),
+    ("geral", "Alterar nome de usuário", "nome usuario apelido trocar mudar renomear perfil conta como me chamo"),
+    ("geral", "Foto do perfil", "foto perfil imagem avatar retrato usuario colocar minha foto"),
     ("geral", "Trocar senha", "senha trocar mudar password esqueci conta"),
     ("geral", "Atualizações", "atualizar atualizacao update sistema novo"),
     ("geral", "Data e hora", "data hora relogio errada fuso horario"),
@@ -1657,6 +1740,192 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
                          ["xfce4-accessibility-settings"])
 
     # ---- Conta e Segurança ----
+    # ---- Conta: nome de exibição e foto ----
+    #
+    # As duas ações precisam de root e nenhuma delas o dono da conta faz
+    # sozinho neste sistema: o nome mora no GECOS (CHFN_RESTRICT aqui é
+    # "rwh", sem o "f") e a foto tem de ficar fora do home, que é 700, para
+    # a tela de login conseguir ler. Quem faz é o /usr/local/bin/tarsila-perfil,
+    # chamado por "sudo -n" com linha própria no sudoers — o mesmo desenho já
+    # usado para a hora e para a rede.
+
+    def _linha_identidade(self, lb):
+        linha = Gtk.ListBoxRow()
+        linha.set_selectable(False)
+        linha.set_activatable(False)
+        caixa = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        caixa.set_margin_start(16)
+        caixa.set_margin_end(16)
+        caixa.set_margin_top(10)
+        caixa.set_margin_bottom(10)
+
+        # A foto vive dentro de uma caixa própria porque trocá-la é remover
+        # e repor o filho: um Gtk.Image montado a partir de superfície não
+        # aceita ser reaproveitado depois.
+        self._avatar_caixa = Gtk.Box()
+        self._avatar_caixa.add(imagem_do_perfil(48))
+        caixa.pack_start(self._avatar_caixa, False, False, 0)
+
+        textos = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self._nome_lbl = Gtk.Label(xalign=0)
+        self._login_lbl = Gtk.Label(xalign=0)
+        textos.pack_start(self._nome_lbl, False, False, 0)
+        textos.pack_start(self._login_lbl, False, False, 0)
+        caixa.pack_start(textos, True, True, 0)
+
+        btn = Gtk.Button(label="Alterar nome")
+        btn.set_valign(Gtk.Align.CENTER)
+        btn.connect("clicked", self._on_alterar_nome)
+        caixa.pack_start(btn, False, False, 0)
+
+        linha.add(caixa)
+        lb.add(linha)
+        self._escreve_identidade()
+
+    def _linha_foto(self, lb):
+        botoes = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self._btn_remover_foto = Gtk.Button(label="Remover")
+        self._btn_remover_foto.connect("clicked", self._on_remover_foto)
+        escolher = Gtk.Button(label="Escolher foto")
+        escolher.connect("clicked", self._on_escolher_foto)
+        botoes.pack_start(self._btn_remover_foto, False, False, 0)
+        botoes.pack_start(escolher, False, False, 0)
+        add_row(lb, "camera-photo", "Foto do perfil",
+                "Aparece aqui e na tela de login", botoes)
+        # Sem foto, "Remover" fica apagado em vez de sumir: botão que
+        # aparece e desaparece faz a pessoa procurar o que mudou de lugar.
+        self._btn_remover_foto.set_sensitive(FOTO_PERFIL.is_file())
+
+    def _escreve_identidade(self):
+        nome, login = conta_do_usuario()
+        self._nome_lbl.set_markup(GLib.markup_escape_text(nome))
+        if nome == login:
+            recado = "Conta deste computador"
+        else:
+            recado = f"Entra no sistema como {login}"
+        self._login_lbl.set_markup(
+            f'<small><span alpha="65%">{GLib.markup_escape_text(recado)}</span></small>')
+
+    def _atualiza_conta(self):
+        self._escreve_identidade()
+        for filho in self._avatar_caixa.get_children():
+            self._avatar_caixa.remove(filho)
+        nova = imagem_do_perfil(48)
+        self._avatar_caixa.add(nova)
+        nova.show()
+        self._btn_remover_foto.set_sensitive(FOTO_PERFIL.is_file())
+
+    def _on_alterar_nome(self, *_a):
+        nome_atual, _login = conta_do_usuario()
+        dlg = Gtk.Dialog(title="Alterar nome", transient_for=self, modal=True)
+        dlg.add_buttons("Cancelar", Gtk.ResponseType.CANCEL,
+                        "Salvar", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        content = dlg.get_content_area()
+        content.set_spacing(10)
+        content.set_margin_start(16)
+        content.set_margin_end(16)
+        content.set_margin_top(12)
+        content.set_margin_bottom(12)
+
+        content.pack_start(Gtk.Label(label="Como você quer ser chamado?", xalign=0),
+                           False, False, 0)
+        entrada = Gtk.Entry()
+        entrada.set_text(nome_atual)
+        entrada.set_max_length(NOME_MAX)
+        # Enter salva: quem digita um nome curto não deve precisar do mouse.
+        entrada.set_activates_default(True)
+        content.pack_start(entrada, False, False, 0)
+
+        recado = Gtk.Label(xalign=0)
+        recado.set_line_wrap(True)
+        recado.set_max_width_chars(46)
+        recado.set_markup(
+            '<small><span alpha="65%">É o nome que aparece aqui e na tela de '
+            'login. O nome de entrada da conta e a pasta dos seus arquivos '
+            'continuam os mesmos.</span></small>')
+        content.pack_start(recado, False, False, 0)
+
+        content.show_all()
+        resposta = dlg.run()
+        novo = entrada.get_text().strip()
+        dlg.destroy()
+        if resposta != Gtk.ResponseType.OK or novo == nome_atual:
+            return
+        if not novo:
+            self._info_dialog("O nome não pode ficar vazio",
+                              "Digite como você quer ser chamado.")
+            return
+
+        ok, _out, err = run_ok(
+            ["sudo", "-n", "/usr/local/bin/tarsila-perfil", "nome", novo],
+            timeout=15)
+        if ok:
+            self._atualiza_conta()
+        else:
+            self._info_dialog("Não foi possível alterar o nome",
+                              err or "O comando falhou.")
+
+    def _on_escolher_foto(self, *_a):
+        dlg = Gtk.FileChooserDialog(title="Escolher foto do perfil",
+                                    transient_for=self, modal=True,
+                                    action=Gtk.FileChooserAction.OPEN)
+        dlg.add_buttons("Cancelar", Gtk.ResponseType.CANCEL,
+                        "Usar esta foto", Gtk.ResponseType.OK)
+        filtro = Gtk.FileFilter()
+        filtro.set_name("Imagens")
+        # Por tipo, não por extensão: a pessoa pode ter uma foto salva sem
+        # extensão nenhuma, e o GTK descobre o tipo pelo conteúdo.
+        for tipo in ("image/png", "image/jpeg", "image/bmp",
+                     "image/tiff", "image/gif", "image/webp"):
+            filtro.add_mime_type(tipo)
+        dlg.add_filter(filtro)
+        imagens = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_PICTURES)
+        if imagens and os.path.isdir(imagens):
+            dlg.set_current_folder(imagens)
+
+        resposta = dlg.run()
+        caminho = dlg.get_filename() if resposta == Gtk.ResponseType.OK else None
+        dlg.destroy()
+        if not caminho:
+            return
+
+        dados, motivo = foto_para_png(caminho)
+        if dados is None:
+            self._info_dialog("Não deu para usar essa imagem", motivo)
+            return
+        ok, err = self._manda_foto(dados)
+        if ok:
+            self._atualiza_conta()
+        else:
+            self._info_dialog("Não foi possível salvar a foto",
+                              err or "O comando falhou.")
+
+    def _on_remover_foto(self, *_a):
+        ok, _out, err = run_ok(
+            ["sudo", "-n", "/usr/local/bin/tarsila-perfil", "foto", "--remover"],
+            timeout=15)
+        if ok:
+            self._atualiza_conta()
+        else:
+            self._info_dialog("Não foi possível remover a foto",
+                              err or "O comando falhou.")
+
+    @staticmethod
+    def _manda_foto(dados):
+        """Entrega o PNG pronto ao ajudante, pelo STDIN.
+
+        O caminho escolhido não é passado adiante de propósito: um ajudante
+        que copiasse "o arquivo tal" rodando como root poderia ser usado
+        para publicar um arquivo que só o root lê. Aqui quem abriu a imagem
+        foi este processo, com as permissões de quem está usando o painel."""
+        try:
+            r = subprocess.run(["sudo", "-n", "/usr/local/bin/tarsila-perfil", "foto"],
+                               input=dados, capture_output=True, timeout=20)
+            return r.returncode == 0, r.stderr.decode("utf-8", "replace").strip()
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            return False, str(exc)
+
     # ---- Geral ----
     def _page_geral(self, box):
         # Sobrou da antiga aba "Conta e Segurança": o nome da conta e, na
@@ -1666,11 +1935,13 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         # mostrar o nome de quem esta usando.
         card, lb = make_card("Sua conta")
         box.pack_start(card, False, False, 0)
-        user = os.environ.get("USER") or os.environ.get("LOGNAME") or "?"
+        self._linha_identidade(lb)
+        self._linha_foto(lb)
         pw_btn = Gtk.Button(label="Trocar senha")
         pw_btn.connect("clicked", lambda *_: run_bg(
             ["xfce4-terminal", "--title=Trocar senha", "-e", "passwd"]))
-        add_row(lb, "avatar-default", user, "Conta deste computador", pw_btn)
+        add_row(lb, "dialog-password", "Senha",
+                "A senha que você digita ao ligar o computador", pw_btn)
 
         card, lb = make_card("Atualizações")
         box.pack_start(card, False, False, 0)
@@ -1686,7 +1957,7 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
 
         card, lb = make_card("Data, hora e idioma")
         box.pack_start(card, False, False, 0)
-        tz, ntp = self._read_timedate()
+        tz, ntp, _sync = self._read_timedate()
 
         if which("sudo"):
             self._ntp_switch = Gtk.Switch()
@@ -1862,18 +2133,19 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
 
     @staticmethod
     def _read_timedate():
-        # "--property=Timezone,NTP" (lista separada por vírgula) responde
-        # vazio nesta versão do systemd; precisa repetir a flag por campo.
         ok, out, _ = run_ok(["timedatectl", "show",
-                             "--property=Timezone", "--property=NTP"])
-        tz, ntp = "—", "—"
+                             "--property=Timezone", "--property=NTP",
+                             "--property=NTPSynchronized"])
+        tz, ntp, sync = "—", "—", "—"
         if ok:
             for line in out.splitlines():
                 if line.startswith("Timezone="):
                     tz = line.split("=", 1)[1]
                 elif line.startswith("NTP="):
                     ntp = line.split("=", 1)[1]
-        return tz, ntp
+                elif line.startswith("NTPSynchronized="):
+                    sync = line.split("=", 1)[1]
+        return tz, ntp, sync
 
     def _on_ntp_toggle(self, switch, state):
         # Retornar True tira do GTK a decisão de refletir o clique na hora:
@@ -1911,9 +2183,22 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         self._atualiza_botao_manual(state if ok else not state)
         if not ok:
             self._info_dialog(
-                "Não foi possível alterar",
-                "O comando falhou. O ajuste automático de hora continua "
+                "Nao foi possivel alterar",
+                "O comando falhou. O ajuste automatico de hora continua "
                 "como estava.")
+        elif state:
+            def _checa_sync():
+                import time as _t
+                _t.sleep(2)
+                _tz, _ntp, sync = self._read_timedate()
+                if sync == "no":
+                    GLib.idle_add(
+                        self._info_dialog,
+                        "Sem conexao com a internet",
+                        "O ajuste automatico de hora nao conseguiu "
+                        "sincronizar. Desligue-o e ajuste a hora manualmente "
+                        "na secao \"Data, hora e idioma\".")
+            threading.Thread(target=_checa_sync, daemon=True).start()
         return False
 
     def _on_manual_time_clicked(self, *_a):
@@ -1929,7 +2214,7 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
 
         # Fuso horario aqui dentro, antes do calendario: ele muda o que o
         # calendario e o relogio significam, entao vem primeiro na leitura.
-        fuso_atual, _ = self._read_timedate()
+        fuso_atual, _ntp, _sync = self._read_timedate()
         fusos = listar_fusos(fuso_atual)
         combo_fuso = Gtk.ComboBoxText()
         escolhido = 0

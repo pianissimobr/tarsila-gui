@@ -1,0 +1,329 @@
+#!/usr/bin/env python3
+"""Aprende, numa tela invisivel, como cada aplicativo nasce.
+
+O PROBLEMA QUE ISTO RESOLVE
+---------------------------
+A janela so nasce direto na vaga a partir da SEGUNDA abertura de cada
+aplicativo: a regra do Openbox casa por WM_CLASS, e a classe so era
+conhecida depois de termos visto uma janela dele. Ou seja, todo aplicativo
+tinha direito a um salto -- justamente na primeira vez, que e quando o
+usuario esta formando a impressao do sistema.
+
+Aqui abrimos cada aplicativo uma vez num servidor X de mentira (Xvfb, que ja
+vem na imagem), anotamos a classe e o tamanho da moldura, e matamos. Nada
+aparece na tela de ninguem. Depois disso a primeira abertura de verdade ja
+nasce no lugar.
+
+ONDE ISTO DEVE RODAR
+--------------------
+De preferencia UMA VEZ, na montagem da imagem: o arquivo aprendido viaja
+junto e a TV do usuario nao paga nada. Rodar a cada arranque seria pagar ~1
+minuto de CPU num aparelho fraco para redescobrir o que nao muda.
+
+Uso:
+  tarsila-aprender-janelas            # so o que ainda nao se sabe
+  tarsila-aprender-janelas --tudo     # reaprende todos
+  tarsila-aprender-janelas --listar   # mostra o que faria, sem abrir nada
+"""
+
+import os
+import re
+import subprocess
+import sys
+import time
+
+# As DUAS pastas curadas. Quem nao esta aqui nao ganha desenho -- e essa
+# regra que evita ter de adivinhar tamanho de programa que o sistema nao
+# conhece.
+GRADES = ("/usr/share/tarsila/applications", "/usr/share/tarsila/games")
+BIBLIOTECA = "/usr/local/lib/tarsila"
+TELA = ":77"                 # bem longe do :0 do usuario
+GEOMETRIA = "1366x768x24"    # a mesma da TV, para o tamanho ser representativo
+ESPERA_JANELA = 12.0         # teto por aplicativo
+PASSO = 0.15
+
+# Aplicativos que nao entram, e por que:
+#   * o Chromium nasce maximizado por regra do sistema -- nao usa vaga, e
+#     abri-lo aqui custaria caro para nao aprender nada util;
+#   * o OBS quer GPU de verdade e trava sem ela;
+#   * o appfinder e um dialogo do yad, que nasce onde o yad manda.
+PULAR = {"tarsila-chromium", "chromium", "tarsila-obs",
+         "tarsila-appfinder-yad.sh", "tarsila-appfinder.sh"}
+
+
+def chave_do_app(cmd):
+    """A MESMA regra do tarsila_vetor -- as chaves precisam bater."""
+    for parte in reversed(cmd):
+        p = os.path.basename(parte.strip())
+        if p and not p.startswith("-") and not p.startswith("%") \
+           and not p.startswith("^"):
+            return p
+    return "desconhecido"
+
+
+def alvos():
+    """(chave, programa) de cada atalho da grade curada."""
+    saida = {}
+    arquivos = []
+    for pasta in GRADES:
+        try:
+            arquivos += [os.path.join(pasta, n) for n in sorted(os.listdir(pasta))]
+        except OSError:
+            continue
+    for caminho in arquivos:
+        if not caminho.endswith(".desktop"):
+            continue
+        try:
+            with open(caminho, encoding="utf-8", errors="ignore") as f:
+                texto = f.read()
+        except OSError:
+            continue
+        m = re.search(r"^Exec=(.+)$", texto, re.M)
+        if not m:
+            continue
+        partes = [p for p in m.group(1).split()
+                  if not p.startswith("%") and not p.startswith("-")]
+        if not partes:
+            continue
+        chave = chave_do_app(partes)
+        if chave in PULAR:
+            continue
+        # StartupWMClass e a declaracao do proprio atalho sobre qual janela e
+        # dele -- e vale mais que a nossa medicao. Medido: o tarsila-email,
+        # aberto na tela invisivel, mostrou primeiro o assistente de conta, e
+        # aprendemos "Tarsila-email-setup.py" como se fosse o aplicativo.
+        # Quando o .desktop declara, a declaracao ganha.
+        d = re.search(r"^StartupWMClass=(.+)$", texto, re.M)
+        declarada = d.group(1).strip() if d else ""
+        # O proprio atalho pode declarar o tamanho de nascimento e uma
+        # condicao. Quando declara, a declaracao vale mais que a medicao:
+        # ela e a config do aplicativo, e a medicao fica sempre uma geracao
+        # atrasada.
+        t = re.search(r"^X-Tarsila-Nascimento=(\d+)x(\d+)\s*$", texto, re.M)
+        tam = (int(t.group(1)), int(t.group(2))) if t else None
+        c = re.search(r"^X-Tarsila-Vetor-Se=(.+)$", texto, re.M)
+        condicao = c.group(1).strip() if c else ""
+        # O programa de verdade e o ultimo pedaco; os anteriores sao os
+        # embrulhos do sistema (tarsila-abrindo, tarsila-uma-janela), que
+        # aqui nao queremos -- eles trariam junto o vetor e a vaga.
+        saida[chave] = (partes[-1], declarada, tam, condicao)
+    return saida
+
+
+def ja_sabidos():
+    try:
+        sys.path.insert(0, BIBLIOTECA)
+        import tarsila_vetor as tv
+        caminho = tv.NASCIMENTO
+    except Exception:
+        caminho = os.path.expanduser("~/.config/tarsila/nascimento.txt")
+    sabidos = set()
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            for linha in f:
+                partes = linha.split()
+                if len(partes) >= 4:
+                    sabidos.add(partes[0])
+    except OSError:
+        pass
+    return sabidos
+
+
+def _x(env, *args):
+    return subprocess.run(args, capture_output=True, text=True,
+                          timeout=8, env=env)
+
+
+def mede_um(env, programa):
+    """Abre, mede e mata. (largura, altura, classe) ou None."""
+    try:
+        antes = set(_x(env, "xdotool", "search", "--onlyvisible",
+                       "--name", "").stdout.split())
+    except Exception:
+        antes = set()
+    try:
+        proc = subprocess.Popen([programa], env=env,
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                                start_new_session=True)
+    except (FileNotFoundError, PermissionError):
+        return None
+
+    achado = None
+    fim = time.time() + ESPERA_JANELA
+    try:
+        while time.time() < fim and achado is None:
+            time.sleep(PASSO)
+            try:
+                agora = set(_x(env, "xdotool", "search", "--onlyvisible",
+                               "--name", "").stdout.split())
+            except Exception:
+                continue
+            for wid in agora - antes:
+                g = _x(env, "xdotool", "getwindowgeometry", "--shell", wid).stdout
+                d = dict(l.split("=", 1) for l in g.splitlines() if "=" in l)
+                try:
+                    larg, alt = int(d.get("WIDTH", 0)), int(d.get("HEIGHT", 0))
+                except ValueError:
+                    continue
+                if larg < 150 or alt < 100:
+                    continue          # janelinha de servico, nao a principal
+                ext = _x(env, "xprop", "-id", wid, "_NET_FRAME_EXTENTS").stdout
+                if "=" in ext:
+                    try:
+                        e = [int(p) for p in ext.split("=", 1)[1].split(",")]
+                        if len(e) >= 4:
+                            larg += e[0] + e[1]
+                            alt += e[2] + e[3]
+                    except ValueError:
+                        pass
+                cl = _x(env, "xprop", "-id", wid, "WM_CLASS").stdout
+                classe = ""
+                if "=" in cl:
+                    campos = [p.strip().strip('"')
+                              for p in cl.split("=", 1)[1].split(",")]
+                    if len(campos) >= 2 and campos[1]:
+                        classe = campos[1]
+                    elif campos and campos[0]:
+                        classe = campos[0]
+                if classe:
+                    achado = (larg, alt, classe)
+                    break
+    finally:
+        # SIGKILL, e nao SIGTERM, de proposito: varios programas gravam a
+        # geometria da sessao ao sair de forma limpa. Deixar isso acontecer
+        # faria a proxima abertura de verdade herdar o tamanho de uma tela
+        # que nunca existiu.
+        try:
+            os.killpg(os.getpgid(proc.pid), 9)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            pass
+    return achado
+
+
+def _grava(tv, chave, larg, alt, classe, condicao, declarado):
+    """Escreve no cache, com os campos extras que a grade declarou."""
+    tv.guarda_nascimento(chave, larg, alt, classe, permitir_novo=True)
+    if not (condicao or declarado):
+        return
+    try:
+        linhas = []
+        with open(tv.NASCIMENTO, encoding="utf-8") as f:
+            for linha in f:
+                partes = linha.split()
+                if partes and partes[0] == chave:
+                    if condicao:
+                        partes.append("se=" + condicao)
+                    if declarado:
+                        partes.append("declarado")
+                    linha = " ".join(partes) + "\n"
+                linhas.append(linha)
+        with open(tv.NASCIMENTO, "w", encoding="utf-8") as f:
+            f.writelines(linhas)
+    except OSError:
+        pass
+
+
+def main():
+    args = set(sys.argv[1:])
+    lista = alvos()
+    if not lista:
+        print("nada em %s" % (GRADES,))
+        return 0
+
+    if "--tudo" not in args:
+        sabidos = ja_sabidos()
+        pendentes = {k: v for k, v in lista.items() if k not in sabidos}
+    else:
+        pendentes = lista
+
+    if "--listar" in args:
+        print("Aprenderia %d de %d aplicativos:" % (len(pendentes), len(lista)))
+        for k, (prog, decl, tam, cond) in sorted(pendentes.items()):
+            extra = []
+            if decl: extra.append("classe=" + decl)
+            if tam: extra.append("tamanho=%dx%d" % tam)
+            if cond: extra.append("se=" + cond)
+            print("  %-26s %-28s %s" % (k, prog, "  ".join(extra)))
+        return 0
+
+    if not pendentes:
+        print("Nada a aprender: todos os %d ja sao conhecidos." % len(lista))
+        return 0
+
+    if not shutil_which("Xvfb"):
+        print("Xvfb ausente -- sem ele nao da para aprender escondido.",
+              file=sys.stderr)
+        return 1
+
+    env = dict(os.environ)
+    env["DISPLAY"] = TELA
+    env.pop("XAUTHORITY", None)
+
+    xvfb = subprocess.Popen(["Xvfb", TELA, "-screen", "0", GEOMETRIA, "-nolisten", "tcp"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    janelas = None
+    try:
+        time.sleep(2.0)
+        # Openbox junto: sem gerenciador nao ha moldura, e o que interessa e
+        # o tamanho COM decoracao -- o mesmo referencial das vagas.
+        janelas = subprocess.Popen(["openbox"], env=env,
+                                   stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL)
+        time.sleep(1.5)
+
+        sys.path.insert(0, BIBLIOTECA)
+        import tarsila_vetor as tv
+
+        ok = falhou = 0
+        for chave, (programa, declarada, tam, condicao) in sorted(pendentes.items()):
+            # Declarou tamanho? Entao nem precisa abrir para descobrir.
+            if tam and declarada:
+                _grava(tv, chave, tam[0], tam[1], declarada, condicao, True)
+                print("  %-26s %dx%d  classe=%s  (declarado no .desktop)"
+                      % (chave, tam[0], tam[1], declarada))
+                ok += 1
+                continue
+            r = mede_um(env, programa)
+            if r:
+                # A classe declarada no .desktop ganha da medida; o tamanho
+                # e sempre o medido. Se a janela que apareceu aqui nao for a
+                # principal, a primeira abertura de verdade corrige o
+                # tamanho sozinha -- toda abertura reaprende.
+                classe = declarada or r[2]
+                _grava(tv, chave, r[0], r[1], classe, condicao, False)
+                marca = "  (classe declarada)" if declarada else ""
+                print("  %-26s %dx%d  classe=%s%s"
+                      % (chave, r[0], r[1], classe, marca))
+                ok += 1
+            else:
+                print("  %-26s (nao abriu -- aprende sozinho no primeiro uso)"
+                      % chave)
+                falhou += 1
+        print()
+        print("Aprendidos: %d   Sem resposta: %d" % (ok, falhou))
+    finally:
+        for p in (janelas, xvfb):
+            if p is not None:
+                try:
+                    p.kill()
+                    p.wait(timeout=5)
+                except Exception:
+                    pass
+    return 0
+
+
+def shutil_which(nome):
+    import shutil
+    return shutil.which(nome)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

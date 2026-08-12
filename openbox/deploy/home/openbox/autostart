@@ -21,7 +21,7 @@ dunst &
 
 # papel de parede + adaptação à resolução real da TV (grava geometria da
 # barra em ~/.config/tarsila/ e sobe o polybar no fim)
-/usr/local/bin/tarsila-ob-wallpaper-apply.sh &
+/usr/local/bin/tarsila-wallpaper-apply.sh &
 
 # dock (reaplica ordem/tema antes de abrir o Plank)
 ( /usr/local/bin/tarsila-dock-apply.sh 2>/dev/null; exec plank ) &
@@ -35,7 +35,10 @@ dunst &
 # isto o Chromium leva ~18s para abrir na primeira vez do dia e ~5s nas
 # seguintes -- medido. O programa espera a area de trabalho terminar de subir,
 # confere se ha memoria sobrando e faz o trabalho fora da tela.
-/usr/local/bin/tarsila-aquecer &
+# O aquecimento saiu daqui em 06/08: agora e o servico
+# tarsila-aquecer@<usuario>.service, que roda no arranque do sistema numa
+# tela invisivel. Dentro da sessao ele abria janela de verdade na cara do
+# usuario (o Gnumeric era o mais visivel).
 
 # regras de janela (workspace lógico 2, unmaximize, exceções) — igual XFCE
 # Tamanho das janelas Abrir/Salvar como (chave unica do GTK, valida para

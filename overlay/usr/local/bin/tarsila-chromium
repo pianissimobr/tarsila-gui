@@ -525,7 +525,6 @@ FLAGS+=(
 
 # [A2] Modo dispositivo de baixo custo (versão runtime de is_low_end_device):
 # buffers menores, menos threads, cache de imagens decodificadas encolhido.
-FLAGS+=( "--enable-low-end-device-mode" )
 
 # [A3] V8 jitless — chave A/B. RAM do JS despenca; SPAs pesados ficam mais
 # lentos. Bônus: jitless já desabilita WebAssembly por tabela.

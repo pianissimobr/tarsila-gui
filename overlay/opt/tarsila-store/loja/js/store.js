@@ -95,7 +95,7 @@
      capas/<ico>.png (importação de ícones em qualquer dos dois formatos);
      sem arquivo nenhum, fica o blob SVG gerado + iniciais. */
   function fotoTag(item, classe) {
-    return '<img class="'+classe+'" loading="lazy" decoding="async" alt="" '+
+    return '<img class="'+classe+'" loading="eager" decoding="sync" data-tarsila-ok="1" alt="" '+
       'src="capas/'+encodeURIComponent(item.ico)+'.jpg" '+
       'onerror="if(!this.dataset.png){this.dataset.png=1;this.src=this.src.replace(/\\.jpg$/,\'.png\');}else{this.remove();}" '+
       'onload="this.parentElement.classList.add(\'foto-ok\')">';

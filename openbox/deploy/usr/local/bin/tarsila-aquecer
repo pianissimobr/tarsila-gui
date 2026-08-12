@@ -1,107 +1,181 @@
 #!/bin/bash
-# Aquece o cache de disco do navegador durante a inicialização.
+# Aquece o cache de disco dos aplicativos pesados, NUMA TELA INVISIVEL, antes
+# de a area de trabalho do usuario subir.
 #
 # POR QUE ISTO EXISTE
 #
-# Medido nesta tvbox: o Chromium leva 19s para abrir com o cache frio e 5s com
-# o cache quente. A diferença não é do Chromium -- é do Linux. Ele não carrega
-# o programa inteiro de uma vez: mapeia o executável e as bibliotecas e vai
-# buscando no disco cada pedaço que falta. Cada busca dessas é uma "falta de
-# página maior", e na primeira abertura foram 2.561 delas contra 17 na
-# segunda. Depois que o processo morre, as páginas ficam na memória (o page
-# cache do sistema) e a abertura seguinte quase não toca no disco.
+# Medido nesta tvbox, tempo ate a janela do Chromium aparecer:
 #
-# Abrir e fechar o navegador aqui deixa exatamente essas páginas prontas.
+#     cache frio ......................... 8039 ms
+#     depois de ja ter rodado uma vez .... 1297 ms   (6,2x mais rapido)
 #
-# POR QUE NA INICIALIZAÇÃO, E NÃO DEPOIS
+# A diferenca nao e do aplicativo, e do Linux: ele nao carrega o programa
+# inteiro de uma vez -- mapeia o executavel e as bibliotecas e vai buscando no
+# disco cada pedaco que falta. Cada busca dessas e uma "falta de pagina maior":
+# 2.561 na primeira abertura contra 17 na segunda.
 #
-# Esses 19s existem de um jeito ou de outro; a escolha é onde gastá-los.
-# Esperar enquanto o sistema liga é tempo que a pessoa já contava; esperar
-# depois de clicar no navegador vira "esse sistema é lento". Decisão do dono
-# do projeto, e é a leitura certa de expectativa.
+# POR QUE ABRINDO O APLICATIVO, E NAO SO LENDO OS ARQUIVOS
 #
-# CUSTO
+# Parecia obvio que bastasse ler executavel e bibliotecas. Foi testado e NAO
+# funciona. Medido no mesmo dia, com o cache derrubado antes de cada rodada:
 #
-# São ~286 MB de page cache. Isso NÃO é memória usada: o núcleo devolve essas
-# páginas na hora em que qualquer programa precisar. Medido: com 410 MB de
-# cache a mais, a memória disponível caiu de 1430 MB para 1426 MB. Ainda
-# assim só aquecemos se houver folga -- ver a conta abaixo.
-
+#     Chromium frio ...................................... 8039 ms
+#     frio + lendo 177 arquivos (149 MB) do /proc/maps .... 7305 ms   (9%)
+#     frio + tendo rodado o aplicativo ................... 1297 ms   (84%)
+#
+# Ler os arquivos captura um decimo do ganho. O aquecimento de verdade traz
+# junto muito mais do que o binario: fontes, dados do ICU, cache de shader.
+#
+# POR QUE NUMA TELA INVISIVEL (06/08)
+#
+# Ate aqui isto rodava dentro da sessao do usuario, na tela de verdade. Para o
+# Chromium havia o cuidado de mandar a janela para -32000,-32000; para os
+# outros havia um comentario dizendo que iam "para um canto fora da tela pelo
+# proprio X" -- e NAO IA NADA. O comando era so:
+#
+#     ionice -c3 nice -n 19 setsid "$caminho" &
+#
+# Ou seja: o Gnumeric, o AbiWord e o OBS abriam JANELA DE VERDADE na cara do
+# usuario, entravam nas regras do devilspie2, ocupavam vaga, e sumiam sozinhos
+# alguns segundos depois. Parecia falha do sistema.
+#
+# Agora tudo acontece num servidor X proprio (Xvfb), que nao esta ligado a
+# nenhum monitor. Nao ha janela para vazar, nao ha regra de janela para
+# atrapalhar, e nao importa mais se a area de trabalho ja subiu ou nao -- e o
+# que permite rodar isto no arranque do sistema, antes do login, que era o
+# pedido original.
+#
+# O cache de paginas do Linux e do SISTEMA INTEIRO, nao de uma tela: aquecer
+# aqui vale para a sessao do usuario do mesmo jeito.
+#
+# QUAIS APLICATIVOS
+#
+# So os pesados, e a lista e um ARQUIVO -- nao esta escrita aqui dentro.
 set -uo pipefail
 
-NAVEGADOR=chromium
-PERFIL="${XDG_RUNTIME_DIR:-/tmp}/tarsila-aquecimento"
-# O registro vai para a pasta do usuario: /opt/tarsila-diag pertence ao root
-# e este programa roda na sessao dele.
-REGISTRO="${XDG_DATA_HOME:-$HOME/.local/share}/tarsila/aquecimento.log"
+LISTA="${TARSILA_LISTA:-}"
+[ -n "$LISTA" ] || LISTA="/usr/share/tarsila/aquecer.txt"
+PERFIL_BASE="/tmp/tarsila-aquecimento-$$"
+REGISTRO="${TARSILA_LOG:-${HOME:-/var/tmp}/.local/share/tarsila/aquecimento.log}"
+TELA="${TARSILA_TELA:-:78}"          # :77 e do tarsila-aprender-janelas
 
-# A folga é uma PROPORÇÃO da memória da máquina, não um número fixo: este
-# sistema vai para outras tvboxes, com mais ou menos RAM, e um "350 MB"
-# escrito aqui estaria errado em todas as outras.
-FOLGA_MINIMA=55        # % da memória total que precisa estar disponível
+FOLGA_MINIMA=55         # % da memoria total que precisa estar disponivel
+TETO_POR_APP=45         # segundos; se passar disso, desiste daquele e segue
 
 anotar() {
     mkdir -p "$(dirname "$REGISTRO")" 2>/dev/null
     printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$REGISTRO" 2>/dev/null
+    printf '%s\n' "$*"
 }
 
 campo() { awk -v c="$1" '$1==c":" {print $2; exit}' /proc/meminfo; }
+proporcao_livre() {
+    local t l; t=$(campo MemTotal); l=$(campo MemAvailable)
+    [ -n "$t" ] && [ "$t" -gt 0 ] 2>/dev/null && echo $(( l * 100 / t )) || echo 0
+}
+folga_ok() { [ "$(proporcao_livre)" -ge "$FOLGA_MINIMA" ]; }
 
-command -v "$NAVEGADOR" >/dev/null 2>&1 || exit 0
-command -v xdotool     >/dev/null 2>&1 || exit 0
+[ -f "$LISTA" ] || { anotar "sem lista de aquecimento -- nada a fazer"; exit 0; }
+command -v Xvfb >/dev/null 2>&1 || { anotar "sem Xvfb -- nao aqueco (evita janela na tela do usuario)"; exit 0; }
 
-# Deixa a área de trabalho terminar de subir antes de disputar o disco com
-# ela. Sem isto o aquecimento atrasaria justamente o que o usuário está
-# esperando ver.
-sleep 20
-
-# Se o usuário já abriu o navegador, não há o que aquecer.
-pgrep -x "$NAVEGADOR" >/dev/null 2>&1 && { anotar "ja aberto, nada a fazer"; exit 0; }
-
-total=$(campo MemTotal)
-livre=$(campo MemAvailable)
-[ -n "$total" ] && [ -n "$livre" ] && [ "$total" -gt 0 ] 2>/dev/null || exit 0
-proporcao=$(( livre * 100 / total ))
-if [ "$proporcao" -lt "$FOLGA_MINIMA" ]; then
-    anotar "sem folga: $proporcao% disponivel (minimo $FOLGA_MINIMA%) -- nao aqueceu"
+if ! folga_ok; then
+    anotar "sem folga: $(proporcao_livre)% disponivel (minimo $FOLGA_MINIMA%) -- nao aqueceu"
     exit 0
 fi
 
-# --class: o devilspie2 maximiza e tira a decoração de toda janela "Chromium".
-#   Com uma classe própria ele não encosta nesta.
-# --window-position bem fora da tela: o usuário não vê nada acontecer.
-# --user-data-dir próprio: sem isto, se o usuário abrisse o navegador no meio
-#   do aquecimento, a janela dele grudaria nesta instância -- fora da tela e
-#   sem decoração.
-inicio=$(date +%s)
-ionice -c3 nice -n 19 setsid "$NAVEGADOR" \
-    --class=Tarsila-aquecimento \
-    --user-data-dir="$PERFIL" \
-    --window-position=-32000,-32000 --window-size=400,300 \
-    --no-first-run --no-default-browser-check \
-    --disable-session-crashed-bubble --hide-crash-restore-bubble \
-    about:blank >/dev/null 2>&1 &
+# ---- a tela invisivel -------------------------------------------------------
+# Sem gerenciador de janelas de proposito: nada aqui precisa de decoracao, e
+# um WM a mais so custaria memoria.
+Xvfb "$TELA" -screen 0 1366x768x24 -nolisten tcp >/dev/null 2>&1 &
+XVFB_PID=$!
+limpa() {
+    kill -9 "$XVFB_PID" 2>/dev/null
+    rm -rf "$PERFIL_BASE"* 2>/dev/null
+}
+trap limpa EXIT INT TERM
 
-# Espera a janela existir: é o sinal de que as bibliotecas já foram lidas.
-pronto=0
-for _ in $(seq 1 120); do
-    if xdotool search --class "Tarsila-aquecimento" >/dev/null 2>&1; then
-        pronto=1
+for _ in $(seq 1 40); do
+    [ -e "/tmp/.X11-unix/X${TELA#:}" ] && break
+    kill -0 "$XVFB_PID" 2>/dev/null || { anotar "o Xvfb nao subiu -- nao aqueci"; exit 0; }
+    sleep 0.25
+done
+export DISPLAY="$TELA"
+unset XAUTHORITY
+
+inicio_geral=$(date +%s)
+feitos=0
+pulados=0
+
+while read -r prog resto; do
+    case "${prog:-}" in ''|'#'*) continue ;; esac
+    caminho=$(command -v "$prog" 2>/dev/null) || { pulados=$((pulados+1)); continue; }
+
+    # Ja aberto pelo usuario? Entao nao ha o que aquecer -- e mexer nisso
+    # seria mexer na sessao dele.
+    if pgrep -x "$(basename "$caminho")" >/dev/null 2>&1; then
+        anotar "$prog: ja aberto, pulado"
+        pulados=$((pulados+1)); continue
+    fi
+
+    # A folga e conferida ANTES DE CADA aplicativo: os anteriores ja
+    # consumiram memoria, e o proximo pode nao caber.
+    if ! folga_ok; then
+        anotar "parou em $prog: folga caiu para $(proporcao_livre)%"
         break
     fi
-    sleep 0.5
-done
-[ "$pronto" = 1 ] && sleep 3      # deixa terminar de carregar o que falta
 
-# Mata pelo caminho do perfil temporario: pega o processo principal e os
-# auxiliares, e nunca encosta num Chromium que o usuario tenha aberto.
-pkill -f "tarsila-aquecimento" 2>/dev/null
-# O Chromium leva alguns segundos para os processos auxiliares sairem.
-for _ in $(seq 1 20); do
-    pgrep -f "tarsila-aquecimento" >/dev/null 2>&1 || break
-    sleep 0.5
-done
-pkill -9 -f "tarsila-aquecimento" 2>/dev/null
-rm -rf "$PERFIL" 2>/dev/null
+    perfil="$PERFIL_BASE-$prog"
+    inicio=$(date +%s)
 
-anotar "aquecido em $(( $(date +%s) - inicio ))s (disponivel: $proporcao%)"
+    case "$prog" in
+      chromium|*chromium*)
+        # Perfil descartavel: sem isto, se a pessoa abrisse o navegador no
+        # meio do aquecimento, a janela dela grudaria NESTA instancia -- que
+        # vive noutra tela.
+        ionice -c3 nice -n 19 setsid "$caminho" \
+            --user-data-dir="$perfil" --no-first-run --no-default-browser-check \
+            --disable-session-crashed-bubble --hide-crash-restore-bubble \
+            about:blank >/dev/null 2>&1 &
+        ;;
+      *)
+        ionice -c3 nice -n 19 setsid "$caminho" >/dev/null 2>&1 &
+        ;;
+    esac
+    pid=$!
+
+    # Espera a JANELA existir nesta tela: e o sinal de que as bibliotecas ja
+    # foram lidas. Aqui so ha as nossas janelas, entao qualquer uma serve.
+    pronto=0
+    for _ in $(seq 1 $((TETO_POR_APP * 2))); do
+        if [ "$(xdotool search --onlyvisible "" 2>/dev/null | wc -l)" -gt 0 ]; then
+            pronto=1; break
+        fi
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.5
+    done
+    [ "$pronto" = 1 ] && sleep 3        # deixa terminar de carregar o resto
+
+    # SIGKILL de proposito, e nao um fechamento educado: o AbiWord e o
+    # Gnumeric GRAVAM a geometria da janela ao sair, e a geometria desta tela
+    # invisivel nao e a da TV -- deixa-los salvar faria o aplicativo nascer
+    # torto na proxima abertura de verdade. E a mesma razao do
+    # tarsila-aprender-janelas.
+    pkill -9 -P "$pid" 2>/dev/null
+    kill -9 "$pid" 2>/dev/null
+    [ -n "$perfil" ] && pkill -9 -f "$perfil" 2>/dev/null
+    for _ in $(seq 1 20); do
+        pgrep -P "$pid" >/dev/null 2>&1 || break
+        sleep 0.5
+    done
+    rm -rf "$perfil" 2>/dev/null
+
+    if [ "$pronto" = 1 ]; then
+        anotar "$prog: aquecido em $(( $(date +%s) - inicio ))s"
+        feitos=$((feitos+1))
+    else
+        anotar "$prog: nao abriu a tempo, seguindo"
+        pulados=$((pulados+1))
+    fi
+done < "$LISTA"
+
+anotar "fim: $feitos aquecidos, $pulados pulados, $(( $(date +%s) - inicio_geral ))s no total (disponivel: $(proporcao_livre)%)"

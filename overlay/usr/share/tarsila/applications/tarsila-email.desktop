@@ -1,0 +1,22 @@
+[Desktop Entry]
+Type=Application
+Name=Tarsila Email
+GenericName=E-mail
+Comment=Gmail leve — sync local sem navegador
+Exec=/usr/local/bin/tarsila-abrindo /usr/local/bin/tarsila-uma-janela email "Tarsila Email" /usr/local/bin/tarsila-email
+Icon=internet-mail
+Categories=Network;Email;
+Terminal=false
+StartupNotify=true
+StartupWMClass=tarsila-email
+Keywords=email;gmail;tarsila;
+Actions=tirar-dock;desinstalar;
+
+[Desktop Action tirar-dock]
+Name=Tirar do Dock
+Exec=/usr/local/bin/tarsila-dock-item.sh remove /usr/share/tarsila/applications/tarsila-email.desktop
+
+[Desktop Action desinstalar]
+Name=Desinstalar
+Exec=/usr/local/bin/tarsila-app-uninstall.sh /usr/share/tarsila/applications/tarsila-email.desktop
+X-Tarsila-Vetor-Se=~/.config/tarsila-email/config.json

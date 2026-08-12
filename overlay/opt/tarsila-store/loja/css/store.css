@@ -173,7 +173,7 @@ a{ color: inherit; text-decoration:none; }
 .rail{
   padding: 26px 0 4px;
   content-visibility: auto;
-  contain-intrinsic-size: auto 360px;
+  contain-intrinsic-size: auto 420px;
   position: relative;
 }
 .rail-head{ display:flex; align-items:baseline; gap:14px; padding: 0 40px 12px; }
@@ -264,6 +264,34 @@ a{ color: inherit; text-decoration:none; }
 }
 .card-info p{ display:none; }
 
+/* Inicio (trilhos): descricao do catalogo visivel — apps desconhecidos
+   precisam de contexto; grid continua compacto (descricao so no modal). */
+.rail .card{
+  width: 176px;
+  text-align: left;
+}
+.rail .capa{
+  height: 108px;
+  border-radius: 14px;
+  background: var(--superficie);
+  box-shadow: var(--card-sombra);
+}
+.rail .card-info{ padding: 9px 2px 6px; }
+.rail .card-info h3{
+  font-size: .78rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.rail .card-info p{
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: .67rem;
+  line-height: 1.4;
+  color: var(--tinta-2);
+}
+
 /* ── VIEW GRID ──────────────────────────────────────────── */
 #view-grid{ padding: calc(var(--nav-h) + 26px) 40px 60px; }
 .grid-head h1{ font-size:1.7rem; font-weight:800; }
@@ -347,6 +375,8 @@ a{ color: inherit; text-decoration:none; }
   .rail-head, .rail-body{ padding-left:16px; padding-right:16px; }
   #view-grid{ padding-left:16px; padding-right:16px; }
   :root{ --card-w:88px; --card-h:88px; }
+  .rail .card{ width: 152px; }
+  .rail .capa{ height: 92px; }
 }
 @media (min-width: 1600px){
   :root{ font-size:18px; --card-w:220px; --card-h:290px; }

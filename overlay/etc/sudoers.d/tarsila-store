@@ -1,3 +1,0 @@
-# Tarsila Store — permite ao backend instalar/remover APENAS pacotes do
-# catálogo, através do helper validado. Nenhum outro comando root.
-ALL ALL=(root) NOPASSWD: /opt/tarsila-store/bin/tarsila-pkg

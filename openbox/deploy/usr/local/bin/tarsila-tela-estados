@@ -5,10 +5,11 @@ Um processo só, porque as três coisas abaixo dependem da mesma pergunta —
 "há alguma janela maximizada?" — e ficar com três vigias custaria caro nesta
 máquina.
 
-1. BOTÃO DA DOCK. Encostado no meio da borda de cima da Dock, com o desenho
-   de um losango partido ao meio. Clicou, a Dock some e o botão desce para o
-   rodapé; clicou de novo, ela volta. A escolha manual é esquecida a cada
-   troca de estado: maximizou, some; desmaximizou, aparece.
+1. BOTÃO DA DOCK. Encosta no meio da borda de cima da Dock — é a própria Dock
+   para efeitos de UI: botão e Plank sobem/somem juntos, nunca um sem o outro.
+   Clicou, a Dock some e o botão desce para o rodapé; clicou de novo, os dois
+   voltam. A escolha manual é esquecida a cada troca de estado: maximizou,
+   some (Dock+botão); desmaximizou, aparece (Dock+botão).
 
 2. FUNDO DA BARRA DE CIMA. Sem nada maximizado, a barra do sistema fica
    transparente e os ícones flutuam sobre o papel de parede — o retângulo
@@ -29,6 +30,7 @@ seguida -- ela era desenhada duas vezes, e dava um embaralhado visível na
 barra.
 """
 
+import ctypes
 import math
 import os
 import re
@@ -39,16 +41,187 @@ import gi
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("GdkX11", "3.0")
-from gi.repository import Gtk, Gdk, GdkX11, GLib
+from gi.repository import Gtk, Gdk, GdkX11, GLib, Gio
 
 LARGURA = 46
 ALTURA = 20
+
+# --------------------------------------------------------------- pilha do X
+# Ligacao propria com o X, so para empilhar o desenho abaixo da Dock.
+#
+# NAO se usa GdkX11.foreign_new_for_display aqui. Embrulhar a janela de outro
+# processo num Gdk.Window e depois mexer nela DESTRUIU a janela da Plank em
+# 05/08: o processo continuou vivo e a Dock sumiu da tela. Aqui so passamos
+# NUMEROS de janela para o Xlib -- nada e embrulhado, nada e destruido.
+_CW_SIBLING = 1 << 5
+_CW_STACK_MODE = 1 << 6
+_ABAIXO = 1                     # Below
+
+
+class _MudancasDeJanela(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_int), ("y", ctypes.c_int),
+                ("width", ctypes.c_int), ("height", ctypes.c_int),
+                ("border_width", ctypes.c_int),
+                ("sibling", ctypes.c_ulong), ("stack_mode", ctypes.c_int)]
+
+
+def _abre_x():
+    try:
+        lib = ctypes.CDLL("libX11.so.6")
+        lib.XOpenDisplay.restype = ctypes.c_void_p
+        dpy = lib.XOpenDisplay(None)
+        return (lib, dpy) if dpy else (None, None)
+    except OSError:
+        return (None, None)
+
+
+_XLIB, _DPY = _abre_x()
+
+
+def _filho_da_raiz(xid):
+    """Sobe pela arvore ate o ancestral que e filho da raiz: a MOLDURA."""
+    if not _XLIB or not _DPY:
+        return None
+    raiz = ctypes.c_ulong()
+    pai = ctypes.c_ulong()
+    filhos = ctypes.POINTER(ctypes.c_ulong)()
+    n = ctypes.c_uint()
+    atual = int(xid)
+    _XLIB.XDefaultRootWindow.restype = ctypes.c_ulong
+    _XLIB.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+    alvo_raiz = _XLIB.XDefaultRootWindow(ctypes.c_void_p(_DPY))
+    for _ in range(8):
+        ok = _XLIB.XQueryTree(ctypes.c_void_p(_DPY), ctypes.c_ulong(atual),
+                              ctypes.byref(raiz), ctypes.byref(pai),
+                              ctypes.byref(filhos), ctypes.byref(n))
+        if not ok:
+            return None
+        if filhos:
+            _XLIB.XFree(filhos)
+        if pai.value == alvo_raiz:
+            return atual
+        atual = pai.value
+    return None
+
+
+def _geometria_x(xid):
+    """(x da moldura, y da moldura, largura do cliente, altura do cliente).
+
+    So Xlib, so numeros. Ver o aviso em _quadro() sobre por que NAO se usa
+    Gdk.Window aqui.
+    """
+    if not _XLIB or not _DPY:
+        return None
+    def _geo(alvo):
+        r = ctypes.c_ulong(); gx = ctypes.c_int(); gy = ctypes.c_int()
+        gw = ctypes.c_uint(); gh = ctypes.c_uint()
+        bw = ctypes.c_uint(); prof = ctypes.c_uint()
+        ok = _XLIB.XGetGeometry(ctypes.c_void_p(_DPY), ctypes.c_ulong(int(alvo)),
+                                ctypes.byref(r), ctypes.byref(gx), ctypes.byref(gy),
+                                ctypes.byref(gw), ctypes.byref(gh),
+                                ctypes.byref(bw), ctypes.byref(prof))
+        return (gx.value, gy.value, gw.value, gh.value) if ok else None
+    cliente = _geo(xid)
+    if not cliente or cliente[2] <= 0 or cliente[3] <= 0:
+        return None
+    moldura = _filho_da_raiz(xid)
+    canto = _geo(moldura) if moldura else None
+    if canto:
+        return (canto[0], canto[1], cliente[2], cliente[3])
+    return (cliente[0], cliente[1], cliente[2], cliente[3])
+
+
+# ---- escutar a janela da Dock -------------------------------------------
+#
+# O botao da Dock e um BOTAO: clica, mostra e esconde a Dock, e fica apagado
+# e inerte quando ha janela maximizada. Nada disso muda aqui. O que muda e de
+# onde ele tira a POSICAO.
+#
+# Ate 06/08 ele deduzia: lia os arquivos de estado, concluia "a Dock deve
+# estar escondida" e ia para o rodape. Quando a deducao chegava antes de a
+# Dock terminar de deslizar, a conta saia com a medida velha e ele ficava
+# parado no meio da tela ate alguem mexer em alguma coisa. Tapar isso com
+# repeticoes atrasadas so trocou o defeito por outro: o botao descia, mas
+# tres segundos depois da Dock.
+#
+# Agora ele nao deduz nada: escuta a propria janela do Plank e vai junto. E
+# o X quem avisa, no instante em que a Dock se mexe.
+_MASCARA_ESTRUTURA = 1 << 17      # StructureNotifyMask
+_UNMAP, _MAP, _CONFIGURE, _DESTROY = 18, 19, 22, 17
+
+
+def _escuta_estrutura(xid):
+    """Pede ao X para avisar quando esta janela mudar de lugar ou sumir."""
+    if not _XLIB or not _DPY or not xid:
+        return False
+    try:
+        _XLIB.XSelectInput(ctypes.c_void_p(_DPY), ctypes.c_ulong(int(xid)),
+                           ctypes.c_long(_MASCARA_ESTRUTURA))
+        _XLIB.XFlush(ctypes.c_void_p(_DPY))
+        return True
+    except Exception:
+        return False
+
+
+def _fd_do_x():
+    """O descritor da conexao com o X, para o laco do GLib vigiar."""
+    if not _XLIB or not _DPY:
+        return None
+    try:
+        _XLIB.XConnectionNumber.restype = ctypes.c_int
+        _XLIB.XConnectionNumber.argtypes = [ctypes.c_void_p]
+        return _XLIB.XConnectionNumber(ctypes.c_void_p(_DPY))
+    except Exception:
+        return None
+
+
+def _colhe_eventos():
+    """Consome o que chegou. Devolve (mexeu, sumiu)."""
+    if not _XLIB or not _DPY:
+        return (False, False)
+    # A XEvent e uma uniao de 24 longs no 64 bits; 256 bytes sobra.
+    ev = ctypes.create_string_buffer(256)
+    mexeu = sumiu = False
+    try:
+        _XLIB.XPending.restype = ctypes.c_int
+        _XLIB.XPending.argtypes = [ctypes.c_void_p]
+        while _XLIB.XPending(ctypes.c_void_p(_DPY)) > 0:
+            _XLIB.XNextEvent(ctypes.c_void_p(_DPY), ev)
+            tipo = ctypes.cast(ev, ctypes.POINTER(ctypes.c_int)).contents.value
+            if tipo in (_UNMAP, _MAP, _CONFIGURE):
+                mexeu = True
+            elif tipo == _DESTROY:
+                sumiu = True
+    except Exception:
+        pass
+    return (mexeu, sumiu)
+
+
+def _empilha_abaixo(meu_xid, irmao_xid):
+    """Poe a janela <meu_xid> logo abaixo de <irmao_xid> na pilha."""
+    if not _XLIB or not _DPY or not irmao_xid:
+        return False
+    mud = _MudancasDeJanela()
+    mud.sibling = ctypes.c_ulong(int(irmao_xid))
+    mud.stack_mode = _ABAIXO
+    _XLIB.XConfigureWindow(ctypes.c_void_p(_DPY), ctypes.c_ulong(int(meu_xid)),
+                           ctypes.c_uint(_CW_SIBLING | _CW_STACK_MODE),
+                           ctypes.byref(mud))
+    _XLIB.XFlush(ctypes.c_void_p(_DPY))
+    return True
 
 # Onde o tarsila-title.sh anota se há janela maximizada. É a mesma fonte que
 # o devilspie2 e as bolinhas do topo usam -- ler daqui evita perguntar ao X
 # de novo a cada segundo.
 RT = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
 ESTADO_TOPO = os.path.join(RT, "tarsila-topbar-state.txt")
+# Modo A/B da topbar, escrito SO POR EVENTO pelo tarsila-polybar-mode.sh
+# ("full" = A/maximizado, "compact" = B). E a fonte de verdade da Dock.
+MODO_TOPBAR = os.path.join(RT, "tarsila-polybar-mode.txt")
+# Pedido do vetor de abertura: "pid x y largura altura" enquanto um app esta
+# abrindo; arquivo vazio ou ausente = nada a mostrar. Quem escreve e o
+# tarsila-abrindo.
+PEDIDO_VETOR = os.path.join(RT, "tarsila-vetor.txt")
 
 CASA = os.path.expanduser("~")
 CFG = os.path.join(CASA, ".config", "tarsila")
@@ -102,16 +275,238 @@ class Fundo(Gtk.Window):
         cr.paint()
         return False
 
+    def abaixar(self):
+        """Empurra o retangulo solido para BAIXO da polybar. Idempotente.
+
+        Corrige o bug de 2026-08-02 ("a barra fica pintada mas sem escrita"):
+        show_all() mapeia a janela NO TOPO da pilha do X, e o lower() logo em
+        seguida corre com esse mapeamento -- as vezes perde. Quando perde,
+        este retangulo fica POR CIMA da polybar e cobre titulo e botoes. Como
+        aplicar() so roda na TRANSICAO de estado (ver Botao._reavalia), nada
+        corrigia depois: so um restart do polybar (que remapeia a janela dele
+        no topo) devolvia a escrita -- ate a proxima maximizacao.
+
+        Comprovado na box: com o fundo por cima, a faixa do topo media uma
+        unica cor (#EDF1F4) em 100% dos pixels; levantando a polybar, os
+        pixels do texto (#2a2e32) reapareciam na hora.
+
+        Retorna False de proposito: serve direto como callback de
+        GLib.idle_add, que assim roda uma vez so.
+        """
+        janela = self.get_window()
+        if janela is not None:
+            janela.lower()
+        return False
+
     def aplicar(self, maximizada):
         if maximizada:
             self.show_all()
             self.move(0, 0)
             # Abaixo da barra, para os ícones continuarem por cima.
-            janela = self.get_window()
-            if janela is not None:
-                janela.lower()
+            self.abaixar()
+            # De novo assim que o X terminar de processar o mapeamento: o
+            # lower() acima sozinho perde a corrida com o proprio show_all().
+            GLib.idle_add(self.abaixar)
         else:
             self.hide()
+
+
+class Vetor(Gtk.Window):
+    """O desenho que ocupa a vaga enquanto o aplicativo ainda esta abrindo.
+
+    Por que mora AQUI dentro, e nao num processo proprio: medido nesta box,
+    uma janela GTK+Python nova leva ~1115 ms para aparecer. Como a espera
+    inteira e de ~2,5 s, um processo novo so aparecia no fim -- e em app
+    rapido (galculator, 1,5 s) piscaria por meio segundo, parecendo defeito.
+    Aqui a janela ja esta criada e escondida desde o login: mostrar custa
+    milissegundos.
+
+    Ele NAO tenta adivinhar onde a janela vai nascer. Ele desenha na vaga que
+    o tarsila-vaga.py escolheu e que o devilspie2 vai impor -- por isso acerta
+    sempre.
+
+    Sai quando o conteudo do aplicativo termina de pintar (XDamage), nao
+    quando a janela aparece: medido, entre uma coisa e outra passam de 0,6 a
+    1,7 s em que a janela existe mas esta vazia -- justamente o "parece
+    travado" que motivou tudo isto.
+    """
+
+    PASSO_MS = 450        # troca de estado da animacao
+    FADE_MS = 40          # intervalo dos passos do fade
+    FADE_PASSOS = 6       # ~240 ms de saida
+
+
+    def __init__(self):
+        super().__init__(type=Gtk.WindowType.TOPLEVEL)
+        self.set_type_hint(Gdk.WindowTypeHint.SPLASHSCREEN)
+        self.set_decorated(False)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_accept_focus(False)
+        self.set_keep_above(True)
+        self.set_app_paintable(True)
+        tela = self.get_screen()
+        visual = tela.get_rgba_visual()
+        if visual is not None:
+            self.set_visual(visual)
+        self.connect("draw", self._desenha)
+        self._fase = 0
+        self._anim = None
+        self._fade = None
+        # Realiza a janela ja no arranque: e isto que faz o show() ser
+        # instantaneo depois.
+        self.realize()
+        # OVERRIDE-REDIRECT: tira esta janela do controle do gerenciador.
+        #
+        # Sem isto ela entrava no _NET_CLIENT_LIST e o tarsila-abrindo a
+        # confundia com a janela do aplicativo que estava esperando: como o
+        # vetor pinta na hora (esta animando), o XDamage disparava em ~60 ms
+        # e o desenho sumia antes mesmo de o aplicativo comecar a aparecer.
+        # Sendo pura decoracao, ele nao deve ser gerenciado, nao deve receber
+        # foco, nao deve entrar no Alt+Tab nem na lista de janelas.
+        try:
+            janela = self.get_window()
+            if janela is not None:
+                janela.set_override_redirect(True)
+        except Exception:
+            pass
+
+    # ---------------------------------------------------------- aparencia
+    @staticmethod
+    def _barra(cr, x, y, w, h, r, tom):
+        cr.set_source_rgba(*tom)
+        cr.new_sub_path()
+        cr.arc(x + w - r, y + r, r, -1.5708, 0)
+        cr.arc(x + w - r, y + h - r, r, 0, 1.5708)
+        cr.arc(x + r, y + h - r, r, 1.5708, 3.1416)
+        cr.arc(x + r, y + r, r, 3.1416, 4.7124)
+        cr.close_path()
+        cr.fill()
+
+    def _desenha(self, _w, cr):
+        l = self.get_allocated_width()
+        a = self.get_allocated_height()
+        cr.set_operator(cairo.OPERATOR_SOURCE)
+
+        # Cartao: fundo claro com contorno discreto.
+        cr.set_source_rgba(0.97, 0.97, 0.98, 0.97)
+        cr.paint()
+        cr.set_operator(cairo.OPERATOR_OVER)
+        cr.set_source_rgba(0.72, 0.74, 0.76, 1.0)
+        cr.set_line_width(1)
+        cr.rectangle(0.5, 0.5, l - 1, a - 1)
+        cr.stroke()
+
+        # Faixa de titulo, para o desenho ler como "janela".
+        self._barra(cr, 0, 0, l, 30, 0, (0.90, 0.91, 0.93, 1.0))
+        cr.set_source_rgba(0.72, 0.74, 0.76, 1.0)
+        cr.rectangle(0, 30, l, 1)
+        cr.fill()
+
+        # Os dois estados da animacao: as barras trocam de comprimento, como
+        # um carregamento. Sem imagem externa -- e so geometria.
+        claro = (0.86, 0.87, 0.89, 1.0)
+        escuro = (0.78, 0.80, 0.82, 1.0)
+        larguras = ((0.55, 0.80, 0.35), (0.80, 0.45, 0.65))[self._fase]
+        y = 52
+        for i, prop in enumerate(larguras):
+            if y + 14 > a - 12:
+                break
+            tom = escuro if (i + self._fase) % 2 == 0 else claro
+            self._barra(cr, 16, y, max(24, int((l - 32) * prop)), 12, 6, tom)
+            y += 24
+        return False
+
+    def _pulsa(self):
+        self._fase = 1 - self._fase
+        self.queue_draw()
+        # Reafirma a posicao na pilha a cada passo: a Dock se ergue por conta
+        # propria de tempos em tempos, e o desenho precisa continuar por baixo
+        # dela. E uma chamada barata -- nao cria processo nenhum.
+        self._abaixo_da_dock()
+        return True
+
+    def _abaixo_da_dock(self):
+        """Poe o desenho ABAIXO da Dock na pilha do X.
+
+        A Dock vem sempre por cima -- inclusive do desenho. Ele e um aviso
+        temporario; a Dock e parte fixa da area de trabalho.
+
+        Duas tentativas anteriores falharam, e vale saber por que:
+
+          * "erguer a Dock com xdotool windowraise" nao muda nada: o xdotool
+            age na janela CLIENTE do Plank, que vive dentro de uma moldura do
+            Openbox. Quem conta na pilha da raiz e a moldura.
+          * "restack() do Gdk sobre a janela do Plank" e pior que inutil --
+            embrulhar janela de outro processo num Gdk.Window e mexer nela
+            DESTRUIU a janela da Dock (05/08).
+
+        Aqui subimos ate a moldura (filho da raiz) e pedimos ao X para colocar
+        o desenho logo abaixo dela. So numeros de janela atravessam.
+        """
+        try:
+            janela = self.get_window()
+            if janela is None:
+                return
+            saida = subprocess.run(["xdotool", "search", "--onlyvisible",
+                                    "--class", "plank"],
+                                   capture_output=True, text=True,
+                                   timeout=3).stdout.split()
+            moldura = None
+            for xid in saida:
+                m = _filho_da_raiz(xid)
+                if m:
+                    moldura = m
+            if moldura:
+                _empilha_abaixo(janela.get_xid(), moldura)
+            else:
+                janela.raise_()
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------ controle
+    def mostrar(self, x, y, l, a):
+        if self._fade is not None:
+            GLib.source_remove(self._fade)
+            self._fade = None
+
+        self.set_opacity(1.0)
+        self.resize(max(80, l), max(60, a))
+        self.move(x, y)
+        self.show_all()
+        self._abaixo_da_dock()
+        if self._anim is None:
+            self._anim = GLib.timeout_add(self.PASSO_MS, self._pulsa)
+
+    def esconder(self, suave=True):
+        # Sem tempo minimo, de proposito: se o aplicativo ja abriu, o desenho
+        # perdeu a razao de existir naquele instante -- mesmo que tenha
+        # acabado de pintar. Segurar o desenho por estetica seria segurar uma
+        # informacao falsa na frente de uma janela pronta.
+        if self._anim is not None:
+            GLib.source_remove(self._anim)
+            self._anim = None
+        if not suave:
+            self._fim_do_fade()
+            return
+        if self._fade is None:
+            self._restante = self.FADE_PASSOS
+            self._fade = GLib.timeout_add(self.FADE_MS, self._passo_fade)
+
+    def _passo_fade(self):
+        self._restante -= 1
+        if self._restante <= 0:
+            self._fade = None
+            self._fim_do_fade()
+            return False
+        self.set_opacity(self._restante / float(self.FADE_PASSOS))
+        return True
+
+    def _fim_do_fade(self):
+        self.hide()
+        self.set_opacity(1.0)
+        self._fase = 0
+        return False
 
 
 def roda(*args):
@@ -139,7 +534,46 @@ def estado_da_tela():
 
 
 def ha_maximizada():
+    """Estado A da topbar (arquivo). Só o Fundo cinza usa isto."""
     return estado_da_tela()[0]
+
+
+def ha_dock_recolhida():
+    """Critério do botão/Dock: Estado A (maximizado) manda.
+
+    Le o MESMO arquivo de modo que o tarsila-polybar-mode.sh escreve, que e
+    a fonte de verdade do A/B e so muda POR EVENTO (goto3 / goto2 / ✕ /
+    devilspie do Chromium). Nao varre o X.
+
+    Ate 2026-08-02 aqui havia um ha_maximizada_x() que rodava "wmctrl -lx"
+    mais um "xprop" POR JANELA a cada 450ms, chamado pelo vigilante de
+    250ms. Existia so para enxergar o Chromium, que nasce maximizado pelo
+    devilspie sem passar pelo goto3 -- ou seja, um poll de subprocessos para
+    cobrir um evento que ninguem emitia. O furo foi tapado na origem: o
+    floating.lua agora chama o mode.sh ao maximizar o Chromium. Sem poll.
+    """
+    modo = ""
+    try:
+        with open(MODO_TOPBAR, encoding="utf-8", errors="ignore") as f:
+            modo = f.read().strip()
+    except OSError:
+        modo = ""
+    if modo == "full":
+        return True
+    # Maximizado ganha de qualquer testemunha (03/08). Ate aqui era
+    # "if modo: return modo == 'full'", ou seja, o arquivo de modo podia
+    # VETAR o estado da topbar -- e os dois arquivos descrevem a mesma coisa
+    # por caminhos diferentes: o mode.sh escreve os dois, mas quem maximiza
+    # pela topbar escreve o MAX=1 primeiro. Nessa janela de tempo, e em
+    # qualquer caso em que o mode.sh nao complete (ele desiste sozinho se o
+    # flock demorar mais de 8s, ou se o config.gen.ini sumir), ficava
+    # "modo=compact + MAX=1": fundo cinza de maximizado, mas Dock aberta e o
+    # botao parado em cima dela, no meio da tela, por cima do Chromium. Era
+    # so o que faltava para o botao "nao ir ate embaixo".
+    #
+    # Continua sem varrer o X e sem relogio: os dois arquivos ja sao ouvidos
+    # por inotify em _liga_vigia().
+    return ha_maximizada()
 
 
 class MemoriaDeJanelas:
@@ -180,33 +614,32 @@ class MemoriaDeJanelas:
 
     @staticmethod
     def _quadro(xid):
-        """Onde a janela está e de que tamanho, sem abrir processo.
+        """Onde a janela esta e de que tamanho, sem abrir processo.
 
-        A posição é a do QUADRO (com a barra de título) e o tamanho é o do
-        CONTEÚDO, que é exatamente o par que o wmctrl espera na volta. Guardar
+        A posicao e a do QUADRO (com a barra de titulo) e o tamanho e o do
+        CONTEUDO, que e exatamente o par que o wmctrl espera na volta. Guardar
         o tamanho do quadro faria a janela engordar a espessura da moldura a
-        cada ida e volta."""
-        # A janela pode ter sido fechada entre uma volta e outra. Perguntar
-        # por uma janela que nao existe mais gera um erro do X, e erro do X
-        # NAO vira excecao em Python: o GDK derruba o processo inteiro. Foi
-        # exatamente o que aconteceu -- o programa morria e levava junto o
-        # botao da Dock e o fundo da barra. A armadilha abaixo engole isso.
-        Gdk.error_trap_push()
+        cada ida e volta.
+
+        POR QUE ISTO NAO USA Gdk.Window (corrigido em 05/08)
+        ---------------------------------------------------
+        Antes esta funcao fazia foreign_new_for_display() na janela alheia
+        para ler a geometria. Parece inofensivo -- e nao e: o Gdk.Window
+        criado por ali carrega a janela do X junto, e quando o Python recolhe
+        esse objeto o GDK DESTROI a janela de verdade.
+
+        O efeito na tela era exatamente o relatado: a Dock sumia sozinha, e o
+        processo do Plank continuava vivo, sem janela nenhuma. E como
+        _acha_plank() chama isto a CADA reavaliacao de estado, a Dock caia de
+        novo a cada evento -- inclusive logo depois de ser reiniciada a mao.
+
+        Aqui so numeros de janela atravessam para o Xlib. Nada e embrulhado,
+        nada e destruido.
+        """
         try:
-            tela = GdkX11.X11Display.get_default()
-            janela = GdkX11.X11Window.foreign_new_for_display(tela, xid)
-            if janela is None:
-                return None
-            moldura = janela.get_frame_extents()
-            _, _, largura, altura = janela.get_geometry()
-            if largura <= 0 or altura <= 0:
-                return None
-            return (moldura.x, moldura.y, largura, altura)
+            return _geometria_x(int(xid))
         except Exception:
             return None
-        finally:
-            Gdk.Display.get_default().sync()
-            Gdk.error_trap_pop_ignored()
 
     def acompanhar(self, maximizada, ident):
         if maximizada:
@@ -262,7 +695,26 @@ class MemoriaDeJanelas:
         return largura >= lt * 0.92 and altura >= at * 0.85
 
 
+class _VetorNulo:
+    """Vetor que nao faz nada. E o padrao ate o de verdade ser criado.
+
+    Existe porque _liga_vigia() roda dentro do __init__ e ja registra o
+    monitor do arquivo do vetor -- se um evento chegasse antes de main()
+    atribuir o vetor real, seria AttributeError num processo que cuida da
+    Dock e do fundo da barra. Com este padrao de classe, o pior caso e nao
+    desenhar nada.
+    """
+
+    def mostrar(self, *_a):
+        pass
+
+    def esconder(self, *_a):
+        pass
+
+
 class Botao(Gtk.Window):
+    vetor = _VetorNulo()
+
     def __init__(self, fundo):
         self.fundo = fundo
         super().__init__(type=Gtk.WindowType.TOPLEVEL)
@@ -298,17 +750,96 @@ class Botao(Gtk.Window):
 
         self.escondida = False      # escolha manual do usuário
         self.destacado = False      # mouse em cima
-        self.max_antes = ha_maximizada()
+        self.max_antes = ha_dock_recolhida()   # botão/Dock
+        self.max_arquivo_antes = ha_maximizada()  # Fundo / Estado A
         self.memoria = MemoriaDeJanelas()
         self.plank = self._acha_plank()
 
         self.show_all()
         self._posiciona()
-        # 250ms, não 1s: o fundo da barra precisa acompanhar a maximização
-        # de perto, senão dá para ver o papel de parede pela barra
-        # transparente no intervalo. Cada volta é a leitura de um arquivo
-        # pequeno -- sem processo novo, sem consulta ao X.
-        GLib.timeout_add(250, self._vigia)
+        self._liga_vigia()
+
+    def _liga_vigia(self):
+        """POR EVENTO, nao por relogio (2026-08-02).
+
+        Antes havia um GLib.timeout_add(250, ...) que, a cada volta, ainda
+        chamava "wmctrl -lx" + um "xprop" por janela. Era um enxame de
+        subprocessos permanente numa maquina fraca -- pesava so de abrir uma
+        janela.
+
+        Agora escutamos os DOIS arquivos que descrevem o estado, via inotify
+        (Gio.FileMonitor). Ambos sao escritos exclusivamente por evento pelo
+        tarsila-polybar-mode.sh (goto3 / goto2 / ✕ / devilspie do Chromium).
+        Enquanto nada acontece, este processo fica parado de verdade: zero
+        CPU, zero processo novo.
+
+        Guardamos os monitores em self para o GC nao os recolher -- se forem
+        coletados, os sinais param de chegar e a Dock congela.
+        """
+        # Pendura o botao na Dock (ver _pendura_na_dock). Uma tentativa
+        # agora e outra daqui a pouco: no arranque o Plank pode ainda nao
+        # existir -- ele sobe em paralelo com este daemon.
+        try:
+            self._pendura_na_dock()
+            GLib.timeout_add_seconds(5, self._pendura_na_dock_uma_vez)
+        except Exception:
+            pass
+
+        self._monitores = []
+        for caminho in (MODO_TOPBAR, ESTADO_TOPO):
+            try:
+                gf = Gio.File.new_for_path(caminho)
+                mon = gf.monitor_file(Gio.FileMonitorFlags.NONE, None)
+                mon.connect("changed", self._mudou)
+                self._monitores.append(mon)
+            except Exception:
+                # Sem inotify o programa continua util: o estado ainda e
+                # reavaliado a cada clique no botao e no arranque.
+                pass
+        # O vetor de abertura tem arquivo proprio: o tarsila-abrindo escreve
+        # a vaga quando o app comeca a abrir e esvazia quando ele terminou de
+        # pintar. Mesmo mecanismo de evento, sem relogio.
+        try:
+            gf = Gio.File.new_for_path(PEDIDO_VETOR)
+            mon = gf.monitor_file(Gio.FileMonitorFlags.NONE, None)
+            mon.connect("changed", self._mudou_vetor)
+            self._monitores.append(mon)
+        except Exception:
+            pass
+
+    def _pendura_na_dock_uma_vez(self):
+        self._pendura_na_dock()
+        return False
+
+    def _mudou(self, _mon, _f, _outro, _evento):
+        self._reavalia()
+
+    def _mudou_vetor(self, _mon, _f, _outro, _evento):
+        """Le a vaga pedida e mostra/esconde o vetor.
+
+        Formato: "pid x y largura altura" numa linha. Vazio/ausente = esconder.
+        Qualquer lixo no arquivo apenas esconde -- este processo cuida da
+        Dock e do fundo da barra, e nao pode morrer por causa do vetor.
+        """
+        try:
+            with open(PEDIDO_VETOR, encoding="utf-8", errors="ignore") as f:
+                partes = f.read().split()
+            if len(partes) >= 5:
+                _, x, y, l, a = (int(p) for p in partes[:5])
+                self.vetor.mostrar(x, y, l, a)
+            else:
+                # SEM esmaecer: o arquivo so esvazia quando a janela ja
+                # terminou de pintar, entao a essa altura o desenho esta
+                # ATRAS de uma janela pronta. Os 240 ms do fade nao eram
+                # elegancia, eram o desenho sobrevivendo ao proprio motivo --
+                # e o usuario via a janela chegar com um retangulo ainda
+                # apagando por baixo. Some na hora.
+                self.vetor.esconder(suave=False)
+        except (OSError, ValueError):
+            try:
+                self.vetor.esconder(suave=False)
+            except Exception:
+                pass
 
     # ---------------------------------------------------------- desenho
     def _desenha(self, area, cr):
@@ -330,10 +861,9 @@ class Botao(Gtk.Window):
         cr.line_to(0, a)
         cr.arc(r, r, r, pi, 3 * pi / 2)          # canto superior esquerdo
         cr.close_path()
-        # Com janela maximizada quem manda e a regra principal e o botao
-        # nao tem o que fazer. Em vez de nao responder ao clique sem dizer
-        # nada -- o que passa impressao de defeito --, ele fica apagado.
-        inerte = ha_maximizada()
+        # Com janela maximizada (Estado A ou Chromium no X) o botão fica
+        # apagado — igual às outras telas maximizadas.
+        inerte = ha_dock_recolhida()
         opaco = 0.45 if inerte else (1.0 if self.destacado else 0.94)
         cr.set_source_rgba(0.09, 0.13, 0.25, opaco)
         cr.fill()
@@ -370,13 +900,20 @@ class Botao(Gtk.Window):
 
         O Plank tem mais de uma janela no X, e a busca devolve todas. Pegar a
         última dava a janela errada de vez em quando, e o botão ia parar no
-        meio da tela. A Dock é, de longe, a mais larga."""
+        meio da tela. A Dock é, de longe, a mais larga.
+
+        Pegadinha (2026-08-02): a medicao usa get_frame_extents(), que falha
+        para janela DESMAPEADA -- e desmapeada e exatamente o estado da Dock
+        quando ela esta escondida. Nesse caso o "melhor" saia None e o codigo
+        caia no ids[-1], que costuma ser a janelinha de 10x10 do Plank: o
+        windowmap ia para o alvo errado e a Dock nunca voltava. Por isso
+        guardamos o ultimo ID bom e preferimos ele a um palpite."""
         try:
             r = subprocess.run(["xdotool", "search", "--class", "plank"],
                                capture_output=True, text=True, timeout=5)
             ids = r.stdout.split()
         except Exception:
-            return None
+            return getattr(self, "_plank_bom", None)
         melhor, maior = None, 0
         for xid in ids:
             quadro = MemoriaDeJanelas._quadro(int(xid))
@@ -385,7 +922,14 @@ class Botao(Gtk.Window):
             area = quadro[2] * quadro[3]
             if area > maior:
                 melhor, maior = xid, area
-        return melhor or (ids[-1] if ids else None)
+        if melhor:
+            self._plank_bom = melhor
+            return melhor
+        # Sem medida confiavel: o ultimo ID bom vale mais que um palpite.
+        anterior = getattr(self, "_plank_bom", None)
+        if anterior and anterior in ids:
+            return anterior
+        return anterior or (ids[-1] if ids else None)
 
     def _topo_da_dock(self):
         """Y da borda de cima da Dock, medido -- nada de número fixo."""
@@ -402,12 +946,43 @@ class Botao(Gtk.Window):
         return topo
 
     @staticmethod
+    def _esta_mapeada(xid):
+        """A Dock está REALMENTE na tela?
+
+        Duas armadilhas medidas na VM em 2026-08-03, as duas com a Dock
+        escondida:
+
+          · a geometria continua respondendo a posição antiga, (173, 689,
+            1019, 79), como se ela estivesse visível;
+          · Gdk.Window.is_viewable() devolve True -- é um campo que o GDK
+            mantém por conta própria para janela estrangeira, não uma
+            pergunta ao X.
+
+        Quem responde a verdade é o mapeamento no servidor X, e o
+        "--onlyvisible" do xdotool pergunta exatamente isso."""
+        try:
+            r = subprocess.run(
+                ["xdotool", "search", "--onlyvisible", "--class", "plank"],
+                capture_output=True, text=True, timeout=5)
+            return str(xid) in r.stdout.split()
+        except Exception:
+            # Sem resposta, assume visível: manter o botão colado na Dock é
+            # menos ruim que jogá-lo para o rodapé com a Dock aberta.
+            return True
+
+    @staticmethod
     def _medir(xid):
         """Y da Dock, se a medida fizer sentido.
 
+        Só geometria: se a Dock está ou não na tela é decidido antes, por
+        quem chama. A geometria de uma janela desmapeada continua válida (ela
+        volta onde estava), e é justamente disso que precisamos ao medir uma
+        Dock recém-mapeada.
+
         A Dock vive encostada embaixo. Uma leitura que a coloque na metade de
         cima da tela é lixo -- acontecia logo depois de ela ser remapeada, e
-        jogava o botão para o alto da tela."""
+        jogava o botão para o alto da tela.
+        """
         quadro = MemoriaDeJanelas._quadro(int(xid))
         if not quadro:
             return None
@@ -418,18 +993,32 @@ class Botao(Gtk.Window):
             return y
         return y if y > altura_tela / 2 else None
 
-    def _posiciona(self):
+    def _posiciona(self, dock_visivel=None):
+        """Coloca o botão em cima da Dock, ou no rodapé se ela não está lá.
+
+        "dock_visivel" é a intenção de quem chama -- quem acabou de mandar a
+        Dock sumir ou aparecer JÁ SABE a resposta e não deve perguntar de
+        novo. Perguntar era o bug do Chromium (medido em 03/08): o _aplica()
+        mandava "windowunmap" e no mesmo passo media o estado da Dock; o
+        xdotool já tinha voltado, mas o servidor X ainda não tinha processado
+        o unmap -- e a pergunta sai por outra conexão, sem ordem garantida.
+        A resposta vinha "ainda visível" e o botão ficava parado onde a Dock
+        estava, no meio da tela, sem nenhum evento seguinte para consertar.
+
+        Só quem NÃO tem intenção (o arranque) pergunta -- e aí pergunta ao X
+        de verdade, porque nem a geometria nem o arquivo de modo respondem
+        isso: janela escondida continua devolvendo a posição antiga."""
         tela = self.get_screen()
         largura_tela = tela.get_width()
         altura_tela = tela.get_height()
         x = (largura_tela - LARGURA) // 2
 
-        if self._dock_na_tela():
-            topo = self._topo_da_dock()
-            y = (topo - ALTURA) if topo is not None else (altura_tela - ALTURA)
-        else:
-            # Encostado no rodapé, como o usuário pediu.
-            y = altura_tela - ALTURA
+        if dock_visivel is None:
+            dock_visivel = self._dock_na_tela() and bool(
+                self.plank and Botao._esta_mapeada(self.plank))
+
+        topo = self._topo_da_dock() if dock_visivel else None
+        y = (topo - ALTURA) if topo is not None else (altura_tela - ALTURA)
 
         self.move(x, max(0, y))
         self._acima_da_dock()
@@ -449,8 +1038,8 @@ class Botao(Gtk.Window):
 
     def _dock_na_tela(self):
         """A Dock está aparecendo? A regra principal manda; a escolha
-        manual só vale quando não há janela maximizada."""
-        if ha_maximizada():
+        manual só vale quando não há janela maximizada (arquivo ou X)."""
+        if ha_dock_recolhida():
             return False
         return not self.escondida
 
@@ -458,24 +1047,25 @@ class Botao(Gtk.Window):
     def _clique(self, _w, ev):
         if ev.button != 1:
             return False
-        if ha_maximizada():
-            # Regra principal no comando: nada a fazer aqui.
+        if ha_dock_recolhida():
+            # Maximizado (topbar A ou Chromium/etc. no X): nada a fazer.
             return True
         self.escondida = not self.escondida
         self._aplica()
         return True
 
     def _aplica(self):
-        # Reconsulta sempre: se a Dock foi reiniciada (troca de tema, ajuste
-        # no Gerenciar Dock), o identificador guardado aponta para uma janela
-        # que não existe mais e o clique não faria nada. Clique é raro, então
-        # a consulta não pesa.
+        # Botão ≡ Dock: map/unmap do Plank + posição do botão no mesmo passo.
         self.plank = self._acha_plank()
+        visivel = self._dock_na_tela()
         if self.plank:
             roda("xdotool",
-                 "windowunmap" if self.escondida else "windowmap", self.plank)
-        self._posiciona()
+                 "windowmap" if visivel else "windowunmap", self.plank)
+        # Passa a intenção adiante: o botão vai para onde a Dock VAI ficar,
+        # sem esperar o X confirmar. Ver _posiciona().
+        self._posiciona(dock_visivel=visivel)
         self.queue_draw()
+
 
     def _entra(self, *_a):
         self.destacado = True
@@ -488,35 +1078,137 @@ class Botao(Gtk.Window):
         return False
 
     # ---------------------------------------------------------- vigia
-    def _vigia(self):
+    def _reavalia(self):
         maximizada, ident = estado_da_tela()
         self.memoria.acompanhar(maximizada, ident)
-        # No rodapé o botão divide a faixa com a Dock: reafirmar a frente a
-        # cada volta cobre o caso de ela reaparecer por conta própria.
+
+        max_arq = ha_maximizada()
+        if max_arq != self.max_arquivo_antes:
+            self.max_arquivo_antes = max_arq
+            self.fundo.aplicar(max_arq)
+
+        dock_agora = ha_dock_recolhida()
+        if dock_agora != self.max_antes:
+            self.max_antes = dock_agora
+            self.escondida = False
+            self.queue_draw()
+        self._aplica()
+
         if not self._dock_na_tela():
             self._acima_da_dock()
-        agora = ha_maximizada()
-        if agora != self.max_antes:
-            # Trocou de estado: a escolha manual é esquecida. Maximizou, some;
-            # desmaximizou, aparece -- não importa o que o botão fez antes.
-            self.max_antes = agora
-            self.fundo.aplicar(agora)
-            if self.escondida:
-                self.escondida = False
-                self._aplica()
-            else:
-                self._posiciona()
-            self.queue_draw()      # muda o tom: ativo <-> apagado
+
+        if max_arq:
+            self.fundo.abaixar()
+
+    def _revela(self):
+        self._posiciona(dock_visivel=self._dock_na_tela())
+        self._acima_da_dock()
+        self.queue_draw()
+        self.show_all()
+        return False
+
+    def _pendura_na_dock(self):
+        """Passa a acompanhar a janela da Dock, em vez de deduzir onde ela esta.
+
+        Roda no arranque e sempre que a Dock e recriada (o Plank pode
+        reiniciar). E barato: uma chamada ao X para pedir os avisos, e um
+        vigia no descritor da conexao -- enquanto a Dock nao se mexe, nada
+        acontece e nada e consumido.
+        """
+        self.plank = self._acha_plank()
+        if not self.plank:
+            # Dock sumiu (pkill, crash, etc.): botao vai pro rodape AGORA.
+            if self._dock_na_tela() or getattr(self, "_dock_antes_mapeada", True):
+                self._posiciona(dock_visivel=False)
+                self._acima_da_dock()
+                self.queue_draw()
+            return True          # tenta de novo no proximo convite
+        alvo = _filho_da_raiz(int(self.plank)) or int(self.plank)
+        if alvo != getattr(self, "_dock_escutada", None):
+            if _escuta_estrutura(alvo):
+                self._dock_escutada = alvo
+        if getattr(self, "_vigia_do_x", None) is None:
+            fd = _fd_do_x()
+            if fd is not None:
+                self._vigia_do_x = GLib.io_add_watch(
+                    fd, GLib.PRIORITY_DEFAULT, GLib.IOCondition.IN,
+                    self._a_dock_se_mexeu)
         return True
 
+    def _a_dock_se_mexeu(self, *_a):
+        mexeu, sumiu = _colhe_eventos()
+        if sumiu:
+            self._dock_escutada = None
+            self._plank_bom = None
+            self._pendura_na_dock()
+            mexeu = True
+        if mexeu:
+            try:
+                mapeada = bool(self.plank and Botao._esta_mapeada(self.plank))
+                era_mapeada = getattr(self, "_dock_antes_mapeada", None)
+                if era_mapeada is not None and era_mapeada != mapeada:
+                    # Transicao: some no lugar antigo, reaparece no novo.
+                    self.hide()
+                    self._posiciona(dock_visivel=mapeada)
+                    if not mapeada:
+                        self._acima_da_dock()
+                    GLib.timeout_add(200, self._revela_dock)
+                else:
+                    self._posiciona(dock_visivel=mapeada)
+                    if not mapeada:
+                        self._acima_da_dock()
+                    self.queue_draw()
+                self._dock_antes_mapeada = mapeada
+            except Exception:
+                pass
+        return True
+
+    def _revela_dock(self):
+        self._posiciona(dock_visivel=self._dock_na_tela())
+        self._acima_da_dock()
+        self.queue_draw()
+        self.show_all()
+        return False
+
+    def _reafirma(self):
+        """Recoloca o botão onde o estado manda. Disparo único do GLib.
+
+        Deliberadamente curto: só posição, frente e cor. Não mexe no Plank,
+        não chama xdotool, não consulta o X -- quanto menos faz, menos tem
+        para falhar, e ele roda depois de cada mudança de estado, quando o
+        trabalho de verdade já foi feito pelo _aplica().
+
+        Existe porque todo o resto é "o próximo evento conserta", e o caso
+        comum é não haver próximo evento: o estado muda uma vez e assenta. Se
+        nesse instante o Plank ainda estava deslizando, a conta do rodapé
+        saía com a medida velha e o botão ficava parado no meio da tela.
+        """
+        try:
+            self._posiciona(dock_visivel=self._dock_na_tela())
+            self._acima_da_dock()
+            # A cor também: em Estado A o botão é desenhado apagado e inerte.
+            self.queue_draw()
+        except Exception:
+            pass
+        return False
 
 def main():
     fundo = Fundo()
     botao = Botao(fundo)
-    # Estado de partida: a sessão pode nascer com algo já maximizado.
-    agora = ha_maximizada()
-    fundo.aplicar(agora)
-    botao.max_antes = agora
+    # Vetor de abertura: criado e realizado agora, escondido, para que
+    # mostra-lo depois custe milissegundos em vez de ~1,1 s (o tempo de subir
+    # um GTK novo nesta box). Nao pode derrubar o resto se falhar.
+    try:
+        botao.vetor = Vetor()
+    except Exception:
+        pass          # segue com o _VetorNulo da classe: nao desenha, nao quebra
+    # Fundo segue só o arquivo; botão/Dock já olham o X no __init__/_aplica.
+    agora_arq = ha_maximizada()
+    fundo.aplicar(agora_arq)
+    botao.max_arquivo_antes = agora_arq
+    botao.max_antes = ha_dock_recolhida()
+    botao.escondida = False
+    botao._aplica()
     Gtk.main()
 
 

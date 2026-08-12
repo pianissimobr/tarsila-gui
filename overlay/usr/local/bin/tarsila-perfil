@@ -1,0 +1,109 @@
+#!/bin/bash
+# Nome e foto do perfil, para o painel de Ajustes chamar via "sudo -n".
+#
+# Mesmo desenho do tarsila-net-set: um ajudante pequeno com uma acao por
+# linha do sudoers, em vez de dar sudo num comando generico. As duas coisas
+# que ele faz precisam de root e nenhuma delas o usuario consegue fazer
+# sozinho neste sistema:
+#
+#   * o nome de exibicao mora no campo GECOS do /etc/passwd, e o
+#     CHFN_RESTRICT deste Debian e "rwh" -- ou seja, o proprio dono da conta
+#     NAO pode mudar o proprio nome sem root;
+#   * a foto precisa ficar num lugar que a tela de login consiga ler, e o
+#     home aqui e 700: o greeter roda como o usuario "lightdm" e nao enxerga
+#     nada dentro de /home/<user>.
+#
+# Uso:
+#   tarsila-perfil nome "Maria da Silva"
+#   tarsila-perfil foto              # PNG chega pelo stdin
+#   tarsila-perfil foto --remover
+set -euo pipefail
+
+DESTINO_DIR=/var/lib/tarsila
+DESTINO=$DESTINO_DIR/perfil.png
+GREETER_CONF=/etc/lightdm/lightdm-gtk-greeter.conf
+LIMITE_BYTES=$((2 * 1024 * 1024))
+
+# De quem e a conta: vem do sudo, nao do argumento. Assim nao existe forma
+# de apontar este comando para outra conta (root, por exemplo) -- e por isso
+# que o login nao e parametro.
+alvo="${SUDO_USER:-}"
+if [ -z "$alvo" ] || [ "$alvo" = "root" ]; then
+  echo "sem SUDO_USER: rode pelo painel de Ajustes" >&2
+  exit 1
+fi
+getent passwd "$alvo" >/dev/null || { echo "conta inexistente: $alvo" >&2; exit 1; }
+
+acao="${1:-}"
+
+case "$acao" in
+  nome)
+    # Exatamente dois argumentos. Sem isto, "tarsila-perfil nome x root"
+    # era aceito e o "root" ignorado em silencio -- o efeito era o certo
+    # (o nome do proprio dono mudava), mas quem lesse o comando pensaria
+    # ter mexido em outra conta.
+    [ "$#" -eq 2 ] || { echo "uso: $0 nome <novo nome>" >&2; exit 2; }
+    novo="$2"
+    # O GECOS e um campo separado por ":" dentro do /etc/passwd e por ","
+    # entre subcampos: deixar esses caracteres passarem corromperia a linha
+    # da conta. O chfn tambem recusa "=". Barramos aqui para a mensagem de
+    # erro ser em portugues, e nao um erro cru do chfn.
+    if [ -z "$novo" ]; then
+      echo "o nome nao pode ficar vazio" >&2; exit 1
+    fi
+    if [ "${#novo}" -gt 32 ]; then
+      echo "o nome pode ter no maximo 32 letras" >&2; exit 1
+    fi
+    case "$novo" in
+      *:*|*,*|*=*) echo "o nome nao pode ter : , ou =" >&2; exit 1 ;;
+    esac
+    # Controle (inclusive quebra de linha) fora: uma quebra partiria o
+    # /etc/passwd em duas linhas.
+    if printf '%s' "$novo" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+      echo "o nome tem caracteres invalidos" >&2; exit 1
+    fi
+    chfn -f "$novo" "$alvo" >/dev/null
+    ;;
+
+  foto)
+    if [ "${2:-}" = "--remover" ]; then
+      rm -f "$DESTINO"
+      exit 0
+    fi
+    # A imagem chega pelo STDIN de proposito. Se ela viesse como caminho, o
+    # painel (que roda como usuario comum) poderia mandar copiar um arquivo
+    # que so o root le -- /etc/shadow, por exemplo -- para um destino que o
+    # mundo inteiro le. Lendo do stdin, quem escolheu o arquivo foi o
+    # processo do usuario, com as permissoes dele.
+    install -d -m 755 "$DESTINO_DIR"
+    tmp=$(mktemp "$DESTINO_DIR/.perfil.XXXXXX")
+    trap 'rm -f "$tmp"' EXIT
+    head -c "$LIMITE_BYTES" > "$tmp"
+    if [ ! -s "$tmp" ]; then
+      echo "nao chegou imagem nenhuma" >&2; exit 1
+    fi
+    # Confere a assinatura de PNG (89 50 4E 47) em vez de confiar na
+    # extensao: o painel sempre reescreve a imagem como PNG antes de mandar.
+    if [ "$(od -An -N4 -tx1 "$tmp" | tr -d ' \n')" != "89504e47" ]; then
+      echo "o arquivo recebido nao e um PNG" >&2; exit 1
+    fi
+    chmod 644 "$tmp"
+    mv -f "$tmp" "$DESTINO"
+    trap - EXIT
+    ;;
+
+  *)
+    echo "uso: $0 nome <novo nome> | foto [--remover]" >&2
+    exit 2
+    ;;
+esac
+
+# A tela de login mostra a foto pelo "default-user-image". Este sistema nao
+# tem accountsservice, entao o greeter nao descobre foto por conta -- e como
+# ha uma unica conta, a imagem "padrao" e justamente a dela.
+if [ -f "$GREETER_CONF" ] && ! grep -q '^default-user-image=' "$GREETER_CONF"; then
+  printf '\n# Foto do perfil, definida pelo painel de Ajustes.\ndefault-user-image=%s\n' \
+    "$DESTINO" >> "$GREETER_CONF"
+fi
+
+exit 0

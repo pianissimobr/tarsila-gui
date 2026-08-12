@@ -1,0 +1,11 @@
+[Unit]
+Description=Politica de frequencia da GPU (Tarsila)
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/tarsila-devfreq-gpu
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

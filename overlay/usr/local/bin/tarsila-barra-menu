@@ -12,17 +12,110 @@ Fecha ao perder o foco ou com Esc, como todo menu.
 Uso:  tarsila-barra-menu som
       tarsila-barra-menu rede
       tarsila-barra-menu calendario
+      tarsila-barra-menu sistema
 """
 
+import os
 import re
 import subprocess
 import sys
+import time
 
 import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib
 
 SINK = "@DEFAULT_AUDIO_SINK@"
+
+# Cores do diagnostico. Tons escuros de proposito: o fundo do menu e claro,
+# e verde/amarelo vivos ficam ilegiveis nele.
+VERDE    = "#1e8e3e"
+AMARELO  = "#b06000"
+VERMELHO = "#c5221f"
+
+
+# ------------------------------------------------------- diagnostico rapido
+# Tudo aqui e FOTO do instante: le /proc uma vez (duas no caso da CPU, que so
+# existe como diferenca entre dois momentos) e pronto. Nada fica rodando --
+# quem abre o menu paga o custo, e ele morre junto com a janela.
+
+def uso_cpu(intervalo=0.25):
+    """Porcentagem de uso da CPU agora.
+
+    /proc/stat guarda tempo ACUMULADO desde o boot, entao um numero sozinho
+    nao diz nada: a leitura tem de ser a diferenca entre dois instantes. Um
+    quarto de segundo e curto para o usuario e longo o bastante para nao dar
+    um valor ao acaso.
+    """
+    def ler():
+        with open("/proc/stat", encoding="utf-8") as f:
+            campos = f.readline().split()[1:9]
+        v = [int(x) for x in campos]
+        return sum(v), v[3] + v[4]      # (total, ocioso = idle + iowait)
+
+    try:
+        total1, ocioso1 = ler()
+        time.sleep(intervalo)
+        total2, ocioso2 = ler()
+    except (OSError, ValueError, IndexError):
+        return None
+    dt = total2 - total1
+    if dt <= 0:
+        return None
+    ocupado = dt - (ocioso2 - ocioso1)
+    return max(0, min(100, round(100 * ocupado / dt)))
+
+
+def uso_memoria():
+    """(bytes usados, bytes totais). MemAvailable e o que o kernel considera
+    realmente disponivel -- cache reaproveitavel nao conta como usado."""
+    info = {}
+    try:
+        with open("/proc/meminfo", encoding="utf-8") as f:
+            for linha in f:
+                chave, _, valor = linha.partition(":")
+                info[chave] = int(valor.split()[0]) * 1024
+    except (OSError, ValueError, IndexError):
+        return None, None
+    total = info.get("MemTotal")
+    livre = info.get("MemAvailable", info.get("MemFree"))
+    if not total or livre is None:
+        return None, None
+    return total - livre, total
+
+
+def uso_disco(caminho="/"):
+    """(bytes usados, bytes totais) da raiz, pelo espaco visivel ao usuario."""
+    try:
+        st = os.statvfs(caminho)
+    except OSError:
+        return None, None
+    total = st.f_blocks * st.f_frsize
+    livre = st.f_bavail * st.f_frsize      # f_bavail: sem o reservado do root
+    if total <= 0:
+        return None, None
+    return total - livre, total
+
+
+def tamanho_legivel(n):
+    """1,4 GB / 512 MB -- virgula decimal, como se escreve em portugues."""
+    if n is None:
+        return "?"
+    if n >= 1024 ** 3:
+        return ("%.1f GB" % (n / 1024 ** 3)).replace(".", ",")
+    return "%d MB" % round(n / 1024 ** 2)
+
+
+def veredito(pct, limites, palavras):
+    """(texto, cor) a partir da porcentagem. limites = (ok, atencao)."""
+    if pct is None:
+        return "sem leitura", AMARELO
+    ok, atencao = limites
+    if pct < ok:
+        return palavras[0], VERDE
+    if pct < atencao:
+        return palavras[1], AMARELO
+    return palavras[2], VERMELHO
 
 
 def roda(*args, tempo=6):
@@ -129,6 +222,8 @@ class Popup(Gtk.Window):
             self._monta_som(caixa)
         elif modo == "calendario":
             self._monta_calendario(caixa)
+        elif modo == "sistema":
+            self._monta_sistema(caixa)
         else:
             self._monta_rede(caixa)
 
@@ -262,6 +357,66 @@ class Popup(Gtk.Window):
         cal.select_day(agora.get_day_of_month())
 
     # ---- rede
+    # ---- diagnostico rapido do sistema
+    def _monta_sistema(self, caixa):
+        """Foto do sistema agora: processador, memoria e armazenamento.
+
+        Uma linha por item: nome, quanto esta em uso e um veredito curto em
+        verde/amarelo/vermelho -- para quem nao sabe o que e "78% de 2 GB"
+        saber, mesmo assim, se esta bem ou apertado.
+        """
+        titulo = Gtk.Label(xalign=0)
+        titulo.set_markup("<b>Como está o sistema</b>")
+        caixa.pack_start(titulo, False, False, 0)
+
+        cpu = uso_cpu()
+        mem_uso, mem_total = uso_memoria()
+        dis_uso, dis_total = uso_disco()
+
+        mem_pct = round(100 * mem_uso / mem_total) if mem_total else None
+        dis_pct = round(100 * dis_uso / dis_total) if dis_total else None
+
+        linhas = (
+            ("Processador",
+             "%d%%" % cpu if cpu is not None else "?",
+             veredito(cpu, (50, 80),
+                      ("tranquilo", "trabalhando", "sobrecarregado"))),
+            ("Memória",
+             "%s de %s" % (tamanho_legivel(mem_uso), tamanho_legivel(mem_total)),
+             veredito(mem_pct, (70, 88),
+                      ("tranquila", "um pouco cheia", "quase no limite"))),
+            ("Armazenamento",
+             "%s de %s" % (tamanho_legivel(dis_uso), tamanho_legivel(dis_total)),
+             veredito(dis_pct, (75, 90),
+                      ("bastante espaço", "enchendo", "quase sem espaço"))),
+        )
+
+        # Grade para as tres colunas ficarem alinhadas entre si.
+        grade = Gtk.Grid()
+        grade.set_column_spacing(12)
+        grade.set_row_spacing(4)
+        grade.set_margin_top(6)
+        for i, (nome, valor, (parecer, cor)) in enumerate(linhas):
+            rot = Gtk.Label(xalign=0)
+            rot.set_markup('<small><span alpha="70%%">%s</span></small>'
+                           % GLib.markup_escape_text(nome))
+            val = Gtk.Label(xalign=0)
+            val.set_markup("<small>%s</small>" % GLib.markup_escape_text(valor))
+            par = Gtk.Label(xalign=0)
+            par.set_markup('<small><span foreground="%s"><b>%s</b></span></small>'
+                           % (cor, GLib.markup_escape_text(parecer)))
+            grade.attach(rot, 0, i, 1, 1)
+            grade.attach(val, 1, i, 1, 1)
+            grade.attach(par, 2, i, 1, 1)
+        caixa.pack_start(grade, False, False, 0)
+
+        # Deixa claro que e uma foto, nao um medidor que fica correndo.
+        nota = Gtk.Label(xalign=0)
+        nota.set_markup('<small><span alpha="55%%">Medido agora, ao abrir.'
+                        '</span></small>')
+        nota.set_margin_top(8)
+        caixa.pack_start(nota, False, False, 0)
+
     def _monta_rede(self, caixa):
         titulo, nome, ip = estado_da_rede()
         t = Gtk.Label(xalign=0)

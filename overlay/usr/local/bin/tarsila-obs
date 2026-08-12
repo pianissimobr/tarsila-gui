@@ -5,4 +5,11 @@
 # Aqui a renderizacao vai por software (llvmpipe, que da OpenGL 4.6). E lento,
 # mas e a unica forma de o OBS abrir nesta placa.
 # Esta variavel vale SO para este processo -- nada no resto do sistema muda.
+#
+# Sem /dev/video* a cena salva com fonte V4L2 quebra ao pedir camera; o
+# sanitizador remove essa fonte e avisa o usuario (Captura de tela continua OK).
+SANITIZE=/usr/local/bin/tarsila-obs-scene-sanitize.py
+if [ -x "$SANITIZE" ]; then
+  "$SANITIZE" 2>/dev/null || true
+fi
 LIBGL_ALWAYS_SOFTWARE=1 exec obs "$@"

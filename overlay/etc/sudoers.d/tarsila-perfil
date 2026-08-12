@@ -1,0 +1,6 @@
+# Nome de exibicao e foto do perfil, disparados pelo painel de Ajustes.
+# O ajudante descobre a conta pelo SUDO_USER: nao da para apontar para
+# outra conta, nem para o root.
+alan ALL=(root) NOPASSWD: /usr/local/bin/tarsila-perfil nome *
+alan ALL=(root) NOPASSWD: /usr/local/bin/tarsila-perfil foto
+alan ALL=(root) NOPASSWD: /usr/local/bin/tarsila-perfil foto --remover

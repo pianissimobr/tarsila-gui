@@ -4,3 +4,12 @@ export XDG_CURRENT_DESKTOP=Openbox
 # 45s: --disable-gpu = 19-22 fps exibidos / ~460 quadros perdidos;
 # com GPU = 28-29 fps / ~150 perdidos. Reverter para 0 se houver crash.
 export TARSILA_GPU=1
+
+# 2026-07-26: silencia o aviso "AT-SPI: Error retrieving accessibility bus
+# address" que TODO app GTK cospe no terminal. Causa: só o at-spi2-common está
+# instalado; falta o at-spi2-core, que fornece o at-spi-bus-launcher — ou seja,
+# o barramento de acessibilidade nunca sobe e a tentativa é sempre em vão.
+# Isto NÃO tira função nenhuma: acessibilidade já era indisponível.
+# Se um dia for preciso leitor de tela: apt install at-spi2-core e remova esta
+# linha (aí o barramento sobe de verdade).
+export NO_AT_BRIDGE=1

@@ -8,6 +8,7 @@
 # ver tarsila-wallpaper-apply.sh). Reforcar aqui, a cada login, torna a
 # ordem correta independente disso acontecer de novo.
 set -euo pipefail
+. /usr/local/lib/tarsila/comum.sh
 
 LAUNCHERS_DIR="$HOME/.config/plank/dock1/launchers"
 [ -d "$LAUNCHERS_DIR" ] || exit 0
@@ -38,14 +39,9 @@ dconf write /net/launchpad/plank/docks/dock1/dock-items "$items"
 # subir, e gravar 'Tarsila' fixo desfazia a escolha do usuario -- a Dock voltava
 # sempre ao tema base escuro. Agora deriva do tema salvo, e assim a cor da Dock
 # sobrevive ao reinicio. Mapa igual ao do tarsila-ob-tema-apply.sh.
-_tema=padrao; [ -r "$HOME/.config/tarsila/tema" ] && read -r _tema < "$HOME/.config/tarsila/tema"
-case "$_tema" in
-  maritimo)   _dock=Tarsila-Maritimo ;;
-  escuro)     _dock=Tarsila-Escuro ;;
-  brasileiro) _dock=Tarsila-Brasileiro ;;
-  *)          _dock=Tarsila ;;      # padrao e personalizado
-esac
-dconf write /net/launchpad/plank/docks/dock1/theme "'$_dock'"
+# O mapa tema -> tema da Dock mora no comum.sh: era o mesmo case escrito
+# aqui e no tarsila-tema-apply.sh (05/08).
+dconf write /net/launchpad/plank/docks/dock1/theme "'$(dock_do_tema "$(tema_salvo)")'"
 dconf write /net/launchpad/plank/docks/dock1/position "'bottom'"
 # visivel com janelas flutuantes; some quando maximizado; reaparece na borda
 # inferior (pressure-reveal) e some depois que o mouse sai da regiao do dock.
@@ -56,6 +52,10 @@ dconf write /net/launchpad/plank/docks/dock1/hide-mode "'dodge-maximized'"
 dconf write /net/launchpad/plank/docks/dock1/pressure-reveal true
 dconf write /net/launchpad/plank/docks/dock1/hide-delay 0
 dconf write /net/launchpad/plank/docks/dock1/unhide-delay 0
-dconf write /net/launchpad/plank/docks/dock1/icon-size 52
+# Tamanho pela resolucao, nao 52 fixo. Este script roda a cada login logo
+# antes do Plank; o 52 escrito aqui desfazia o valor que o
+# tarsila-wallpaper-apply.sh calcula da altura da tela -- numa TV de 1080p
+# ou 4K o icone voltava sozinho ao tamanho pensado para 768p (05/08).
+dconf write /net/launchpad/plank/docks/dock1/icon-size "$(icone_dock)"
 dconf write /net/launchpad/plank/docks/dock1/pinned-only true
 dconf write /net/launchpad/plank/docks/dock1/lock-items true

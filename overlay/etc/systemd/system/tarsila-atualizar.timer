@@ -1,0 +1,28 @@
+[Unit]
+Description=Atualiza o sistema pouco depois do arranque (Tarsila)
+# Por que um timer, e nao o servico pendurado no multi-user.target:
+#
+# O servico e Type=oneshot e era WantedBy=multi-user.target. Com "oneshot" o
+# systemd so considera a unit iniciada quando o processo TERMINA -- entao o
+# multi-user.target, e por consequencia o graphical.target e o lightdm,
+# ficavam esperando o apt acabar. Medido na TV box em 04/08/2026:
+#
+#   Startup finished in 1.630s (kernel) + 49.640s (userspace) = 51.270s
+#   graphical.target reached after 49.638s
+#   tarsila-atualizar.service ..... 40.504s   <- o maior custo do boot
+#   lightdm.service ...............  0.334s
+#
+# O proprio cabecalho do servico dizia "nao segura o arranque: a area de
+# trabalho sobe enquanto isto roda ao fundo". A intencao estava certa, o
+# mecanismo e que nao entregava. Com o timer a intencao passa a valer.
+
+[Timer]
+# Tres minutos depois do boot: a area de trabalho ja esta na mao do usuario.
+OnBootSec=3min
+# Sem Persistent: perder uma janela de atualizacao nao e problema, e o botao
+# "Verificar e Instalar" dos Ajustes chama o mesmo utilitario a qualquer hora.
+AccuracySec=30s
+Unit=tarsila-atualizar.service
+
+[Install]
+WantedBy=timers.target

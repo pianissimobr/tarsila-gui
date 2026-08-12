@@ -58,7 +58,7 @@
     <popupShow>Never</popupShow>
   </resize>
   <margins>
-    <top>34</top>
+    <top>24</top>
   </margins>
   <keyboard>
     <keybind key="A-Tab">
@@ -87,6 +87,9 @@
         <action name="Focus"/>
         <action name="Raise"/>
         <action name="Move"/>
+      </mousebind>
+      <mousebind button="Left" action="Release">
+        <action name="Execute"><command>/usr/local/bin/tarsila-clamp-on-release.sh</command></action>
       </mousebind>
       <mousebind button="Left" action="DoubleClick"><action name="Execute"><command>/usr/local/bin/tarsila-goto3.sh</command></action></mousebind>
       <mousebind button="Right" action="Press"><action name="ShowMenu"><menu>client-menu</menu></action></mousebind>
@@ -122,6 +125,9 @@
         <action name="Raise"/>
         <action name="Move"/>
       </mousebind>
+      <mousebind button="A-Left" action="Release">
+        <action name="Execute"><command>/usr/local/bin/tarsila-clamp-on-release.sh</command></action>
+      </mousebind>
     </context>
     <!-- sem Press no Frame — isso quebrava o segura-e-arrasta na decoração -->
     <context name="Frame">
@@ -129,6 +135,9 @@
         <action name="Focus"/>
         <action name="Raise"/>
         <action name="Move"/>
+      </mousebind>
+      <mousebind button="A-Left" action="Release">
+        <action name="Execute"><command>/usr/local/bin/tarsila-clamp-on-release.sh</command></action>
       </mousebind>
       <mousebind button="A-Right" action="Drag"><action name="Resize"/></mousebind>
     </context>
@@ -161,7 +170,15 @@
       <mousebind button="Left" action="Drag"><action name="Resize"/></mousebind>
     </context>
     <context name="Desktop">
-      <mousebind button="Right" action="Press"><action name="ShowMenu"><menu>root-menu</menu></action></mousebind>
+      <!-- Clique direito na área de trabalho desabilitado (Tarsila) -->
+    </context>
+    <context name="MoveResize">
+      <mousebind button="Left" action="Release">
+        <action name="Execute"><command>/usr/local/bin/tarsila-clamp-on-release.sh</command></action>
+      </mousebind>
+      <mousebind button="A-Left" action="Release">
+        <action name="Execute"><command>/usr/local/bin/tarsila-clamp-on-release.sh</command></action>
+      </mousebind>
     </context>
   </mouse>
   <menu>

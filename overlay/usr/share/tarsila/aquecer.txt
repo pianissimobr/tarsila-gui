@@ -1,0 +1,14 @@
+# Aplicativos aquecidos no arranque, um por linha.
+#
+# So os PESADOS entram: os leves ja abrem rapido com cache frio (Thunar: 264 ms)
+# e aquecer todos custaria quinze arranques de aplicativo sem ganho proporcional.
+#
+# Medido nesta box, tempo ate a janela: Chromium 8039 ms frio contra 1297 ms
+# quente -- 6,2x. E esse o tamanho do que se compra aqui.
+#
+# Linha comecando com # e ignorada. Para tirar um, comente; para acrescentar,
+# escreva o nome do programa (o que voce digitaria no terminal).
+chromium
+abiword
+gnumeric
+obs

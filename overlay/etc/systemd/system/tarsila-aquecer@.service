@@ -1,0 +1,33 @@
+[Unit]
+# Aquece o cache de disco dos aplicativos pesados numa tela invisivel, no
+# arranque do sistema -- antes de a area de trabalho do usuario subir.
+#
+# Unidade com "@": o usuario dono da area de trabalho vai no nome, porque ele
+# muda de aparelho para aparelho (alan nesta tv, tarsila na VM):
+#
+#     systemctl enable --now tarsila-aquecer@alan.service
+#
+# NAO ha "Before=lightdm.service" de proposito. Bloquear o gerenciador de
+# login deixaria a pessoa olhando para uma tela preta por um minuto e meio, e
+# um travamento aqui viraria "o computador nao liga". Rodando em paralelo, o
+# aquecimento comeca antes e continua enquanto a area de trabalho monta; como
+# tudo acontece num servidor X proprio, nada aparece na tela de qualquer
+# forma. O cache de paginas do Linux e do sistema inteiro: aquecer aqui vale
+# para a sessao do usuario do mesmo jeito.
+Description=Aquecimento dos aplicativos pesados de %i (tela invisivel)
+After=multi-user.target
+
+[Service]
+Type=oneshot
+User=%i
+# Em disco e CPU fica sempre atras de quem esta montando a area de trabalho.
+Nice=19
+IOSchedulingClass=idle
+ExecStart=/usr/local/bin/tarsila-aquecer
+# Teto generoso: quatro aplicativos, cada um com ate 45 s. Se estourar, o
+# systemd encerra e o sistema segue -- o aquecimento e uma comodidade, nunca
+# um requisito.
+TimeoutStartSec=420
+
+[Install]
+WantedBy=multi-user.target
