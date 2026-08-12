@@ -1,6 +1,6 @@
 [Added Associations]
 text/html=tarsila-chromium.desktop;
-application/pdf=org.xfce.mousepad.desktop;
+application/pdf=qpdfview.desktop;
 image/jpeg=org.xfce.ristretto.desktop;
 image/png=org.xfce.ristretto.desktop;
 image/gif=org.xfce.ristretto.desktop;
@@ -23,15 +23,14 @@ application/x-gzip=xarchiver.desktop;
 application/x-bzip2=xarchiver.desktop;
 application/x-shellscript=org.xfce.mousepad.desktop;
 application/x-desktop=org.xfce.mousepad.desktop;
-application/vnd.openxmlformats-officedocument.wordprocessingml.document=libreoffice-writer.desktop;
-application/vnd.openxmlformats-officedocument.spreadsheetml.sheet=libreoffice-calc.desktop;
+application/vnd.openxmlformats-officedocument.wordprocessingml.document=abiword.desktop;
+application/vnd.openxmlformats-officedocument.spreadsheetml.sheet=org.gnumeric.gnumeric.desktop;
 x-scheme-handler/http=tarsila-chromium.desktop;
 x-scheme-handler/https=tarsila-chromium.desktop;
 x-scheme-handler/mailto=tarsila-chromium.desktop;
 
 [Default Applications]
 text/html=tarsila-chromium.desktop
-application/pdf=org.xfce.mousepad.desktop
 image/jpeg=org.xfce.ristretto.desktop
 image/png=org.xfce.ristretto.desktop
 video/mp4=mpv.desktop
@@ -41,3 +40,10 @@ application/zip=xarchiver.desktop
 x-scheme-handler/http=tarsila-chromium.desktop
 x-scheme-handler/https=tarsila-chromium.desktop
 x-scheme-handler/mailto=tarsila-chromium.desktop
+application/vnd.openxmlformats-officedocument.wordprocessingml.document=abiword.desktop
+application/vnd.openxmlformats-officedocument.spreadsheetml.sheet=org.gnumeric.gnumeric.desktop
+application/vnd.oasis.opendocument.text=abiword.desktop
+application/vnd.oasis.opendocument.spreadsheet=org.gnumeric.gnumeric.desktop
+application/msword=abiword.desktop
+application/vnd.ms-excel=org.gnumeric.gnumeric.desktop
+application/pdf=qpdfview.desktop
