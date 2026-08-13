@@ -162,3 +162,35 @@ App extraído do core para o repositório separado `tarsila-email/`. O cliente
 **Regra:** o dock nasce com a ordem inicial, mas o usuário pode reordenar e
 tirar itens pelo app-manager. Email/agenda **não** entram em `native-apps.txt`
 (não são travados).
+
+---
+
+## 11. Extração para `tarsila-store` (ago/2026)
+
+Loja movida do core para o repositório independente `tarsila-store/` (irmão do
+`tarsila-email/`), com `.deb` como fonte canônica.
+
+| No overlay (deletado) | Destino |
+|---|---|
+| `opt/tarsila-store/` (árvore inteira: bin, loja, handler, whitelist) | repo `tarsila-store/` |
+| `usr/bin/tarsila-store` (symlink) | **Deletado** (.deb cria via symlink) |
+| `usr/local/lib/tarsila/tarsila_store_{dados,visual}.py` | repo `tarsila-store/src/` |
+| `usr/share/applications/tarsila-store.desktop` | repo `tarsila-store/desktop/` |
+| `usr/share/applications/tarsila-protocol.desktop` | repo `tarsila-store/desktop/` |
+| `usr/share/tarsila/applications/tarsila-store.desktop` (curado) | repo `tarsila-store/desktop/` (como `tarsila-store-tarsila.desktop`) |
+| `usr/share/tarsila/icons/appstore.png` | repo `tarsila-store/desktop/` |
+
+**Modelo (corrigido):** a Store é um projeto independente — **não** é um
+pacote do core. O `.deb` dela é instalado pelo `install.sh` do core como
+fallback local (igual email/agenda), mas não é dependência dura. A loja
+precisa da base do `tarsila-app-management`; no `postinst`, se ele estiver
+ausente, instala só o **motor headless** (`tarsila-atalho-criar` +
+`tarsila-app-uninstall.sh`, de `motor/`) sem a resolução gráfica
+(`tarsila-appfinder-yad.sh`, `tarsila-deb-gui.py`).
+
+**Ajustes no core:**
+- `install.sh`: removido `chmod ... /opt/tarsila-store/bin/*` e o `install
+  sudoers.d/tarsila-store` (fantasmas); adicionado o bloco do `tarsila-store`.
+- `native-apps.txt` e o dockitem `14-tarsila-store.dockitem` permanecem —
+  apontam para `/usr/share/tarsila/applications/tarsila-store.desktop`, que
+  agora vem do `.deb`.

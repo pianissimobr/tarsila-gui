@@ -71,10 +71,27 @@ if ! apt-get install -y tarsila-email; then
   fi
 fi
 
+# tarsila-store vem de repositório separado (tarsila-store/). Se o apt ainda
+# não a conhece, instala o .deb local construído pelo repositório irmão (o
+# postinst dele cuida do tarsila-app-management e do "motor" headless).
+if ! apt-get install -y tarsila-store; then
+  LOCAL_DEB=$(ls "$REPO_DIR"/../tarsila-store/dist/*_all.deb 2>/dev/null | head -1 || true)
+  if [ -z "$LOCAL_DEB" ] && [ -f "$REPO_DIR"/../tarsila-store/build-deb.sh ]; then
+    bash "$REPO_DIR"/../tarsila-store/build-deb.sh /tmp >/dev/null 2>&1 || true
+    LOCAL_DEB=$(ls /tmp/tarsila-store_*_all.deb 2>/dev/null | head -1 || true)
+  fi
+  if [ -n "$LOCAL_DEB" ]; then
+    apt-get install -y "$LOCAL_DEB" || \
+      echo "    AVISO: não foi possível instalar tarsila-store"
+  else
+    echo "    AVISO: tarsila-store não encontrado — Loja indisponível"
+  fi
+fi
+
 echo "==> [2/6] Copiando arquivos do sistema (overlay)…"
 # sudoers vai por caminho separado (precisa de validação); o resto copia direto
 tar -cf - -C "$REPO_DIR/overlay" --exclude=./etc/sudoers.d . | tar -xpf - -C /
-chmod 755 /usr/local/bin/tarsila-* /opt/tarsila-store/bin/* 2>/dev/null || true
+chmod 755 /usr/local/bin/tarsila-* 2>/dev/null || true
 
 # Adota no catálogo curado os apps de repositórios separados. Os .deb do
 # email e da agenda instalam só o .desktop genérico em /usr/share/applications/;
@@ -86,7 +103,6 @@ if [ -x /usr/local/bin/tarsila-atalho-criar ]; then
 fi
 
 echo "==> [3/6] Configurando sudoers (usuário: $TARSILA_USER)…"
-install -m 440 "$REPO_DIR/overlay/etc/sudoers.d/tarsila-store" /etc/sudoers.d/tarsila-store
 sed "s/^alan /$TARSILA_USER /" "$REPO_DIR/overlay/etc/sudoers.d/tarsila-config" > /etc/sudoers.d/tarsila-config
 chmod 440 /etc/sudoers.d/tarsila-config
 visudo -c >/dev/null || { echo "ERRO: sudoers inválido"; exit 1; }

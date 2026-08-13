@@ -33,6 +33,7 @@ conferir() {          # $1=rotulo  $2=arquivo A  $3=arquivo B
 #   - configurar-claws/configurar-claws-gui -> legado (claws-mail-suite)
 #   - agenda_tarsila.py -> agenda-tarsila (Fase 2)
 #   - tarsila-email -> tarsila-email (Fase 3)
+#   - tarsila-store (loja) -> tarsila-store (Fase 4)
 # Cada app agora tem seu .deb como fonte canônica, sem cópia no overlay.
 
 # ------------------------------------------------------------------
