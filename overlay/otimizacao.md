@@ -289,6 +289,25 @@ por fora) e a rotação do destaque a cada 9s (animação visual). O legado pesa
 — servidor HTTP WebKit com `GET /api/instalados` a cada 60s e `/api/tarefas` a
 cada 2.5s — já está em "Pendências" para desligar com a migração.
 
+## 15. Configuração do Sistema — Painel de Ajustes (xfconf morto removido)
+
+Categoria "Configuração do Sistema". Os três ajudantes sudo já estavam corretos
+e one-shot: `tarsila-atualizar` (nice/ionice, trava do apt, uma simulação para
+contar), `tarsila-idioma` (uma passada por arquivo) e `tarsila-perfil` (uma
+ação por linha do sudoers).
+
+O painel (`tarsila_config.py`) já é bem desenhado para ARM: páginas construídas
+**sob demanda** (lazy), e toda ação com efeito demorado roda em **thread**
+(`_check_updates`, NTP, fuso, idioma, configuração de IP, foto, `_procurar_scanner`)
+voltando via `GLib.idle_add`.
+
+**Mudança.** A página Aparência chamava `xfconf_get("xsettings", "/Net/ThemeName")`
+e **jogava o resultado fora** — a linha seguinte lê o tema real do arquivo do
+`xsettingsd` (`xsettings_get`). Era um `xfconf-query` desperdiçado a cada
+abertura da página, que nesta sessão Openbox (sem xfconfd) ainda falha devagar.
+Removidas a chamada morta e as funções `xfconf_get`/`xfconf_set`, que só ela
+usava.
+
 ## O que NÃO mudou (já estava correto)
 
 - **Agenda**: sync já roda em thread de fundo e publica via `GLib.idle_add`

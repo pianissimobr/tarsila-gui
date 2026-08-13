@@ -172,18 +172,6 @@ def foto_para_png(caminho):
     return dados, ""
 
 
-def xfconf_get(channel, prop, default=None):
-    ok, out, _ = run_ok(["xfconf-query", "-c", channel, "-p", prop])
-    return out if ok else default
-
-
-def xfconf_set(channel, prop, value, vtype="string", create=False):
-    argv = ["xfconf-query", "-c", channel, "-p", prop, "-s", str(value)]
-    if create:
-        argv += ["-n", "-t", vtype]
-    return run_ok(argv)[0]
-
-
 def load_state():
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     if STATE_FILE.exists():
@@ -1316,7 +1304,6 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
 
         card, lb = make_card("Cores e texto")
         box.pack_start(card, False, False, 0)
-        current_theme = xfconf_get("xsettings", "/Net/ThemeName", "Xfce")
         dark_switch = Gtk.Switch()
         tema_atual = xsettings_get("Net/ThemeName", TEMA_CLARO)
         dark_switch.set_active(tema_atual == TEMA_ESCURO)
