@@ -147,21 +147,26 @@ App extraído do core para o repositório separado `tarsila-email/`. O cliente
 
 ---
 
-## 10. PENDENTE — Ordem inicial do dock (ago/2026)
+## 10. Ordem inicial do dock (ago/2026)
 
-**A FAZER:** redefinir a ordem inicial do dock (skel `plank-dconf.ini` +
-`skel/.config/plank/dock1/launchers/*.dockitem`).
+Ordem definida pelo autor (da esquerda pra direita), aplicada no skel
+(`plank-dconf.ini` + `skel/.config/plank/dock1/launchers/*.dockitem`):
 
-- O email **não tem dockitem no skel** (foi adicionado só na máquina via
-  `install-on-remote.sh`, já removido). Numa instalação limpa, o email não
-  aparece no dock.
-- A ordem do skel está divergente da máquina (skel: `01-abiword`; máquina:
-  `01-tarsila-store`; skel pula 07 e 15-17).
-- Nova ordem **já definida pelo autor**, aguardando a tv tester para aplicar.
+```
+01 Tarsila Store   02 Tarsila Email   03 Abiword   04 Gnumeric (Excel Leve)
+05 Leitor de PDF   06 Calculadora     07 Agenda    08 Chromium
+09 VLC             10 OBS Studio      11 Terminal  12 Arquivos (Thunar)
+13 Ajustes         14 Lixeira         15 Ver mais
+```
 
-**Regra:** o dock nasce com a ordem inicial, mas o usuário pode reordenar e
-tirar itens pelo app-manager. Email/agenda **não** entram em `native-apps.txt`
-(não são travados).
+- Dockitems renumerados 01–15 na ordem acima; `06-zoom-web` e
+  `10-games-folder` saíram (fora da nova ordem).
+- Criados `02-tarsila-email.dockitem` e `10-obs-tarsila.dockitem` (o email
+  antes não tinha dockitem no skel).
+- Seção `[dock1]` (obsoleta) do `plank-dconf.ini` removida — o Plank lê só
+  `/net/launchpad/plank/docks/dock1/`.
+- Store/email/agenda nascem do `.deb` ou via `tarsila-atalho-criar`;
+  email/agenda **não** entram em `native-apps.txt` (não são travados).
 
 ---
 
