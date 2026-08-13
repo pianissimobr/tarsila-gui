@@ -5,7 +5,7 @@ Version=1.0
 Name=Agenda Tarsila
 GenericName=Calendário
 Comment=Calendário local com opção de conectar ao Google Agenda
-Exec=/usr/local/bin/tarsila-abrindo agenda-tarsila
+Exec=agenda-tarsila
 Icon=x-office-calendar
 Terminal=false
 Type=Application
@@ -21,4 +21,3 @@ Exec=/usr/local/bin/tarsila-dock-item.sh remove /usr/share/tarsila/applications/
 [Desktop Action desinstalar]
 Name=Desinstalar
 Exec=/usr/local/bin/tarsila-app-uninstall.sh /usr/share/tarsila/applications/agenda-tarsila.desktop
-X-Tarsila-Nascimento=977x558
