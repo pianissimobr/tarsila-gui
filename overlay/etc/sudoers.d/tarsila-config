@@ -3,12 +3,18 @@
 # e o pkexec so funciona com um agente registrado na sessao).
 # Cada linha e' exatamente a acao que um botao/switch do painel dispara;
 # nada de coringa amplo tipo "ALL".
+#
+# NOTA: atualizar o sistema NAO passa mais por aqui. O botao "Verificar e
+# Instalar" chama /usr/local/sbin/tarsila-atualizar (regra propria em
+# /etc/sudoers.d/tarsila-atualizar), que faz o apt-get update/upgrade num
+# unico lugar. As regras de apt-get daqui ficaram sem chamador e foram
+# removidas — menos privilegio concedido do que o painel usa.
 alan ALL=(root) NOPASSWD: /usr/bin/timedatectl set-ntp true
 alan ALL=(root) NOPASSWD: /usr/bin/timedatectl set-ntp false
 alan ALL=(root) NOPASSWD: /usr/bin/timedatectl set-time *
-alan ALL=(root) NOPASSWD: /usr/bin/apt-get update
-alan ALL=(root) NOPASSWD: /usr/bin/apt-get upgrade -y
-alan ALL=(root) NOPASSWD: /usr/local/bin/tarsila-net-set
+# O painel chama com argumentos (conexao + auto/manual [+ ip gw dns]). Sem o
+# "*" a regra nao casava e o "sudo -n" falhava pedindo senha (nao-interativo).
+alan ALL=(root) NOPASSWD: /usr/local/bin/tarsila-net-set *
 # Qualquer fuso, nao so os cinco do Brasil: a tela passou a listar
 # todos. timedatectl valida o nome sozinho e recusa o que nao existir.
 alan ALL=(root) NOPASSWD: /usr/bin/timedatectl set-timezone *

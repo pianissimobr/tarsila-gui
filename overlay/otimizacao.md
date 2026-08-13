@@ -153,6 +153,28 @@ Sem mudanças em `tarsila-kmsg` (já é `os.read()` bloqueante — o kernel acor
 thread quando chega mensagem, sem polling) nem em `tarsila-atualizar`,
 `tarsila-aquecer` e `tarsila-devfreq-gpu` (one-shot com `Nice`/`ionice`).
 
+## 9. Segurança e Privilégios — Menos privilégio morto e regra quebrada
+
+Categoria "Segurança e Privilégios" (`/etc/sudoers.d/`). Critério aplicado:
+**payload enxuto** (menor superfície de privilégio) + **redução de chamadas**
+(um único caminho para atualizar).
+
+**Problema.**
+- `tarsila-config` ainda concedia `apt-get update` e `apt-get upgrade -y`, mas
+  nada chama `sudo apt-get` no sistema: o botão "Verificar e Instalar" usa
+  `sudo -n /usr/local/sbin/tarsila-atualizar` (que tem regra própria). Eram
+  duas portas de privilégio mortas.
+- A regra `tarsila-net-set` **sem `*`** não casava com a chamada real do painel
+  (`sudo -n tarsila-net-set <conexão> auto|manual ...`): o `sudo -n` falhava
+  pedindo senha, quebrando a configuração de IP manual/automático.
+
+**Solução.**
+- Removidas as duas regras de `apt-get` de `tarsila-config` (o apt fica num
+  único lugar: `tarsila-atualizar`).
+- `tarsila-net-set` ganhou o `*` (a chamada passa argumentos), alinhado ao
+  padrão dos demais (`tarsila-idioma *`, `tarsila-vpn-importar *`,
+  `timedatectl set-time *`).
+
 ## O que NÃO mudou (já estava correto)
 
 - **Agenda**: sync já roda em thread de fundo e publica via `GLib.idle_add`
