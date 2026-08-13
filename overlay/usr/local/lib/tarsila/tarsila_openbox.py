@@ -29,7 +29,14 @@ O tarsila-abrindo roda ANTES do aplicativo. Entao:
 O passo 4 nao e opcional: com force="yes" a regra valeria para TODA janela
 daquela classe, para sempre, inclusive as abertas por outros caminhos.
 
-Custa dois "openbox --reconfigure" por abertura. E o preco de nao ter salto.
+Custa UM "openbox --reconfigure" por abertura. A retirada da regra do ARQUIVO
+acontece ja no fim da abertura (para nao persistir), mas sem reconfigure: quem
+reconfigure e a PROXIMA abertura, que ja entra com a regra nova. Antes eram
+dois reconfigures por abertura, e o segundo -- que so apaga -- corria DEPOIS de
+o aplicativo ja estar na tela, segurando a saida do abrindo e a liberacao do
+cursor de espera. Numa box fraca, re-le o rc.xml inteiro e reaplica as regras
+de todas as janelas; fazer isso uma vez so, e no momento em que importa, e
+mais barato e devolve o cursor antes.
 
 Seguranca
 ---------
@@ -210,12 +217,19 @@ def prepara(classe, x, y):
 
 
 def limpa(trava):
-    """Tira a regra. Sempre chamado, mesmo se a janela nunca apareceu."""
+    """Tira a regra. Sempre chamado, mesmo se a janela nunca apareceu.
+
+    Remove a regra do ARQUIVO mas NAO reconfigure o Openbox: o reconfigure e
+    o passo caro (re-le o rc.xml e reaplica as regras de todas as janelas), e
+    a proxima abertura ja faz um reconfigure de qualquer forma para entrar a
+    regra nova -- nesse momento a retirada aqui e absorvida junto. Enquanto
+    isso, o arquivo ja esta limpo, entao qualquer reconfigure que acontecer
+    por outro motivo (troca de tema, margens) tambem recolhe a regra.
+    """
     if trava is None:
         return
     try:
         _restaura_sem_bloco()
-        _reconfigura()
     except Exception:
         pass
     finally:

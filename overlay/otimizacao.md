@@ -175,6 +175,28 @@ Categoria "Segurança e Privilégios" (`/etc/sudoers.d/`). Critério aplicado:
   padrão dos demais (`tarsila-idioma *`, `tarsila-vpn-importar *`,
   `timedatectl set-time *`).
 
+## 10. Gerenciamento de Janelas — Um reconfigure em vez de dois
+
+Categoria "Gerenciamento de Janelas". Os daemons (`tarsila-monitor.sh`,
+`tarsila-tela-estados`) e o lançador (`tarsila-abrindo`) já são event-driven ou
+com um único `wmctrl`/`XDamage` por ciclo — a vaga já caiu de 1770 ms para
+~10 ms e o `Observador` já usa `select()` em vez de `XPending`.
+
+**Problema.** `tarsila_openbox.py` fazia **dois** `openbox --reconfigure` por
+abertura: um no `prepara()` (entrar a regra) e um no `limpa()` (retirá-la).
+Cada `--reconfigure` re-lê o `rc.xml` inteiro e reaplica as regras de todas as
+janelas. O segundo — que só apaga — rodava no `finally` do `tarsila-abrindo`,
+**antes** do `XUngrabPointer`, ou seja, segurava o cursor de espera depois de o
+aplicativo já estar na tela.
+
+**Solução.** `limpa()` continua removendo a regra do **arquivo** (essencial
+para não persistir), mas **não reconfigure**. Quem reconfigure é a próxima
+abertura, que já reconfigure de qualquer forma para entrar a regra nova — a
+retirada é absorvida ali. O arquivo fica limpo desde já, então qualquer
+reconfigure por outro motivo (troca de tema, margens) também recolhe a regra.
+Resultado: **1 reconfigure por abertura em vez de 2**, e o cursor de espera é
+liberado antes.
+
 ## O que NÃO mudou (já estava correto)
 
 - **Agenda**: sync já roda em thread de fundo e publica via `GLib.idle_add`
