@@ -3,7 +3,7 @@ set -euo pipefail
 DROPIN=/etc/lightdm/lightdm.conf.d/99-tarsila-oobe.conf
 
 id tarsila-oobe >/dev/null 2>&1 || useradd -r -d /var/lib/tarsila/oobe-home \
-  -s /usr/sbin/nologin -c 'Tarsila OOBE setup' tarsila-oobe
+  -s /bin/bash -c 'Tarsila OOBE setup' tarsila-oobe
 mkdir -p /var/lib/tarsila/oobe-home && chown tarsila-oobe:tarsila-oobe /var/lib/tarsila/oobe-home
 
 mkdir -p /etc/tarsila
@@ -44,4 +44,4 @@ cat > /etc/sudoers.d/tarsila-oobe <<'SUDOERS'
 tarsila-oobe ALL=(root) NOPASSWD: /usr/local/sbin/tarsila-user-provision
 SUDOERS
 chmod 440 /etc/sudoers.d/tarsila-oobe
-visudo -c >/dev/null || { rm -f /etc/sudoers.d/tarsila-oobe; echo "ERRO: sudoers da OOBE inválido" >&2; exit 1; }
+visudo -cf /etc/sudoers.d/tarsila-oobe >/dev/null 2>&1 || { rm -f /etc/sudoers.d/tarsila-oobe; echo "ERRO: sudoers da OOBE inválido" >&2; exit 1; }

@@ -8,12 +8,12 @@
       <action name="Execute"><command>tarsila-config</command></action>
     </item>
     <separator/>
+    <item label="Tarsila Email">
+      <action name="Execute"><command>tarsila-email</command></action>
+    </item>
+    <separator/>
     <item label="Sair">
       <action name="Exit"><prompt>yes</prompt></action>
     </item>
-  <separator label="E-mail" />
-  <item label="Tarsila Email">
-    <action name="Execute"><execute>tarsila-email</execute></action>
-  </item>
   </menu>
 </openbox_menu>

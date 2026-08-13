@@ -74,11 +74,16 @@ devilspie2 &
 
 # compositor xrender: cantos arredondados (janelas flutuantes) + Plank
 /usr/local/bin/tarsila-ob-picom.sh &
-# agentes de autenticação polkit + utilitários de sessão (clipboard, tint2)
+# --- claws-mail-suite (nao editar esta secao) ---
 for a in /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 /usr/bin/lxpolkit /usr/lib/mate-polkit/polkit-mate-authentication-agent-1 /usr/lib/*/libexec/polkit-kde-authentication-agent-1; do [ -x "$a" ] && { "$a" & break; }; done
 command -v clipit >/dev/null 2>&1 && clipit &
 command -v parcellite >/dev/null 2>&1 && ! command -v clipit >/dev/null 2>&1 && parcellite &
 command -v tint2 >/dev/null 2>&1 && tint2 &
+# 2026-07-26: REMOVIDO o disparo automatico do assistente de e-mail.
+# Ele abria o 'configurar-claws' 4 s apos TODO login enquanto nao houvesse
+# conta configurada -- ou seja, sempre, na cara do usuario. Configurar
+# e-mail e ato deliberado: agora so pelo icone da Dock.
+# (linha antiga guardada em autostart.bak-20260726)
 
 # Nextcloud: monta o WebDAV (gvfs) se ja houver credenciais; sai calado se nao.
 # TEM de ficar AQUI e nao em ~/.config/autostart: o autostart XDG NAO roda nesta

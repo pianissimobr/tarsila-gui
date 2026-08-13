@@ -34,23 +34,24 @@ if [ -n "$TARSILA_USER" ]; then
   HOME_DIR="$(getent passwd "$TARSILA_USER" | cut -d: -f6)"
 fi
 
-echo "==> [1/6] Instalando dependências (apt)…"
+echo "==> [1/6] Instalando dependências (apt, sem recommends)…"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y \
-  openbox polybar dunst xsettingsd picom feh \
-  xfce4-session xfce4-panel xfce4-settings xfdesktop4 xfwm4 \
-  xfce4-genmon-plugin xfce4-pulseaudio-plugin xfce4-power-manager \
-  xfce4-notifyd xfce4-terminal xfce4-appfinder \
+# Núcleo gráfico mínimo + ferramentas da interface
+apt-get install -y --no-install-recommends \
+  xorg openbox polybar dunst xsettingsd picom feh scrot \
   plank devilspie2 yad lightdm lightdm-gtk-greeter \
   papirus-icon-theme thunar gvfs gvfs-daemons \
   python3-gi gir1.2-gtk-3.0 python3-gi-cairo \
   network-manager wmctrl xdotool x11-xserver-utils x11-utils dconf-cli \
-  lxpolkit sudo curl chromium git \
-  abiword gnumeric qpdfview galculator vlc obs-studio \
+  lxpolkit sudo curl git \
   pavucontrol inotify-tools \
   fonts-font-awesome fonts-noto-core \
   fonts-roboto fonts-open-sans fonts-lato fonts-montserrat fonts-inter
+
+# Apps de produtividade (leves, sem recommends explícito para manter enxuto)
+apt-get install -y --no-install-recommends \
+  abiword gnumeric qpdfview galculator vlc 2>&1 | tail -3 || echo "  aviso: apps opcionais com erro (segue)"
 
 echo "==> [2/6] Instalando apps Tarsila…"
 GH_USER="${GITHUB_USER:-pianissimobr}"
@@ -79,10 +80,20 @@ fi
 
 [ "$WITH_PLYMOUTH" = 1 ] && apt-get install -y plymouth plymouth-themes
 
-echo "==> [3/6] Copiando arquivos do sistema (overlay)…"
+echo "==> [3/6] Copiando arquivos do sistema (overlay + openbox deploy)…"
 # sudoers vai por caminho separado (precisa de validação); o resto copia direto
 tar -cf - -C "$REPO_DIR/overlay" --exclude=./etc/sudoers.d . | tar -xpf - -C /
 chmod 755 /usr/local/bin/tarsila-* /usr/local/sbin/tarsila-oobe-init /usr/local/sbin/tarsila-user-provision 2>/dev/null || true
+
+# openbox deploy: binários da sessão, xsessions, fonts, themes
+if [ -d "$REPO_DIR/openbox/deploy/usr" ]; then
+  cp -a "$REPO_DIR/openbox/deploy/usr/." /usr/
+  chmod +x /usr/local/bin/tarsila-ob-* 2>/dev/null || true
+  chmod +x /usr/local/bin/tarsila-tela-estados 2>/dev/null || true
+fi
+if [ -d "$REPO_DIR/openbox/deploy/etc" ]; then
+  cp -a "$REPO_DIR/openbox/deploy/etc/." /etc/
+fi
 
 # Adota no catálogo curado os apps de repositórios separados. Os .deb do
 # email e da agenda instalam só o .desktop genérico em /usr/share/applications/;

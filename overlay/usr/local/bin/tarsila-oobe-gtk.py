@@ -16,44 +16,44 @@ from gi.repository import Gtk, Gdk, GLib
 CSS = b"""
 * { font-family: Sans, sans-serif; }
 window { background-color: #1a1a1a; }
-.title { font-size: 30px; font-weight: bold; color: #ffffff; }
-.subtitle { font-size: 15px; color: #aaaaaa; }
-.info { font-size: 13px; color: #888888; }
-.danger { font-size: 15px; color: #ff5544; font-weight: bold; }
-.step-label { font-size: 12px; color: #666666; }
-.field-title { font-size: 14px; color: #cccccc; }
+.title { font-size: 22px; font-weight: bold; color: #ffffff; }
+.subtitle { font-size: 12px; color: #aaaaaa; }
+.info { font-size: 11px; color: #888888; }
+.danger { font-size: 13px; color: #ff5544; font-weight: bold; }
+.step-label { font-size: 10px; color: #666666; }
+.field-title { font-size: 12px; color: #cccccc; }
 .entry-field {
-    font-size: 20px; padding: 14px 18px;
-    border-radius: 8px;
+    font-size: 16px; padding: 8px 12px;
+    border-radius: 6px;
     background-color: #2a2a2a; color: #ffffff;
     border: 2px solid #444444;
     caret-color: #ffffff;
 }
 .entry-field:focus { border-color: #4488ff; }
 .btn-primary {
-    font-size: 20px; font-weight: bold;
-    padding: 16px 48px; border-radius: 10px;
+    font-size: 16px; font-weight: bold;
+    padding: 10px 24px; border-radius: 8px;
     background-color: #4488ff; color: #ffffff;
     border: none;
 }
 .btn-primary:hover { background-color: #5599ff; }
 .btn-primary:disabled { background-color: #2a2a2a; color: #555555; }
 .btn-secondary {
-    font-size: 18px;
-    padding: 14px 36px; border-radius: 10px;
+    font-size: 14px;
+    padding: 8px 20px; border-radius: 8px;
     background-color: #333333; color: #cccccc;
     border: none;
 }
 .btn-secondary:hover { background-color: #444444; }
 .btn-danger {
-    font-size: 18px; font-weight: bold;
-    padding: 14px 40px; border-radius: 10px;
+    font-size: 14px; font-weight: bold;
+    padding: 8px 24px; border-radius: 8px;
     background-color: #cc3333; color: #ffffff;
     border: none;
 }
 .btn-danger:hover { background-color: #dd4444; }
-.error-msg { font-size: 14px; color: #ff5544; }
-.progress-msg { font-size: 16px; color: #cccccc; }
+.error-msg { font-size: 12px; color: #ff5544; }
+.progress-msg { font-size: 14px; color: #cccccc; }
 """
 
 
@@ -176,7 +176,11 @@ class _RootPage(Gtk.Box):
 
         # --- formulário (senha + confirmação) ---
         self.form = self._build_form()
-        self.pack_start(self.form, False, False, 16)
+        self.pack_start(self.form, False, False, 8)
+
+        # --- mensagem de erro (fora do form, não empurra botões) ---
+        self.error_label = _center_label("", "error-msg")
+        self.pack_start(self.error_label, False, False, 2)
 
         # --- botões ---
         btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
@@ -200,7 +204,7 @@ class _RootPage(Gtk.Box):
             self._show_form()
 
     def _build_form(self):
-        f = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        f = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
 
         lbl = Gtk.Label(label="Senha:")
         lbl.get_style_context().add_class("field-title")
@@ -214,17 +218,14 @@ class _RootPage(Gtk.Box):
         lbl2 = Gtk.Label(label="Confirmar senha:")
         lbl2.get_style_context().add_class("field-title")
         lbl2.set_halign(Gtk.Align.START)
-        f.pack_start(lbl2, False, False, 4)
+        f.pack_start(lbl2, False, False, 2)
 
         self.pw_confirm = _make_password_entry("Confirme a senha")
         self.pw_confirm.connect("changed", self._on_pw_changed)
         f.pack_start(self.pw_confirm, False, False, 0)
 
         self.strength_bar = _StrengthBar()
-        f.pack_start(self.strength_bar, False, False, 4)
-
-        self.error_label = _center_label("", "error-msg")
-        f.pack_start(self.error_label, False, False, 4)
+        f.pack_start(self.strength_bar, False, False, 2)
 
         return f
 
@@ -244,7 +245,7 @@ class _RootPage(Gtk.Box):
 
     def _on_pw_changed(self, entry):
         self.strength_bar.set_strength(_password_strength(self.pw_entry.get_text()))
-        self._validate()
+        GLib.idle_add(self._validate)
 
     def _validate(self):
         pw1 = self.pw_entry.get_text()
@@ -263,6 +264,7 @@ class _RootPage(Gtk.Box):
         self.error_label.set_text(msg)
         self._valid = ok
         self.next_btn.set_sensitive(ok)
+        return False
 
     def _on_next(self):
         if self._valid:
@@ -289,8 +291,8 @@ class _UserPage(Gtk.Box):
             "Com esta conta você poderá usar o sistema no dia a dia.", "subtitle")
         self.pack_start(sub, False, False, 32)
 
-        f = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        self.pack_start(f, False, False, 16)
+        f = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.pack_start(f, False, False, 8)
 
         lbl_n = Gtk.Label(label="Nome de usuário:")
         lbl_n.get_style_context().add_class("field-title")
@@ -304,12 +306,12 @@ class _UserPage(Gtk.Box):
             label="Use letras minúsculas, números, ponto ou traço. Exemplo: joao.silva")
         info.get_style_context().add_class("info")
         info.set_halign(Gtk.Align.START)
-        f.pack_start(info, False, False, 4)
+        f.pack_start(info, False, False, 2)
 
         lbl_p = Gtk.Label(label="Senha:")
         lbl_p.get_style_context().add_class("field-title")
         lbl_p.set_halign(Gtk.Align.START)
-        f.pack_start(lbl_p, False, False, 8)
+        f.pack_start(lbl_p, False, False, 4)
         self.pw_entry = _make_password_entry("Crie uma senha")
         self.pw_entry.connect("changed", self._on_pw_changed)
         f.pack_start(self.pw_entry, False, False, 0)
@@ -317,18 +319,19 @@ class _UserPage(Gtk.Box):
         lbl_c = Gtk.Label(label="Confirmar senha:")
         lbl_c.get_style_context().add_class("field-title")
         lbl_c.set_halign(Gtk.Align.START)
-        f.pack_start(lbl_c, False, False, 4)
+        f.pack_start(lbl_c, False, False, 2)
         self.pw_confirm = _make_password_entry("Confirme a senha")
         self.pw_confirm.connect("changed", self._on_pw_changed)
         f.pack_start(self.pw_confirm, False, False, 0)
 
         self.strength_bar = _StrengthBar()
-        f.pack_start(self.strength_bar, False, False, 4)
+        f.pack_start(self.strength_bar, False, False, 2)
 
+        # erro fora do form
         self.error_label = _center_label("", "error-msg")
-        f.pack_start(self.error_label, False, False, 4)
+        self.pack_start(self.error_label, False, False, 2)
 
-        btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
+        btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         btn_box.set_halign(Gtk.Align.CENTER)
 
         self.back_btn = Gtk.Button(label="Voltar")
@@ -346,7 +349,7 @@ class _UserPage(Gtk.Box):
 
     def _on_pw_changed(self, entry):
         self.strength_bar.set_strength(_password_strength(self.pw_entry.get_text()))
-        self._validate()
+        GLib.idle_add(self._validate)
 
     def _validate(self):
         name = self.name_entry.get_text().strip()
@@ -368,6 +371,7 @@ class _UserPage(Gtk.Box):
             ok = False
         self.error_label.set_text(msg)
         self.create_btn.set_sensitive(ok)
+        return False
 
     def _on_create(self):
         win = self.get_toplevel()
@@ -405,8 +409,11 @@ class OobeWindow(Gtk.Window):
     def __init__(self):
         super().__init__(type=Gtk.WindowType.TOPLEVEL)
         self.set_title("Tarsila — Primeiro acesso")
+        self.set_default_size(800, 580)
         self.set_decorated(False)
+        self.set_position(Gtk.WindowPosition.CENTER)
         self.set_keep_above(True)
+        self._fullscreened = False
         self.connect("destroy", Gtk.main_quit)
         self.connect("realize", self._on_realize)
 
@@ -433,8 +440,8 @@ class OobeWindow(Gtk.Window):
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
             box.set_valign(Gtk.Align.CENTER)
             box.set_halign(Gtk.Align.CENTER)
-            box.set_margin_start(80)
-            box.set_margin_end(80)
+            box.set_margin_start(20)
+            box.set_margin_end(20)
             box.pack_start(page, False, False, 0)
             self.stack.add_named(box, name)
 
