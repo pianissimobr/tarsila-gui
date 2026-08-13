@@ -270,6 +270,25 @@ mesmo critério da seção 8. O `xprintidle` a cada 20s é mantido: é a consult
 MIT-SCREEN-SAVER do X, não há alternativa mais leve no trixie e o custo é
 desprezível.
 
+## 14. Distribuição de Software — Store GTK já enxuta (sem mudança)
+
+Categoria "Store". A versão ativa (GTK) já aplica os três critérios:
+
+- **CPU enxuta** — `tarsila_store_dados.instalados()` faz **um** `dpkg-query`
+  batelado com todos os pacotes do catálogo (não um por pacote).
+- **Não bloquear** — instalar/remover rodam em **thread** (`dados.executar` →
+  `sudo -n tarsila-pkg`), voltando via `GLib.idle_add`; a loja continua
+  navegável durante o apt.
+- **Payload enxuto** — o catálogo vem direto dos `.js` existentes (JSON
+  recortado, sem cópia duplicada) e as capas têm **cache com teto de 400**
+  (`Capa._cache`), para não inflar a RAM da box.
+
+O que resta de periódico é deliberado e espelha a versão web: re-varredura do
+dpkg a cada 60s (só enquanto a loja está aberta, para pegar instalação feita
+por fora) e a rotação do destaque a cada 9s (animação visual). O legado pesado
+— servidor HTTP WebKit com `GET /api/instalados` a cada 60s e `/api/tarefas` a
+cada 2.5s — já está em "Pendências" para desligar com a migração.
+
 ## O que NÃO mudou (já estava correto)
 
 - **Agenda**: sync já roda em thread de fundo e publica via `GLib.idle_add`
