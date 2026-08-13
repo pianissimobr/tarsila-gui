@@ -1,9 +1,0 @@
-[Unit]
-Description=Tarsila: batimento de diagnostico em disco real (sobrevive a reset do watchdog)
-[Service]
-ExecStart=/usr/local/sbin/tarsila-heartbeat
-Restart=always
-Nice=10
-IOSchedulingClass=idle
-[Install]
-WantedBy=multi-user.target

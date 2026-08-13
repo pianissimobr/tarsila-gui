@@ -1,9 +1,0 @@
-[Desktop Entry]
-StartupNotify=true
-Type=Application
-Name=Ver mais aplicativos
-Comment=Aplicativos instalados que ainda não estão no dock
-Exec=/usr/local/bin/tarsila-abrindo /usr/local/bin/tarsila-uma-janela vermais "^Aplicativos Instalados$" /usr/local/bin/tarsila-appfinder-yad.sh
-Icon=open-menu-symbolic
-Terminal=false
-Categories=System;

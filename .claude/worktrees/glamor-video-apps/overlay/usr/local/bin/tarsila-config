@@ -1,2 +1,0 @@
-#!/bin/bash
-exec python3 /usr/local/share/tarsila/tarsila_config.py "$@"

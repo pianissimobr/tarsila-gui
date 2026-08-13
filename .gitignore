@@ -10,3 +10,4 @@ pacotes/**/credentials.json
 # Saidas de build
 *.deb
 release/
+.claude/

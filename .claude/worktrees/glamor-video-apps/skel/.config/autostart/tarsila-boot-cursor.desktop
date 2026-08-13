@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Tarsila Boot Cursor
-Comment=Cursor de carregando enquanto a sessao sobe
-Exec=/usr/local/bin/tarsila-boot-cursor.sh
-NoDisplay=true
-X-GNOME-Autostart-enabled=true

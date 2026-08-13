@@ -1,5 +1,0 @@
-files-tarsila.desktop
-configuracao-tarsila.desktop
-tarsila-store.desktop
-terminal-tarsila.desktop
-lixeira-tarsila.desktop

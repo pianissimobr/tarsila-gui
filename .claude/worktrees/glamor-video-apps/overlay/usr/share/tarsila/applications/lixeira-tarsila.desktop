@@ -1,9 +1,0 @@
-[Desktop Entry]
-StartupNotify=true
-Type=Application
-Name=Lixeira
-Comment=Itens excluídos
-Exec=/usr/local/bin/tarsila-abrindo /usr/local/bin/tarsila-uma-janela lixeira "^Lixeira$" /usr/local/bin/tarsila-lixeira
-Icon=user-trash
-Terminal=false
-Categories=System;
