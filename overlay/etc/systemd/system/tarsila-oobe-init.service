@@ -1,0 +1,13 @@
+[Unit]
+Description=Tarsila OOBE init — habilita autologin do assistente de primeiro boot
+Before=display-manager.service
+After=systemd-user-sessions.service
+ConditionPathExists=/var/lib/tarsila/firstboot
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/tarsila-oobe-init
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

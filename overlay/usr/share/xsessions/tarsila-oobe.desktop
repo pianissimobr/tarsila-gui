@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Criar conta Tarsila
+Comment=Primeiro acesso — criar senha de administrador e conta de usuário
+Exec=/usr/local/bin/tarsila-oobe-session
+TryExec=/usr/local/bin/tarsila-oobe-session
+Type=Application
+DesktopNames=Tarsila

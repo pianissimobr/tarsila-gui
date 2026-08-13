@@ -1,0 +1,56 @@
+#!/bin/bash
+set -euo pipefail
+NAME="${1:-}"; ROOTPW="${2:-}"
+[ -n "$NAME" ] || { echo "Uso: $0 <usuario> [senha_do_root]" >&2; exit 2; }
+read -r USERPW || true
+HOME="$(getent passwd "$NAME" 2>/dev/null | cut -d: -f6)" || true
+if [ -z "${HOME:-}" ]; then
+  HOME="/home/$NAME"
+  useradd -m -s /bin/bash -c "$NAME" -G sudo "$NAME"
+else
+  usermod -aG sudo "$NAME" 2>/dev/null || true
+fi
+echo "$NAME:$USERPW" | chpasswd
+
+if [ -n "$ROOTPW" ]; then
+  echo "$ROOTPW" | chpasswd root
+fi
+
+if [ -d /usr/share/tarsila/skel ]; then
+  cp -a /usr/share/tarsila/skel/.config "$HOME/" 2>/dev/null || true
+  cp -a /usr/share/tarsila/skel/user-dirs.* "$HOME/" 2>/dev/null || true
+  cp -a /usr/share/tarsila/skel/.local "$HOME/" 2>/dev/null || true
+  if [ -f /usr/share/tarsila/skel/plank-dconf.ini ] && which dconf >/dev/null 2>&1; then
+    sudo -u "$NAME" dbus-run-session -- dconf load /net/launchpad/plank/ < /usr/share/tarsila/skel/plank-dconf.ini 2>/dev/null || true
+  fi
+fi
+
+if [ -d /usr/share/tarsila/openbox-home ]; then
+  mkdir -p "$HOME/.config"
+  for d in openbox polybar xsettingsd dunst mpv; do
+    [ -d "/usr/share/tarsila/openbox-home/$d" ] || continue
+    cp -a "/usr/share/tarsila/openbox-home/$d" "$HOME/.config/$d"
+  done
+  [ -f /usr/share/tarsila/openbox-home/dot-xsession ] && cp -f /usr/share/tarsila/openbox-home/dot-xsession "$HOME/.xsession"
+  chmod +x "$HOME/.config/openbox/autostart" "$HOME/.config/polybar/"*.sh 2>/dev/null || true
+  chmod +x "$HOME/.xsession" 2>/dev/null || true
+fi
+
+mkdir -p "$HOME/.config/tarsila"
+[ -f "$HOME/.config/tarsila/tema" ] || echo padrao > "$HOME/.config/tarsila/tema"
+
+if [ -f /usr/local/lib/tarsila/sudoers-template ]; then
+  sed "s/^alan /$NAME /" /usr/local/lib/tarsila/sudoers-template > "/etc/sudoers.d/tarsila-config-$NAME"
+  chmod 440 "/etc/sudoers.d/tarsila-config-$NAME"
+  visudo -c >/dev/null || rm -f "/etc/sudoers.d/tarsila-config-$NAME"
+fi
+
+chown -R "$NAME:$NAME" "$HOME"
+
+if which tarsila-atalho-criar >/dev/null 2>&1; then
+  tarsila-atalho-criar agenda-tarsila 2>/dev/null || true
+  tarsila-atalho-criar tarsila-email 2>/dev/null || true
+fi
+
+rm -f /var/lib/tarsila/firstboot /etc/lightdm/lightdm.conf.d/99-tarsila-oobe.conf /etc/sudoers.d/tarsila-oobe
+systemctl restart lightdm 2>/dev/null || true

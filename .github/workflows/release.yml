@@ -1,0 +1,21 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build release
+        run: ./build-release.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create tarball
+        run: tar -czf tarsila-release.tar.gz -C release .
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: tarsila-release.tar.gz
