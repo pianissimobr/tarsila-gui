@@ -19,13 +19,12 @@ command -v dpkg-deb >/dev/null || { echo "ERRO: falta dpkg-deb (apt install dpkg
 mkdir -p "$DEST" \
          "$STAGE/DEBIAN" \
          "$STAGE/opt/tarsila-store/bin" \
-         "$STAGE/opt/tarsila-store/lib" \
          "$STAGE/opt/tarsila-store/loja" \
+         "$STAGE/usr/local/lib/tarsila" \
          "$STAGE/usr/bin" \
          "$STAGE/usr/share/applications" \
          "$STAGE/usr/share/tarsila/applications" \
-         "$STAGE/usr/share/icons/hicolor/256x256/apps" \
-         "$STAGE/etc/sudoers.d"
+         "$STAGE/usr/share/icons/hicolor/256x256/apps"
 
 # --- dados: catalogo, capas, icones, whitelist -------------------------
 # O HTML/CSS/JS da versao web vai junto de proposito: o catalogo em
@@ -35,10 +34,9 @@ cp -a "$AQUI/loja/." "$STAGE/opt/tarsila-store/loja/"
 install -m 644 "$AQUI/whitelist.txt" "$STAGE/opt/tarsila-store/whitelist.txt"
 
 # --- backend e utilitarios com privilegio ------------------------------
-# tarsila-atalho-criar, tarsila-deb-instalar e tarsila-deb-gui.py nao moram
-# mais aqui: foram para o tarsila-app-management (dependencia deste pacote).
-install -m 755 "$AQUI/backend/tarsila-pkg" \
-               "$STAGE/opt/tarsila-store/bin/tarsila-pkg"
+for f in tarsila-pkg tarsila-atalho-criar tarsila-deb-instalar tarsila-deb-gui.py; do
+  install -m 755 "$AQUI/backend/$f" "$STAGE/opt/tarsila-store/bin/$f"
+done
 install -m 755 "$AQUI/backend/tarsila-store-handler.sh" \
                "$STAGE/opt/tarsila-store/tarsila-store-handler.sh"
 
@@ -46,24 +44,20 @@ install -m 755 "$AQUI/backend/tarsila-store-handler.sh" \
 install -m 755 "$AQUI/src/tarsila-store-gtk.py" \
                "$STAGE/opt/tarsila-store/bin/tarsila-store-gtk.py"
 install -m 644 "$AQUI/src/tarsila_store_dados.py" \
-               "$STAGE/opt/tarsila-store/lib/tarsila_store_dados.py"
+               "$STAGE/usr/local/lib/tarsila/tarsila_store_dados.py"
 install -m 644 "$AQUI/src/tarsila_store_visual.py" \
-               "$STAGE/opt/tarsila-store/lib/tarsila_store_visual.py"
+               "$STAGE/usr/local/lib/tarsila/tarsila_store_visual.py"
 ln -sf /opt/tarsila-store/bin/tarsila-store-gtk.py "$STAGE/usr/bin/tarsila-store"
 
 install -m 644 "$AQUI/desktop/appstore.png" \
                "$STAGE/usr/share/icons/hicolor/256x256/apps/tarsila-store.png"
-
-# --- sudoers (tarsila-pkg so roda com NOPASSWD; ALL = qualquer usuario) -
-install -m 440 "$AQUI/etc/sudoers.d/tarsila-store" \
-               "$STAGE/etc/sudoers.d/tarsila-store"
 
 # --- atalhos -----------------------------------------------------------
 # O atalho comum chama /usr/bin/tarsila-store direto -- funciona em qualquer
 # Debian. O "-tarsila" passa pelos wrappers do Tarsila OS (tarsila-abrindo e
 # tarsila-uma-janela), que fora dele nao existem; por isso ele vai so para a
 # grade curada do sistema, e nunca para /usr/share/applications.
-for d in tarsila-store.desktop tarsila-protocol.desktop; do
+for d in tarsila-store.desktop tarsila-deb-installer.desktop tarsila-protocol.desktop; do
   install -m 644 "$AQUI/desktop/$d" "$STAGE/usr/share/applications/$d"
 done
 install -m 644 "$AQUI/desktop/tarsila-store-tarsila.desktop" \
@@ -75,8 +69,8 @@ Version: $VER
 Section: utils
 Priority: optional
 Architecture: all
-Depends: python3, python3-gi, python3-gi-cairo, gir1.2-gtk-3.0, sudo, tarsila-app-management (>= 1.0)
-Recommends: libnotify-bin, policykit-1
+Depends: python3, python3-gi, python3-gi-cairo, gir1.2-gtk-3.0
+Recommends: libnotify-bin
 Maintainer: Tarsila OS <tarsila@local>
 Description: Loja de aplicativos do Tarsila OS
  Interface nativa em GTK3 para instalar e remover aplicativos e jogos de uma
@@ -95,8 +89,6 @@ gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
 # O backend HTTP da versao web nao existe mais: se ficou algum rodando de uma
 # sessao anterior, so ocuparia memoria -- a loja GTK nao fala com ele.
 pkill -f /opt/tarsila-store/bin/tarsila-backend.py 2>/dev/null || true
-# Falha fechada: se a regra de sudoers nao validar, a loja nao instala nada.
-visudo -c >/dev/null 2>&1 || echo "AVISO: sudoers invalido — a loja nao vai conseguir instalar" >&2
 exit 0
 EOF
 chmod 755 "$STAGE/DEBIAN/postinst"

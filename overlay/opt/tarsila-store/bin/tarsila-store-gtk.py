@@ -25,7 +25,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GdkPixbuf, GLib, Pango  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, "/opt/tarsila-store/lib")
+sys.path.insert(0, "/usr/local/lib/tarsila")
 
 import tarsila_store_dados as dados      # noqa: E402
 import tarsila_store_visual as visual    # noqa: E402

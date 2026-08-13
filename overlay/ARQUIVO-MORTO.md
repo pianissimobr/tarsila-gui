@@ -162,38 +162,3 @@ App extraído do core para o repositório separado `tarsila-email/`. O cliente
 **Regra:** o dock nasce com a ordem inicial, mas o usuário pode reordenar e
 tirar itens pelo app-manager. Email/agenda **não** entram em `native-apps.txt`
 (não são travados).
-
----
-
-## 11. Extração para `tarsila-store` (ago/2026)
-
-Store movida do core para o `.deb` em `pacotes/tarsila-store/` (mesmo repo,
-padrão da agenda). A árvore-fonte do pacote foi montada a partir do overlay:
-
-| No overlay (deletado) | No pacote (fonte canônica) |
-|---|---|
-| `opt/tarsila-store/loja/` + `whitelist.txt` | `loja/` + `whitelist.txt` |
-| `opt/tarsila-store/bin/tarsila-store-gtk.py` | `src/tarsila-store-gtk.py` |
-| `opt/tarsila-store/bin/tarsila-pkg` | `backend/tarsila-pkg` |
-| `opt/tarsila-store/tarsila-store-handler.sh` | `backend/tarsila-store-handler.sh` |
-| `usr/local/lib/tarsila/tarsila_store_dados.py` | `src/tarsila_store_dados.py` |
-| `usr/local/lib/tarsila/tarsila_store_visual.py` | `src/tarsila_store_visual.py` |
-| `usr/share/applications/tarsila-store.desktop` | `desktop/tarsila-store.desktop` |
-| `usr/share/applications/tarsila-protocol.desktop` | `desktop/tarsila-protocol.desktop` |
-| `usr/share/tarsila/applications/tarsila-store.desktop` | `desktop/tarsila-store-tarsila.desktop` |
-| `usr/share/tarsila/icons/appstore.png` | `desktop/appstore.png` |
-
-**O que o .deb instala (mudou):**
-- Libs Python agora em `/opt/tarsila-store/lib/` (antes `/usr/local/lib/tarsila/`),
-  com `sys.path` do `tarsila-store-gtk.py` ajustado.
-- Regra de sudoers `/etc/sudoers.d/tarsila-store` passa a vir do .deb
-  (`ALL ALL=(root) NOPASSWD: /opt/tarsila-store/bin/tarsila-pkg`). O install.sh
-  tinha uma referência fantasma a um arquivo que não existia mais.
-- `Depends` ganhou `sudo` e `tarsila-app-management (>= 1.0)` — o `tarsila-pkg`
-  agora chama `/usr/local/bin/tarsila-atalho-criar` (do app-management), e não
-  carrega mais `tarsila-atalho-criar`/`tarsila-deb-instalar`/`tarsila-deb-gui.py`
-  próprios (esses foram para o app-management na Fase 1).
-
-**install.sh:** `chmod`/`install sudoers` fantasmas removidos; bloco de
-instalação do `tarsila-store` adicionado (constrói e instala o .deb local como
-fallback, igual agenda/email).
