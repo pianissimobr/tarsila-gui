@@ -144,3 +144,21 @@ App extraído do core para o repositório separado `tarsila-email/`. O cliente
 - `install.sh`: adiciona `tarsila-email` com fallback para .deb local
 - `verificar.sh`: conferências `configurar-claws`/`agenda` removidas (apps
   extraídos têm o .deb como fonte canônica)
+
+---
+
+## 10. PENDENTE — Ordem inicial do dock (ago/2026)
+
+**A FAZER:** redefinir a ordem inicial do dock (skel `plank-dconf.ini` +
+`skel/.config/plank/dock1/launchers/*.dockitem`).
+
+- O email **não tem dockitem no skel** (foi adicionado só na máquina via
+  `install-on-remote.sh`, já removido). Numa instalação limpa, o email não
+  aparece no dock.
+- A ordem do skel está divergente da máquina (skel: `01-abiword`; máquina:
+  `01-tarsila-store`; skel pula 07 e 15-17).
+- Nova ordem **já definida pelo autor**, aguardando a tv tester para aplicar.
+
+**Regra:** o dock nasce com a ordem inicial, mas o usuário pode reordenar e
+tirar itens pelo app-manager. Email/agenda **não** entram em `native-apps.txt`
+(não são travados).
