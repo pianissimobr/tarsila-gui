@@ -15,8 +15,5 @@
   <item label="Claws Mail">
     <action name="Execute"><execute>claws-mail</execute></action>
   </item>
-  <item label="Configurar Claws Mail">
-    <action name="Execute"><execute>configurar-claws</execute></action>
-  </item>
   </menu>
 </openbox_menu>

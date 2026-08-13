@@ -7,7 +7,7 @@
 | `etc/lightdm/lightdm.conf` | Display manager da tela de login. Inicia a sessão gráfica (Openbox) para o usuário. |
 | `etc/lightdm/lightdm-gtk-greeter.conf` | Tema do greeter do LightDM (aparência da tela de login). |
 | Openbox | Gerenciador de janelas da sessão. Responsável por decorar, posicionar e gerenciar todas as janelas. Política de posicionamento "Smart". Configurado via `~/.config/openbox/rc.xml`. |
-| Polybar | Barra superior. Exibe relógio, ícone de rede (genmon `tarsila-net.sh`), pontos de estado de janela (genmon `tarsila-topbar-dots.py`) e menu do sistema (`tarsila-barra-menu`). |
+| Polybar | Barra superior. Exibe relógio, pontos de estado de janela (genmon `tarsila-topbar-dots.py`) e menu do sistema (`tarsila-barra-menu`). |
 | Plank | Dock inferior com ícones de apps fixos e abertos. Tema controlado por `tarsila-dock-apply.sh`. |
 | Picom | Compositor X11. Fornece transparência, sombras e vsync. Configurado em `/usr/share/tarsila/picom.conf`. |
 | Devilspie2 | Daemon que aplica regras de janela no nascimento (ex.: Chromium nasce maximizado). Scripts Lua em `~/.config/devilspie2/`. |
@@ -238,7 +238,6 @@ Painel de configuração GTK3 no estilo "System Preferences", com 7 (ou 8, com d
 | Script | Descrição |
 |---|---|
 | `tarsila-wifi` (`usr/local/bin/`) | **Janela GTK3 "Conexões de rede".** Tabela com SSID, sinal (%), segurança, status de internet. Scan de redes com `nmcli device wifi list`. Conexão com diálogo de senha. Mostra velocidade negociada do link (`GENERAL.SPEED`). Estado de internet via `CONNECTIVITY` do NetworkManager (custo zero). |
-| `tarsila-net.sh` (`usr/local/bin/`) | **Indicador do Polybar (genmon).** Exibe ícone de rede: X (sem internet), RJ45 (cabo), Wi-Fi com barras proporcionais ao sinal. Tooltip com descrição. Clique abre `tarsila-wifi`. Usa ícones do tema quando disponíveis, fallback para Papirus. |
 | `tarsila-net-set` (`usr/local/bin/`) | **Configuração IPv4.** Chamado via `sudo -n`. Modos: `auto` (DHCP) ou `manual <ip/prefixo> <gateway> <dns>`. Aplica com `nmcli connection modify` + `nmcli connection up`. |
 | `tarsila-vpn-importar` (`usr/local/sbin/`) | **Importador de VPN.** Detecta tipo pelo conteúdo do arquivo (WireGuard: `[Interface]` + `PrivateKey`; OpenVPN: `remote`/`client`/`dev tun`/`dev tap` ou extensão `.ovpn`). Chama `nmcli connection import type <wireguard/openvpn>`. |
 
@@ -287,7 +286,6 @@ Daemon único que substitui 3 loops separados. Um ciclo a cada 2s consolida:
 | `tarsila-descanso-vigia` | Daemon que monitora o tempo de atividade e sugere pausa. |
 | `tarsila-barra-menu` | Menu do sistema no Polybar (genmon). Ações: Aplicativos, Ajustes, Loja, Arquivos, e ações de energia. |
 | `tarsila-topbar-dots.py` | Indicador de estado das janelas (3 bolinhas). Lê o cache de wincount e o arquivo de estado da barra. |
-| `tarsila-visual-config.py` | Configurador visual legado (tema, dock, barra, fonte). |
 | `tarsila-greeter-power-gtk.py` | Diálogo de desligar/reiniciar na tela de login. |
 | `tarsila-obs` | Lançador do OBS Studio com sanitização de cenas. |
 | `tarsila-ajusta-janela` | Tiling manual: ao arrastar para borda, redimensiona para metade da tela. |

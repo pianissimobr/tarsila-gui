@@ -46,11 +46,6 @@ visudo -c >/dev/null || { echo "ERRO: sudoers inválido"; exit 1; }
 usermod -aG sudo "$TARSILA_USER"
 
 echo "==> [4/6] Configurações do usuário $TARSILA_USER…"
-if [ -d "$HOME_DIR/.config/xfce4" ]; then
-  BK="$HOME_DIR/.config-pre-tarsila-$(date +%Y%m%d%H%M%S)"
-  echo "    (backup do .config atual em $BK)"
-  cp -a "$HOME_DIR/.config" "$BK"
-fi
 tar -cf - -C "$REPO_DIR/skel" .config user-dirs.dirs user-dirs.locale 2>/dev/null | tar -xpf - -C "$HOME_DIR" || \
   cp -a "$REPO_DIR/skel/.config" "$HOME_DIR/"
 sudo -u "$TARSILA_USER" dbus-run-session -- dconf load /net/launchpad/plank/ < "$REPO_DIR/skel/plank-dconf.ini" || \

@@ -1,6 +1,0 @@
-Command=/usr/local/bin/tarsila-net.sh
-UseLabel=0
-UpdatePeriod=10000
-Text=(genmon)
-Font=Sans 10
-

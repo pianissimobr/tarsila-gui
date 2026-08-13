@@ -102,7 +102,6 @@ Temas, papel de parede, dock, resolução e periféricos de entrada.
 | `tarsila-pos-dock` | Shell | Calcula (x, y) para janela encostada na dock. |
 | `tarsila-boot-cursor.sh` | Shell | Aplica cursor personalizado no boot (Plymouth). |
 | `tarsila-dock-manager` | Shell | Gerencia itens da dock (adicionar/remover atalhos). |
-| `tarsila-visual-config.py` | GTK3 | Configurador visual legado (tema, dock, barra, fonte). |
 
 ---
 
@@ -113,7 +112,6 @@ Wi-Fi, indicador da barra, IP e VPN.
 | Item | Tipo | Função |
 |---|---|---|
 | `tarsila-wifi` | GTK3 | Janela de conexões: scan `nmcli`, diálogo de senha, velocidade do link, estado de internet. |
-| `tarsila-net.sh` | Shell | Indicador do Polybar (X/RJ45/Wi-Fi com barras de sinal). |
 | `tarsila-net-set` | Shell | Configuração IPv4 (DHCP ou manual) via `nmcli`. |
 | `tarsila-vpn-importar` | Shell | Importa VPN (detecta WireGuard/OpenVPN) via `nmcli connection import`. |
 

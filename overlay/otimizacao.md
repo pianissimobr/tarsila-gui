@@ -241,12 +241,6 @@ já está otimizado:
 - **`tarsila-vpn-importar`** — one-shot; deduz o tipo por extensão/conteúdo e
   delega ao `nmcli connection import`.
 
-Única pendência: `tarsila-net.sh` (`usr/local/bin/`) é o genmon do **xfce4-panel**
-(ícone com barras de sinal + tooltip + clique), referenciado apenas pelas
-configurações do painel XFCE (`skel/.config/xfce4/…`) e **não** pelo polybar da
-sessão Openbox. Ficou como legado — mesmo destino do backend WebKit da Store
-quando a migração estiver completa.
-
 ## 13. Mídia — Modo Cinema e Descanso (só um fork a menos)
 
 Categoria "Mídia". Verificada por inteiro; quase tudo já é event-driven ou
@@ -326,11 +320,6 @@ ativo roda em polling:
   usuário (só ícone novo é renderizado) e a medição da Dock (`import`+PIL) é
   pontual, por abertura.
 
-Pendência: `tarsila-appfinder.sh` é o launcher **legado** (zenity, caminho
-`/root/.config/plank` fixo e `sudo apt remove` direto), já substituído pelo
-`tarsila-appfinder-yad.sh` — os `.desktop` e o menu apontam todos para o `-yad`.
-Mesmo destino dos demais legados quando a limpeza vier.
-
 ## 17. Cloud — Nextcloud one-shot (sem mudança)
 
 Categoria "Cloud". Os quatro scripts (`nc-mount.py`, `nc-edit-online.py`,
@@ -376,16 +365,6 @@ Nada a mudar na categoria.
   `tarsila-tela-estados` e `tarsila-ob-decor.sh` já são event-driven (inotify/
   X); `tarsila-polybar-hitboxes.py`, `tarsila-dialogos`, `tarsila-limpar.sh` e
   `tarsila-ob-power.sh` são one-shot.
-
-## Pendências (futuro)
-
-- **Migração Store WebKit → GTK concluída:** backend (`tarsila-backend.py`),
-  launcher WebKit e o polling (`GET /api/instalados` 60s + `/api/tarefas` 2.5s)
-  removidos do overlay. A Store GTK (`tarsila-store-gtk.py`) é o caminho ativo
-  com `/usr/bin/tarsila-store` → symlink para ela. Build autônomo em
-  `pacotes/tarsila-store/build-deb.sh` (v4.0.0, sem WebKit). O frontend WebKit
-  (`loja/index.html`, `loja/js/store.js`) foi removido do overlay. A troca
-  derrubou de 4 processos / 327,9 MB para 1 processo / 49,2 MB.
 
 ## Verificação
 

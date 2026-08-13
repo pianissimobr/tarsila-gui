@@ -1,0 +1,77 @@
+# Arquivo Morto — Scripts e Componentes Removidos (ago/2026)
+
+## 1. `tarsila-net.sh` (`usr/local/bin/`)
+
+**Indicador do Polybar (genmon).** Exibia ícone de rede: X (sem internet), RJ45
+(cabo), Wi-Fi com barras proporcionais ao sinal. Tooltip com descrição. Clique
+abria `tarsila-wifi`. Usava ícones do tema quando disponíveis, fallback para
+Papirus.
+
+Referenciado apenas pelas configurações do painel XFCE (`skel/.config/xfce4/…`)
+e não pelo polybar da sessão Openbox. Ficou como legado.
+
+---
+
+## 2. `tarsila-appfinder.sh` (`usr/local/bin/`)
+
+**Launcher legado** (zenity, caminho `/root/.config/plank` fixo e `sudo apt
+remove` direto). Já havia sido substituído pelo `tarsila-appfinder-yad.sh` —
+os `.desktop` e o menu apontavam todos para o `-yad`.
+
+---
+
+## 3. `tarsila-visual-config.py` (`usr/local/bin/`)
+
+**Configurador visual legado (GTK3).** Controlava tema, dock, barra e fonte.
+Substituído pelo `tarsila-config` (web-based).
+
+---
+
+## 4. `configurar-claws` e `configurar-claws-gui` (`usr/bin/`)
+
+**Configuradores do Claws Mail.** Configuração inicial (texto) e interface
+gráfica de configuração de contas. A cópia em `/opt/tarsila-email/bin/`
+permanece para uso interno do pacote de e-mail. O launcher do menu Openbox
+foi removido.
+
+---
+
+## 5. `skel/.config/xfce4/` (árvore completa, ago/2026)
+
+Configurações legadas de uma sessão XFCE que coexistia com Openbox. Removidas
+porque o Openbox se mostrou estável (meses sem falhas) e os arquivos eram
+puramente peso morto:
+
+| Arquivo | Por que foi |
+|---|---|
+| `panel/genmon-36.rc` → `tarsila-title.sh` | Script não existe |
+| `panel/genmon-37.rc` → `tarsila-dot1.sh` | Script não existe |
+| `panel/genmon-38.rc` → `tarsila-dot2.sh` | Script não existe |
+| `panel/genmon-39.rc` → `tarsila-dot3.sh` | Script não existe |
+| `panel/genmon-40.rc` → `tarsila-restore-btn.sh` | Script não existe |
+| `panel/genmon-41.rc` → `tarsila-close-btn.sh` | Script não existe |
+| `panel/genmon-43.rc` → `tarsila-spacer-right.sh` | Script não existe |
+| `panel/launcher-13` a `16` | `OnlyShowIn=XFCE`, sem utilidade no Openbox |
+| `desktop/accels.scm` | Atalhos do xfdesktop (não roda) |
+| `desktop/icons.screen0.yaml` | Ícones do xfdesktop (não roda) |
+| `helpers.rc`, `help.rc` | Preferências XFCE inúteis |
+| `xfce4-screenshooter` | Config de screenshot do XFCE |
+| `xfwm4/` | Diretório vazio |
+| `appfinder/bookmarks` | Arquivo vazio |
+| `xfconf/.../xfce4-panel.xml.bak-*` | Backup do painel antigo (130 linhas) |
+
+**Fallback real mantido:** os pacotes XFCE (`xfce4-session`, `xfwm4`,
+`xfdesktop4`, `xfce4-panel`, `xfce4-settings`, `xfce4-power-manager`,
+`xfce4-notifyd`, `xfce4-genmon-plugin`, `xfce4-pulseaudio-plugin`) continuam
+no `install.sh`. Se o Openbox falhar, basta trocar a sessão no LightDM.
+
+**Motivo:** custo é só disco (~22 MB) + tempo de upgrade. O autostart XDG não
+roda na sessão Openbox, então nenhum desses daemons ocupa RAM ou CPU em uso
+normal. Vale a rede de segurança.
+
+---
+
+## 6. `skel/.xinitrc` (ago/2026)
+
+Chamava `exec startxfce4`. Inútil — o LightDM já gerencia a sessão via
+`.xsession`, que força Openbox.
