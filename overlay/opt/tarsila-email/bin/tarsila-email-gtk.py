@@ -624,15 +624,31 @@ class EmailWindow(Gtk.Window):
 
     @staticmethod
     def apply_profile_avatar(widget: Gtk.Image, api: Api, avatar_path: str, email: str, size: int = 40):
+        def render(pix):
+            if pix:
+                widget.set_from_pixbuf(pix)
+            else:
+                widget.set_from_icon_name("avatar-default-symbolic", Gtk.IconSize.DIALOG)
+
+        # Cache quente: desenha na hora, sem rede. O read_cache_for_email e
+        # leitura de disco (rapida) e o fetch_bytes so roda quando o avatar
+        # local ja existe — nunca bloqueia.
         pix = EmailWindow.load_avatar_pixbuf(api, avatar_path, email, size)
-        if not pix and email:
+        if pix:
+            render(pix)
+            return
+        if not email:
+            render(None)
+            return
+
+        # Cache frio: resolve_avatar baixa (bloqueante) e re-le a partir do
+        # cache. Roda em thread de fundo e volta via idle_add — a UI nao trava.
+        def work():
             from lib import avatar as avmod
             avmod.resolve_avatar(email)
-            pix = EmailWindow.load_avatar_pixbuf(api, avatar_path, email, size)
-        if pix:
-            widget.set_from_pixbuf(pix)
-        else:
-            widget.set_from_icon_name("avatar-default-symbolic", Gtk.IconSize.DIALOG)
+            return EmailWindow.load_avatar_pixbuf(api, avatar_path, email, size)
+
+        _run_bg(work, lambda p, _err: render(p))
 
     def _on_close(self, *_):
         _stop_backend()
@@ -651,7 +667,7 @@ class EmailWindow(Gtk.Window):
         return False
 
     def _load_status(self):
-        st = self.api.get("/api/status")
+        st = self.api.get("/api/bootstrap")
         if not st.get("configured"):
             raise ApiError("Não configurado")
         return st
@@ -671,18 +687,11 @@ class EmailWindow(Gtk.Window):
         EmailWindow.apply_profile_avatar(
             self.profile_img, self.api, st.get("avatar", ""), st.get("email", ""), 40
         )
-        _run_bg(self._load_folders, self._after_folders)
+        self._render_folders(st.get("folders") or [{"id": "inbox", "name": "Caixa de entrada"}])
 
-    def _load_folders(self):
-        return self.api.get("/api/folders")
-
-    def _after_folders(self, data, err):
-        if err:
-            self.loading_lbl.set_text(f"Erro: {err}")
-            return
+    def _render_folders(self, folders):
         for row in self.folder_list.get_children():
             self.folder_list.remove(row)
-        folders = data.get("folders") or [{"id": "inbox", "name": "Caixa de entrada"}]
         folders.sort(
             key=lambda f: FOLDER_ORDER.index(f["id"]) if f["id"] in FOLDER_ORDER else 99
         )
@@ -741,12 +750,29 @@ class EmailWindow(Gtk.Window):
         def work():
             return self.api.post("/api/sync", {"folder": self.folder, "limit": PAGE_SIZE})
 
-        def done(_r, err):
+        def done(data, err):
             if err:
                 self._toast(f"Erro de sincronização: {err}", True)
+                self._load_messages()
+                return
+            self._toast("Sincronização feita")
+            if self.search_query:
+                self._load_messages()
+                return
+            self.loading_lbl.hide()
+            for row in self.msg_list.get_children():
+                self.msg_list.remove(row)
+            for m in data.get("messages") or []:
+                row = MessageRow(m, on_star=lambda e: self._load_messages() if not e else None)
+                if m["id"] == self.selected_id:
+                    row.get_style_context().add_class("selected")
+                self.msg_list.add(row)
+            self.msg_list.show_all()
+            self.has_more = data.get("has_more", False)
+            if self.has_more:
+                self.btn_more.show()
             else:
-                self._toast("Sincronização feita")
-            self._load_messages()
+                self.btn_more.hide()
 
         _run_bg(work, done)
 
@@ -811,7 +837,7 @@ class EmailWindow(Gtk.Window):
 
         def work():
             self.api.post(f"/api/messages/{msg_id}/read", {"read": True})
-            return self.api.get(f"/api/messages/{msg_id}?body=1")
+            return self.api.get(f"/api/messages/{msg_id}?body=1&fmt=plain")
 
         def done(data, err):
             for child in self.read_box.get_children():
@@ -935,7 +961,7 @@ class EmailWindow(Gtk.Window):
             self.folder = "inbox"
             self.page = 1
             self.selected_id = None
-            _run_bg(self._load_folders, self._after_folders)
+            self._render_folders(st.get("folders") or [{"id": "inbox", "name": "Caixa de entrada"}])
 
         _run_bg(self._load_status, done)
 

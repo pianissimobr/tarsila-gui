@@ -193,27 +193,41 @@ def _select(M, imap_name: str, readonly: bool = True) -> None:
 def sync_folder(M: imaplib.IMAP4_SSL, conn, folder_id: str, imap_name: str,
                 limit: int = SYNC_LIMIT) -> int:
     _select(M, imap_name, readonly=True)
-    typ, data = M.search(None, "ALL")
+    # Incremental: em vez de SEARCH ALL (que baixa TODOS os UIDs da pasta a
+    # cada sync), busca so o que veio depois do ultimo UID sincronizado.
+    # Em caixas grandes isso transforma um SEARCH de milhares de UIDs numa
+    # resposta de poucos bytes.
+    last_uid = db.last_sync_uid(conn, folder_id)
+    if last_uid:
+        typ, data = M.search(None, f"UID {last_uid + 1}:*")
+    else:
+        typ, data = M.search(None, "ALL")
     if typ != "OK" or not data or not data[0]:
         return 0
     uids = data[0].split()
     recent = uids[-limit:] if len(uids) > limit else uids
+    if not recent:
+        return 0
     count = 0
     now = time.time()
-    for uid_b in recent:
-        uid = int(uid_b)
-        typ, parts = M.fetch(uid_b,
-                             "(FLAGS BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE)])")
-        if typ != "OK" or not parts or not parts[0]:
+    # Batch: um unico FETCH para todos os UIDs, em vez de um round-trip IMAP
+    # por mensagem. A latencia de rede da TV Box e o custo dominante — N
+    # viagens viram 1.
+    uid_list = b",".join(recent)
+    typ, parts = M.fetch(uid_list,
+                         "(UID FLAGS BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE)])")
+    if typ != "OK":
+        return 0
+    for meta in parts:
+        if not isinstance(meta, tuple):
             continue
-        meta = parts[0]
-        if isinstance(meta, tuple):
-            flag_part = meta[0].decode(errors="replace") if meta[0] else ""
-            header_raw = meta[1] or b""
-        else:
-            flag_part = str(meta)
-            header_raw = b""
-        is_read, is_starred = _parse_flags(flag_part.encode() if flag_part else b"")
+        flag_part = meta[0].decode(errors="replace") if meta[0] else ""
+        header_raw = meta[1] or b""
+        m_uid = re.search(r"UID (\d+)", flag_part)
+        if not m_uid:
+            continue
+        uid = int(m_uid.group(1))
+        is_read, is_starred = _parse_flags(flag_part)
         msg = email.message_from_bytes(header_raw)
         subject = _decode_header(msg.get("Subject"))
         db.upsert_message(conn, {

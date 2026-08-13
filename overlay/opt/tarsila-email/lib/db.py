@@ -68,7 +68,7 @@ def upsert_message(conn, row: dict) -> None:
 def list_messages(conn, folder_id: str, page: int = 1, limit: int = 10) -> list:
     off = (page - 1) * limit
     cur = conn.execute(
-        """SELECT id, folder_id, uid, subject, sender, recipient, date_str,
+        """SELECT id, subject, sender, recipient, date_str,
                   snippet, is_read, is_starred, has_attachments
            FROM messages WHERE folder_id = ?
            ORDER BY uid DESC LIMIT ? OFFSET ?""",
@@ -119,7 +119,7 @@ def prune_cache(conn, max_messages: int = 500) -> None:
 def search_messages(conn, folder_id: str, query: str, limit: int = 10) -> list:
     q = f"%{query.strip()}%"
     cur = conn.execute(
-        """SELECT id, folder_id, uid, subject, sender, recipient, date_str,
+        """SELECT id, subject, sender, recipient, date_str,
                   snippet, is_read, is_starred, has_attachments
            FROM messages WHERE folder_id = ?
            AND (subject LIKE ? OR sender LIKE ? OR snippet LIKE ? OR recipient LIKE ?)
@@ -127,6 +127,12 @@ def search_messages(conn, folder_id: str, query: str, limit: int = 10) -> list:
         (folder_id, q, q, q, q, limit),
     )
     return [dict(r) for r in cur.fetchall()]
+
+
+def last_sync_uid(conn, folder_id: str) -> int:
+    cur = conn.execute("SELECT last_uid FROM sync_state WHERE folder_id = ?", (folder_id,))
+    r = cur.fetchone()
+    return r[0] if r else 0
 
 
 def set_sync(conn, folder_id: str, last_uid: int) -> None:

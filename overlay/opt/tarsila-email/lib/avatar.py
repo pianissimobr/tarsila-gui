@@ -1,5 +1,6 @@
 """Avatar — foto de perfil Gmail/Google com cache local."""
 import hashlib
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -68,6 +69,11 @@ def _try_download(url: str) -> tuple[bytes, str] | None:
 
 
 def resolve_avatar(email: str) -> str:
+    """Baixa (se preciso) e devolve a URL local do avatar. Bloqueante.
+
+    Usado pelo assistente de configuracao e pela UI GTK — sempre dentro de
+    uma thread de fundo, nunca na thread da interface.
+    """
     email = email.strip().lower()
     for ext in ("png", "jpg", "img"):
         if _cache_path(email, ext).is_file():
@@ -84,6 +90,41 @@ def resolve_avatar(email: str) -> str:
             data, ctype = got
             _write_cache(email, data, ctype)
             return local_url(email)
+    return gravatar_url(email)
+
+
+# Controle de downloads em segundo plano: nao deixar dois pedidos baixarem o
+# mesmo avatar ao mesmo tempo (abre-se o status e o setup em sequencia).
+_DOWNLOADING = set()
+_DOWNLOAD_LOCK = threading.Lock()
+
+
+def resolve_avatar_fast(email: str) -> str:
+    """Igual a resolve_avatar, mas NUNCA bloqueia em rede.
+
+    Se o avatar ja esta em cache, devolve a URL local. Se nao, devolve o
+    gravatar externo na hora e dispara o download em segundo plano — o cache
+    aparece no proximo pedido. Usado no backend (ex.: /api/status), onde um
+    fetch de 3 servicos externos em serie atrasaria a resposta em ate 30s.
+    """
+    email = email.strip().lower()
+    for ext in ("png", "jpg", "img"):
+        if _cache_path(email, ext).is_file():
+            return local_url(email)
+
+    with _DOWNLOAD_LOCK:
+        if email in _DOWNLOADING:
+            return gravatar_url(email)
+        _DOWNLOADING.add(email)
+
+    def baixar():
+        try:
+            resolve_avatar(email)
+        finally:
+            with _DOWNLOAD_LOCK:
+                _DOWNLOADING.discard(email)
+
+    threading.Thread(target=baixar, daemon=True).start()
     return gravatar_url(email)
 
 

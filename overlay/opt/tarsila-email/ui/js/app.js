@@ -70,20 +70,24 @@ function setProfile(st) {
 }
 
 async function init() {
-  const st = await api("/api/status");
+  const st = await api("/api/bootstrap");
   if (!st.configured) {
     window.location.reload();
     return;
   }
   accounts = st.accounts || [];
   setProfile(st);
-  await loadFolders();
+  renderFolders(st.folders || []);
   await syncAndLoad();
   bindEvents();
 }
 
 async function loadFolders() {
   const { folders } = await api("/api/folders");
+  renderFolders(folders || []);
+}
+
+function renderFolders(folders) {
   const nav = $("#folder-nav");
   nav.innerHTML = "";
   const sorted = [...folders].sort(
@@ -113,15 +117,19 @@ function updateFolderActive() {
 async function syncAndLoad() {
   loading.classList.remove("hidden");
   try {
-    await api("/api/sync", {
+    const { messages, has_more } = await api("/api/sync", {
       method: "POST",
       body: JSON.stringify({ folder, limit: PAGE_SIZE }),
     });
     showSyncToast("Sincronização feita");
+    loading.classList.add("hidden");
+    list.innerHTML = "";
+    (messages || []).forEach((m) => list.appendChild(renderItem(m)));
+    $("#btn-more").classList.toggle("hidden", !has_more || !!searchQuery);
   } catch (e) {
     showSyncToast("Erro de sincronização: " + e.message, true);
+    await loadMessages();
   }
-  await loadMessages();
 }
 
 async function loadMessages(append = false) {
@@ -170,7 +178,7 @@ async function openMessage(id) {
   readView.innerHTML = "<p class='loading'>Abrindo…</p>";
   try {
     await api(`/api/messages/${id}/read`, { method: "POST", body: JSON.stringify({ read: true }) });
-    const { message: m } = await api(`/api/messages/${id}?body=1`);
+    const { message: m } = await api(`/api/messages/${id}?body=1&fmt=html`);
     const body = m.body_html
       ? `<div class="read-body">${m.body_html}</div>`
       : `<pre class="read-body">${esc(m.body_plain || m.snippet || "")}</pre>`;

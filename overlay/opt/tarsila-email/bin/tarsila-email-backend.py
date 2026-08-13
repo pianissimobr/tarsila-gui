@@ -22,6 +22,46 @@ _last_sync = {}
 FOLDER_ORDER = ["inbox", "sent", "drafts", "starred", "spam", "trash"]
 
 
+def _folders_list():
+    conn = db.connect()
+    cur = conn.execute("SELECT id, name, imap_name FROM folders")
+    folders = [dict(r) for r in cur.fetchall()]
+    folders.sort(
+        key=lambda f: FOLDER_ORDER.index(f["id"])
+        if f["id"] in FOLDER_ORDER else 99
+    )
+    return folders
+
+
+def _lean_body(row, fmt):
+    """Envia UM dos dois corpos (plain ou html), nao os dois.
+
+    O corpo e o maior payload da API; mandar text/plain + text/html duplicados
+    dobra a banda na TV Box. Cada cliente pede o formato que consome e o outro
+    so vai junto quando o preferido nao existe (comportamento identico ao atual).
+    """
+    out = {
+        "id": row["id"],
+        "subject": row["subject"],
+        "sender": row["sender"],
+        "recipient": row["recipient"],
+        "date_str": row["date_str"],
+        "snippet": row["snippet"],
+        "is_read": row["is_read"],
+        "is_starred": row["is_starred"],
+        "has_attachments": row["has_attachments"],
+    }
+    if fmt == "plain":
+        out["body_plain"] = row["body_plain"] or ""
+        if not row["body_plain"]:
+            out["body_html"] = row["body_html"] or ""
+    else:
+        out["body_html"] = row["body_html"] or ""
+        if not row["body_html"]:
+            out["body_plain"] = row["body_plain"] or ""
+    return out
+
+
 def _json_handler(obj):
     if hasattr(obj, "isoformat"):
         return obj.isoformat()
@@ -65,6 +105,19 @@ class Handler(BaseHTTPRequestHandler):
             if p.startswith("/css/") or p.startswith("/js/"):
                 return self._serve_ui(p.lstrip("/"))
 
+            if p == "/api/bootstrap":
+                if not config.configured():
+                    return self._send(200, {"configured": False})
+                acc = config.load()
+                return self._send(200, {
+                    "configured": True,
+                    "email": acc.get("email", ""),
+                    "name": acc.get("name", ""),
+                    "avatar": config.account_avatar(acc.get("email", "")),
+                    "accounts": config.list_accounts(),
+                    "folders": _folders_list(),
+                })
+
             if p == "/api/status":
                 if not config.configured():
                     return self._send(200, {"configured": False})
@@ -99,14 +152,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(401, {"error": "Não configurado"})
 
             if p == "/api/folders":
-                conn = db.connect()
-                cur = conn.execute("SELECT id, name, imap_name FROM folders")
-                folders = [dict(r) for r in cur.fetchall()]
-                folders.sort(
-                    key=lambda f: FOLDER_ORDER.index(f["id"])
-                    if f["id"] in FOLDER_ORDER else 99
-                )
-                return self._send(200, {"folders": folders})
+                return self._send(200, {"folders": _folders_list()})
 
             if p == "/api/messages":
                 folder = qs.get("folder", ["inbox"])[0]
@@ -136,8 +182,9 @@ class Handler(BaseHTTPRequestHandler):
             if p.startswith("/api/messages/") and p.count("/") == 3:
                 msg_id = p.split("/")[-1]
                 if qs.get("body"):
+                    fmt = qs.get("fmt", ["html"])[0]
                     row = imap_sync.fetch_body(msg_id)
-                    return self._send(200, {"message": row})
+                    return self._send(200, {"message": _lean_body(row, fmt)})
                 conn = db.connect()
                 row = db.get_message(conn, msg_id)
                 if not row:
@@ -192,7 +239,17 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         totals = imap_sync.sync_all(limit)
                     _last_sync.update(totals)
-                return self._send(200, {"ok": True, "synced": totals})
+                # Devolve as mensagens ja sincronizadas da pasta pedida, para
+                # a UI nao precisar de um segundo GET /api/messages logo em
+                # seguida (economiza um round-trip a cada sync).
+                result = {"ok": True, "synced": totals}
+                if folder:
+                    conn = db.connect()
+                    result["messages"] = db.list_messages(conn, folder, 1, limit)
+                    result["page"] = 1
+                    result["total"] = db.count_messages(conn, folder)
+                    result["has_more"] = limit < result["total"]
+                return self._send(200, result)
 
             if path == "/api/messages/send":
                 smtp_send.send_mail(

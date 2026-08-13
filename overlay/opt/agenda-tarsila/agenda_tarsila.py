@@ -73,6 +73,7 @@ LOCAL_CAL_NAME = "Minha agenda"
 HORIZON_BACK = 400          # dias sincronizados para tras
 HORIZON_FWD = 800           # dias sincronizados para frente
 AUTOSYNC_SECONDS = 180
+CAL_LIST_TTL = 3600        # reaproveita calendarList em memoria por ate 1h
 
 MESES = ["janeiro", "fevereiro", "marco", "abril", "maio", "junho", "julho",
          "agosto", "setembro", "outubro", "novembro", "dezembro"]
@@ -1195,7 +1196,15 @@ class GooglePlugin(object):
         items, page = [], None
         while True:
             params = {"maxResults": 2500, "singleEvents": True,
-                      "showDeleted": True, "pageToken": page}
+                      "showDeleted": True, "pageToken": page,
+                      # Resposta parcial: o evento completo traz creator,
+                      # organizer, iCalUID, reminders, conferenceData,
+                      # attachments, extendedProperties etc. A interface so
+                      # usa estes campos — cortar o resto economiza boa parte
+                      # da banda na TV Box a cada sync.
+                      "fields": ("nextPageToken,nextSyncToken,"
+                                 "items(id,status,summary,description,location,"
+                                 "htmlLink,colorId,start,end)")}
             if token:
                 params["syncToken"] = token
             elif window:
@@ -1252,6 +1261,7 @@ class Controller(object):
         self._listeners = []
         self._sync_lock = threading.Lock()
         self._synced_ids = self.store.synced_local_ids()
+        self._cal_list_at = 0.0        # ultima busca de calendarList (epoch)
 
     # ---------------------------------------------------------------- listeners
     def connect(self, callback):
@@ -1464,11 +1474,17 @@ class Controller(object):
         GLib.idle_add(self._sync_done, errors, changed)
 
     def _sync_calendar_list(self, errors):
+        # A lista de agendas quase nao muda. Refazer o calendarList a cada
+        # autosync (3 min) e desperdicio de banda/CPU na TV Box — reaproveita
+        # a lista em memoria e so volta ao Google no maximo 1x por hora.
+        if self._cal_list_at and (time.time() - self._cal_list_at) < CAL_LIST_TTL:
+            return list(self.calendars)
         try:
             items = self.plugin.list_calendars()
         except Exception as exc:
             errors.append(api_error_text(exc))
             return list(self.calendars)
+        self._cal_list_at = time.time()
         cals = []
         for it in items:
             if it.get("deleted"):

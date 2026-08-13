@@ -100,7 +100,7 @@ def gravatar_url(email: str) -> str:
 
 def account_avatar(email: str) -> str:
     from . import avatar
-    return avatar.resolve_avatar(email)
+    return avatar.resolve_avatar_fast(email)
 
 
 def save_account(email: str, password: str, name: str = "") -> None:
