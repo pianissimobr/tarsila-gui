@@ -1,0 +1,18 @@
+[Desktop Entry]
+Actions=tirar-dock;desinstalar;
+StartupNotify=true
+Type=Application
+Name=Leitor de Pdf Leve
+Comment=Leitor de PDF leve (qpdfview)
+Exec=/usr/local/bin/tarsila-abrindo qpdfview %F
+Icon=application-pdf
+Terminal=false
+Categories=Office;Viewer;
+
+[Desktop Action tirar-dock]
+Name=Tirar do Dock
+Exec=/usr/local/bin/tarsila-dock-item.sh remove /usr/share/tarsila/applications/pdf-leve.desktop
+
+[Desktop Action desinstalar]
+Name=Desinstalar
+Exec=/usr/local/bin/tarsila-app-uninstall.sh /usr/share/tarsila/applications/pdf-leve.desktop

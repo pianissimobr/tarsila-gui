@@ -1,0 +1,6 @@
+export XDG_CURRENT_DESKTOP=Openbox
+# 2026-07-26: era 0 desde 21/07 (glamor desligado por crash da Mali).
+# Com Mesa 26.1.2 + glamor estavel, a GPU voltou. Medido no YouTube 480p,
+# 45s: --disable-gpu = 19-22 fps exibidos / ~460 quadros perdidos;
+# com GPU = 28-29 fps / ~150 perdidos. Reverter para 0 se houver crash.
+export TARSILA_GPU=1

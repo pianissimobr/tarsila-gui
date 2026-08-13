@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+rm -rf /opt/agenda-tarsila/__pycache__
+if [ "$1" = "purge" ]; then
+    rm -rf /etc/agenda-tarsila
+    for home in /home/* /root; do
+        [ -d "$home" ] || continue
+        rm -rf "$home/.config/agenda-tarsila" 2>/dev/null || true
+        rm -rf "$home/.local/share/agenda-tarsila" 2>/dev/null || true
+    done
+fi
+exit 0

@@ -1,0 +1,454 @@
+#!/bin/bash
+# ---------------------------------------------------------------------
+# Copia Tarsila (2026-07-26). Fonte canonica: /usr/bin/configurar-claws
+# fornecida pelo pacote .deb 'claws-mail-suite'. Esta copia NAO e atualizada
+# automaticamente quando o pacote for reconstruido -- ressincronizar
+# manualmente apos rebuild do .deb.
+# ---------------------------------------------------------------------
+# Assistente Claws Mail — Gmail/Outlook/IMAP, adaptado a Openbox.
+set -uo pipefail
+
+APP_TITLE="Assistente Claws Mail"
+CLAWS_DIR="$HOME/.claws-mail"
+ACCOUNTRC="$CLAWS_DIR/accountrc"
+FOLDERLIST="$CLAWS_DIR/folderlist.xml"
+MBOX="Mailbox"; MDIR="$HOME/Mail"
+BKP="$CLAWS_DIR/backups-assistente"
+SEP=$'\x1f'
+
+command -v yad >/dev/null 2>&1 && GUI=yad || GUI=zenity
+if [ "$GUI" = yad ]; then YOPT=(--center --on-top); else YOPT=(); fi
+
+info(){ "$GUI" "${YOPT[@]}" --info     --title="$APP_TITLE" --width=470 --text="$1" >/dev/null 2>&1 || true; }
+erro(){ "$GUI" "${YOPT[@]}" --error    --title="$APP_TITLE" --width=470 --text="$1" >/dev/null 2>&1 || true; }
+perg(){ "$GUI" "${YOPT[@]}" --question --title="$APP_TITLE" --width=470 --text="$1" >/dev/null 2>&1; }
+
+clip(){
+  if   command -v wl-copy >/dev/null 2>&1; then printf '%s' "$1" | wl-copy 2>/dev/null
+  elif command -v xclip   >/dev/null 2>&1; then printf '%s' "$1" | xclip -selection clipboard 2>/dev/null
+  elif command -v xsel    >/dev/null 2>&1; then printf '%s' "$1" | xsel  --clipboard --input 2>/dev/null
+  fi
+}
+
+# ---------------- COMPAT OPENBOX -------------------------------------
+tem_agente_polkit(){
+  pgrep -f 'polkit-(gnome|mate|kde|xfce|lxqt)-authentication-agent|lxpolkit|polkit-agent-helper' \
+    >/dev/null 2>&1
+}
+terminal_de(){
+  local t
+  for t in x-terminal-emulator lxterminal xfce4-terminal mate-terminal tilix \
+           konsole gnome-terminal alacritty kitty urxvt uxterm xterm; do
+    command -v "$t" >/dev/null 2>&1 && { echo "$t"; return 0; }
+  done
+  return 1
+}
+# escalar_root <cmd...> : pkexec(com agente) > sudo -n > terminal > dialogo
+escalar_root(){
+  local T pw
+  [ "$(id -u)" -eq 0 ] && { "$@"; return $?; }
+  if command -v pkexec >/dev/null 2>&1 && tem_agente_polkit; then pkexec "$@"; return $?; fi
+  if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then sudo "$@"; return $?; fi
+  if T=$(terminal_de) && command -v sudo >/dev/null 2>&1; then
+    "$T" -e "sh -c 'sudo $*; echo; printf \"Pressione Enter para fechar...\"; read _'" \
+      >/dev/null 2>&1
+    return 0
+  fi
+  pw=$("$GUI" "${YOPT[@]}" --entry --hide-text --title="$APP_TITLE" \
+       --text="Senha de administrador (sudo):" 2>/dev/null) || return 1
+  printf '%s\n' "$pw" | sudo -S -p '' "$@"
+}
+garantir_mime_navegador(){
+  command -v xdg-mime >/dev/null 2>&1 || return 0
+  [ -n "$(xdg-mime query default x-scheme-handler/https 2>/dev/null)" ] && return 0
+  local d
+  for d in firefox firefox-esr chromium chromium-browser epiphany-browser \
+           midori falkon netsurf-gtk; do
+    [ -f "/usr/share/applications/$d.desktop" ] || continue
+    xdg-mime default "$d.desktop" x-scheme-handler/http x-scheme-handler/https \
+      text/html 2>/dev/null
+    return 0
+  done
+  return 0
+}
+# ---------------- janela do navegador (tela de login) -----------------
+# O devilspie2 do Tarsila (floating.lua) maximiza e tira a decoracao de
+# toda janela com WM_CLASS "Chromium". A pagina de senha de aplicativo
+# caia nessa regra: abria em tela cheia, sem barra de titulo, cobrindo
+# este assistente. Abrimos com --class=Tarsila-login (classe que o
+# devilspie2 nao toca) e geometria propria. Se o Chromium ja estiver
+# aberto, quem cria a janela e a instancia existente e os flags sao
+# ignorados; por isso ajustar_janela_login encolhe a janela nova.
+LOGIN_CLASS="Tarsila-login"
+
+# Coluna da esquerda reservada ao assistente: o navegador e ancorado a
+# DIREITA dela para os dois ficarem lado a lado. Antes o navegador abria
+# por cima do assistente e o usuario perdia as instrucoes de vista.
+COL_ASSISTENTE=520                 # 490 da largura do yad + margem
+
+geometria_login(){                 # ecoa "LARGURA ALTURA X Y"
+  local sw=1366 sh=768 l a x y g
+  if command -v xdotool >/dev/null 2>&1; then
+    g=$(xdotool getdisplaygeometry 2>/dev/null)
+    [ -n "$g" ] && { sw=${g%% *}; sh=${g##* }; }
+  fi
+  l=$(( sw - COL_ASSISTENTE - 30 ))
+  [ "$l" -gt 1100 ] && l=1100; [ "$l" -lt 640 ] && l=640
+  a=$(( sh - 120 )); [ "$a" -gt 760 ] && a=760; [ "$a" -lt 480 ] && a=480
+  x=$(( sw - l - 12 )); [ "$x" -lt 0 ] && x=0
+  y=$(( (sh - a) / 2 ))
+  [ "$y" -lt 40 ] && y=40          # abaixo da barra superior do Tarsila
+  echo "$l $a $x $y"
+}
+
+# Roda em segundo plano: espera a janela que o navegador abriu e a
+# encolhe. So mexe em janela que NAO existia antes da chamada, e nunca
+# nas do proprio assistente, do Claws ou do shell (painel/dock/desktop).
+ajustar_janela_login(){            # $1=ids antes  $2=L $3=A $4=X $5=Y
+  local antes="$1" l="$2" a="$3" x="$4" y="$5" i id cls resto novo=""
+  command -v wmctrl >/dev/null 2>&1 || return 0
+  for i in $(seq 1 60); do
+    sleep 1
+    while read -r id _ cls resto; do
+      case "$cls" in
+        *Yad|*Xfdesktop|*Xfce4-panel|*Plank|*Tarsila-*|*laws-mail) continue ;;
+      esac
+      case " $antes " in *" $id "*) continue ;; esac
+      novo="$id"
+    done < <(wmctrl -lx 2>/dev/null)
+    [ -n "$novo" ] || continue
+    wmctrl -i -r "$novo" -b remove,maximized_vert,maximized_horz >/dev/null 2>&1
+    wmctrl -i -r "$novo" -e "0,$x,$y,$l,$a" >/dev/null 2>&1
+    return 0
+  done
+}
+
+abrir_url(){
+  local u="$1" b l a x y antes
+  garantir_mime_navegador
+  read -r l a x y <<< "$(geometria_login)"
+  antes=$(wmctrl -lx 2>/dev/null | cut -d" " -f1 | tr "\n" " ")
+  ajustar_janela_login "$antes" "$l" "$a" "$x" "$y" &
+
+  # A partir daqui as telas do assistente param de abrir centralizadas e
+  # ficam encostadas na esquerda, na coluna que o navegador nao ocupa:
+  # o usuario le a instrucao e o formulario COM o login visivel ao lado.
+  [ "$GUI" = yad ] && YOPT=(--posx=12 --posy=96 --on-top)
+
+  if [ -n "${BROWSER:-}" ] && command -v "${BROWSER%% *}" >/dev/null 2>&1; then
+    setsid $BROWSER "$u" >/dev/null 2>&1 & sleep 1; return 0
+  fi
+  # Chromium direto (padrao do Tarsila): unico que aceita classe e
+  # tamanho por linha de comando de forma confiavel.
+  for b in chromium chromium-browser; do
+    command -v "$b" >/dev/null 2>&1 || continue
+    setsid "$b" --class="$LOGIN_CLASS" --window-size="$l,$a" \
+      --window-position="$x,$y" --no-first-run \
+      --hide-crash-restore-bubble "$u" >/dev/null 2>&1 &
+    sleep 1; return 0
+  done
+  # NUNCA envolver em "timeout": ele sinaliza o process group inteiro e
+  # derrubava o navegador 8s depois de abrir, no meio do login.
+  if command -v xdg-open >/dev/null 2>&1; then
+    setsid xdg-open "$u" >/dev/null 2>&1 & sleep 1; return 0
+  fi
+  for b in gio exo-open x-www-browser sensible-browser firefox firefox-esr \
+           epiphany-browser midori surf netsurf-gtk dillo; do
+    command -v "$b" >/dev/null 2>&1 || continue
+    if [ "$b" = gio ]; then setsid gio open "$u" >/dev/null 2>&1 &
+    else setsid "$b" "$u" >/dev/null 2>&1 & fi
+    sleep 1; return 0
+  done
+  clip "$u"
+  "$GUI" "${YOPT[@]}" --entry --title="$APP_TITLE" \
+    --text="Nenhum navegador detectado.\nEndereco copiado; abra manualmente:" \
+    --entry-text="$u" >/dev/null 2>&1
+  return 1
+}
+
+# ---------------- instalacao do Claws (offline se embutido) -----------
+instalar_claws(){
+  command -v claws-mail-instalar-offline >/dev/null 2>&1 || {
+    erro "Instalador nao encontrado."; return 1; }
+  if { command -v pkexec >/dev/null 2>&1 && tem_agente_polkit; } || \
+     { command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; }; then
+    ( escalar_root claws-mail-instalar-offline ) 2>&1 | \
+      "$GUI" "${YOPT[@]}" --progress --pulsate --auto-close --no-cancel \
+        --title="$APP_TITLE" --text="Instalando Claws Mail..." >/dev/null 2>&1
+  else
+    escalar_root claws-mail-instalar-offline
+    info "Se a instalacao terminou na janela do terminal, clique em OK."
+  fi
+}
+
+if ! command -v claws-mail >/dev/null 2>&1; then
+  if perg "O Claws Mail ainda nao esta instalado.\n\nEle vem <b>embutido neste pacote</b> — instalacao <b>offline</b>, sem internet.\n\nInstalar agora?"; then
+    instalar_claws
+  fi
+  command -v claws-mail >/dev/null 2>&1 || {
+    erro "Nao concluido.\nTente no terminal:\n<tt>sudo claws-mail-instalar-offline</tt>"; exit 1; }
+fi
+
+# ---------------- senha no formato legado do Claws --------------------
+# XOR ciclico com "passkey0" + base64; o Claws migra p/ passwordstorerc.
+passcrypt(){
+  local pw="$1" k="passkey0" i a b x n hex="" LC_ALL=C
+  command -v xxd >/dev/null 2>&1 || return 1
+  n=${#pw}; [ "$n" -eq 0 ] && return 1
+  for (( i=0; i<n; i++ )); do
+    printf -v a '%d' "'${pw:$i:1}"
+    printf -v b '%d' "'${k:$(( i % 8 )):1}"
+    x=$(( a ^ b ))
+    [ "$x" -eq 0 ] && return 1        # byte nulo quebraria o accountrc
+    hex+=$(printf '%02x' "$x")
+  done
+  printf '%s' "$hex" | xxd -r -p 2>/dev/null | base64 -w0
+}
+
+tem_contas(){ [ -s "$ACCOUNTRC" ] && grep -q '^\[Account: ' "$ACCOUNTRC"; }
+prox_id(){
+  local m=0 n
+  while read -r n; do [ "$n" -gt "$m" ] && m=$n; done \
+    < <(grep -o '^\[Account: [0-9]*' "$ACCOUNTRC" 2>/dev/null | grep -o '[0-9]*')
+  echo $(( m + 1 ))
+}
+backup(){ [ -f "$1" ] && { mkdir -p "$BKP"; cp -f "$1" "$BKP/$(basename "$1").$(date +%Y%m%d-%H%M%S)"; }; return 0; }
+limpar_legado(){ grep -q '^\[Default\]' "$ACCOUNTRC" 2>/dev/null && { backup "$ACCOUNTRC"; : > "$ACCOUNTRC"; }; return 0; }
+mailbox(){
+  mkdir -p "$MDIR"/inbox "$MDIR"/outbox "$MDIR"/draft "$MDIR"/queue "$MDIR"/trash
+  [ -f "$FOLDERLIST" ] && return 0
+  cat > "$FOLDERLIST" << EOL
+<?xml version="1.0" encoding="UTF-8"?>
+<folderlist>
+  <folder type="mh" name="$MBOX" path="$(basename "$MDIR")" collapsed="0" sort="0">
+    <folderitem type="inbox"  name="inbox"  path="inbox"  mtime="0" new="0" unread="0" total="0" />
+    <folderitem type="outbox" name="outbox" path="outbox" mtime="0" new="0" unread="0" total="0" />
+    <folderitem type="draft"  name="draft"  path="draft"  mtime="0" new="0" unread="0" total="0" />
+    <folderitem type="queue"  name="queue"  path="queue"  mtime="0" new="0" unread="0" total="0" />
+    <folderitem type="trash"  name="trash"  path="trash"  mtime="0" new="0" unread="0" total="0" />
+  </folder>
+</folderlist>
+EOL
+}
+fechar(){
+  pgrep -x claws-mail >/dev/null 2>&1 || return 0
+  perg "O Claws Mail esta aberto e sobrescreve a configuracao ao sair.\n\nFechar agora?" \
+    && claws-mail --exit >/dev/null 2>&1
+  local i
+  for i in $(seq 1 20); do pgrep -x claws-mail >/dev/null 2>&1 || return 0; sleep 0.5; done
+  erro "Feche o Claws Mail e rode o assistente novamente."; exit 1
+}
+# Versao sem perguntas do fechar(), para a interface grafica: o Claws
+# sobrescreve o accountrc ao sair, entao precisa estar fechado antes de
+# gravarmos a conta.
+fechar_silencioso(){
+  pgrep -x claws-mail >/dev/null 2>&1 || return 0
+  claws-mail --exit >/dev/null 2>&1
+  local i
+  for i in $(seq 1 20); do
+    pgrep -x claws-mail >/dev/null 2>&1 || return 0
+    sleep 0.5
+  done
+  return 0
+}
+grava(){
+  local rot="$1" nom="$2" mail="$3" pw="$4" im="$5" ip="$6" is="$7" sm="$8" sp="$9" ss="${10}"
+  local id def=0 enc
+  mkdir -p "$CLAWS_DIR"; limpar_legado; mailbox; backup "$ACCOUNTRC"
+  tem_contas || def=1
+  id=$(prox_id)
+  enc=$(passcrypt "$pw") || enc=""
+  { [ -s "$ACCOUNTRC" ] && echo ""
+    cat << EOL
+[Account: $id]
+account_name=$rot ($mail)
+is_default=$def
+name=$nom
+address=$mail
+protocol=3
+receive_server=$im
+smtp_server=$sm
+user_id=$mail
+password=$enc
+inbox=#mh/$MBOX/inbox
+local_inbox=#mh/$MBOX/inbox
+imap_auth_method=0
+ssl_imap=$is
+ssl_smtp=$ss
+use_nonblocking_ssl=1
+set_imapport=1
+imapport=$ip
+set_smtpport=1
+smtpport=$sp
+use_smtp_auth=1
+smtp_auth_method=0
+imap_subsonly=1
+filter_on_receive=1
+signature_type=0
+sig_sep=--
+EOL
+  } >> "$ACCOUNTRC"
+  chmod 600 "$ACCOUNTRC"
+  [ -n "$enc" ]
+}
+form(){
+  local rot="$1" dica="$2"
+  if [ "$GUI" = yad ]; then
+    yad "${YOPT[@]}" --form --title="$APP_TITLE" --width=490 --separator="$SEP" \
+      --text="<b>Conta $rot</b>\n\nCole a <b>senha de aplicativo</b> gerada no navegador.\n<small>$dica</small>" \
+      --field="Seu nome (remetente)" "" \
+      --field="E-mail" "" \
+      --field="Senha de aplicativo:H" "" \
+      --button="Cancelar!gtk-cancel:1" --button="Salvar e abrir o Claws!gtk-ok:0" 2>/dev/null
+  else
+    zenity --forms --title="$APP_TITLE" --separator="$SEP" --text="Conta $rot — $dica" \
+      --add-entry="Seu nome (remetente)" --add-entry="E-mail" \
+      --add-password="Senha de aplicativo" 2>/dev/null
+  fi
+}
+provedor(){
+  local rot="$1" link="$2" dica="$3" im="$4" ip="$5" is="$6" sm="$7" sp="$8" ss="$9"
+  local o n e s okpw=1
+  if [ -n "$link" ]; then
+    info "<b>Passo 1 — senha de aplicativo ($rot)</b>\n\nVou abrir o navegador. Gere/copie a senha e volte.\nDepois so pedirei <b>nome, e-mail e senha</b>."
+    abrir_url "$link"
+  fi
+  while :; do
+    o=$(form "$rot" "$dica") || return 1
+    IFS="$SEP" read -r n e s _ <<< "$o"
+    if ! [[ "${e:-}" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; then
+      erro "E-mail invalido."; continue; fi
+    if [ -z "${s:-}" ]; then erro "Senha vazia."; continue; fi
+    [ -z "${n:-}" ] && n="${e%@*}"
+    break
+  done
+  fechar
+  grava "$rot" "$n" "$e" "$s" "$im" "$ip" "$is" "$sm" "$sp" "$ss" || okpw=0
+  clip "$s"
+  if [ "$okpw" -eq 1 ]; then
+    info "<b>Conta configurada!</b>\n\n<tt>$e</tt>\nIMAP $im:$ip · SMTP $sm:$sp\n\nA senha tambem foi copiada (Ctrl+V se o Claws pedir).\n\nOK para abrir o Claws Mail."
+  else
+    info "<b>Conta configurada</b> (<tt>$e</tt>)\n\nA senha <b>nao</b> pode ser gravada no arquivo; ela esta na area de transferencia.\nNa primeira conexao use <b>Ctrl+V</b> e marque <i>lembrar</i>."
+  fi
+  setsid claws-mail >/dev/null 2>&1 &
+  return 0
+}
+manual(){
+  local o si pi ssl_i ss ps ssl_s
+  if [ "$GUI" = yad ]; then
+    o=$(yad "${YOPT[@]}" --form --title="$APP_TITLE" --width=490 --separator="$SEP" \
+      --text="<b>IMAP manual</b>" \
+      --field="Servidor IMAP" "" --field="Porta IMAP:NUM" "993" \
+      --field="Seguranca IMAP:CB" "SSL/TLS!STARTTLS" \
+      --field="Servidor SMTP" "" --field="Porta SMTP:NUM" "587" \
+      --field="Seguranca SMTP:CB" "STARTTLS!SSL/TLS" 2>/dev/null) || return 1
+  else
+    o=$(zenity --forms --title="$APP_TITLE" --separator="$SEP" --text="IMAP manual" \
+      --add-entry="Servidor IMAP" --add-entry="Porta IMAP (993/143)" \
+      --add-entry="Seguranca IMAP (SSL/TLS ou STARTTLS)" \
+      --add-entry="Servidor SMTP" --add-entry="Porta SMTP (465/587)" \
+      --add-entry="Seguranca SMTP (SSL/TLS ou STARTTLS)" 2>/dev/null) || return 1
+  fi
+  IFS="$SEP" read -r si pi ssl_i ss ps ssl_s _ <<< "$o"
+  pi=${pi%%.*}; ps=${ps%%.*}
+  if [ -z "${si:-}" ] || [ -z "${ss:-}" ]; then erro "Servidores obrigatorios."; return 1; fi
+  case "${ssl_i^^}" in *START*) ssl_i=2 ;; *) ssl_i=1 ;; esac
+  case "${ssl_s^^}" in *START*) ssl_s=2 ;; *) ssl_s=1 ;; esac
+  provedor "IMAP" "" "Use a senha do seu provedor." \
+    "$si" "${pi:-993}" "$ssl_i" "$ss" "${ps:-587}" "$ssl_s"
+}
+wizard(){
+  if tem_contas; then
+    if perg "Ja existe conta neste perfil.\n\n<b>Sim</b> = abrir o Claws para adicionar outra em <i>Configuracao ▸ Editar contas ▸ Nova</i>\n<b>Nao</b> = mover a config atual para backup e abrir as <b>telas iniciais</b> do Claws"; then
+      info "Abrindo. Va em <b>Configuracao ▸ Editar contas… ▸ Nova</b>."
+    else
+      fechar; backup "$ACCOUNTRC"; mkdir -p "$BKP"
+      mv -f "$ACCOUNTRC" "$BKP/accountrc.desativado.$(date +%Y%m%d-%H%M%S)" 2>/dev/null
+      info "Backup em <tt>$BKP</tt>.\nO Claws abrira no <b>assistente inicial</b>."
+    fi
+  else
+    info "O Claws abrira no <b>assistente inicial</b>."
+  fi
+  setsid claws-mail >/dev/null 2>&1 &
+}
+menu(){
+  local o rc
+  if [ "$GUI" = yad ]; then
+    o=$(yad "${YOPT[@]}" --list --title="$APP_TITLE" --width=560 --height=300 \
+      --print-column=1 --column="Servico" --column="Servidores" \
+      --text="<b>Escolha o servico</b>\n\nOu use <i>Assistente do Claws</i> para outro e-mail." \
+      "Gmail" "imap.gmail.com / smtp.gmail.com" \
+      "Outlook/Hotmail" "outlook.office365.com / smtp.office365.com" \
+      "Outro (IMAP manual)" "voce informa" \
+      --button="Assistente do Claws (outro e-mail)!gtk-preferences:2" \
+      --button="Cancelar!gtk-cancel:1" --button="Continuar!gtk-ok:0" 2>/dev/null); rc=$?
+    [ $rc -eq 2 ] && { echo WIZARD; return; }
+    [ $rc -ne 0 ] && { echo SAIR; return; }
+  else
+    o=$(zenity --list --title="$APP_TITLE" --width=560 --height=300 --print-column=1 \
+      --text="Escolha o servico" --column="Servico" --column="Servidores" \
+      "Gmail" "imap.gmail.com / smtp.gmail.com" \
+      "Outlook/Hotmail" "outlook.office365.com / smtp.office365.com" \
+      "Outro (IMAP manual)" "voce informa" \
+      --extra-button="Assistente do Claws (outro e-mail)" 2>/dev/null); rc=$?
+    [ "$o" = "Assistente do Claws (outro e-mail)" ] && { echo WIZARD; return; }
+    [ $rc -ne 0 ] && { echo SAIR; return; }
+  fi
+  case "${o%%|*}" in
+    Gmail*)   echo GMAIL ;;
+    Outlook*) echo OUTLOOK ;;
+    Outro*)   echo OUTRO ;;
+    *)        echo SAIR ;;
+  esac
+}
+
+# ---------------- motor da interface grafica --------------------------
+# configurar-claws-gui nao duplica nada daqui: ele chama estes modos.
+# A senha vem por CLAWS_SENHA (ambiente), nunca por argumento -- argv e
+# publico no ps, o environ do processo nao e.
+case "${1:-}" in
+  --geometria-login) geometria_login; exit 0 ;;
+  --abrir)           abrir_url "${2:-}"; exit $? ;;
+  --gravar)
+    shift
+    fechar_silencioso
+    grava "${1:-}" "${2:-}" "${3:-}" "${CLAWS_SENHA:-}" "${4:-}" "${5:-}" \
+          "${6:-}" "${7:-}" "${8:-}" "${9:-}"
+    rc_gravar=$?
+    tem_contas || exit 1
+    [ "$rc_gravar" -eq 0 ] || { clip "${CLAWS_SENHA:-}"; exit 2; }
+    exit 0 ;;
+esac
+
+# A interface grafica e o caminho normal. O fluxo antigo em yad fica de
+# reserva para diagnostico: CLAWS_ASSISTENTE_YAD=1 configurar-claws
+if [ "${CLAWS_ASSISTENTE_YAD:-0}" != 1 ] \
+   && [ -x /usr/bin/configurar-claws-gui ] \
+   && python3 -c "import gi" >/dev/null 2>&1; then
+  exec /usr/bin/configurar-claws-gui
+fi
+
+case "$(menu)" in
+  GMAIL)
+    provedor "Gmail" "https://myaccount.google.com/apppasswords" \
+      "Requer verificacao em 2 etapas ativa." \
+      "imap.gmail.com" 993 1 "smtp.gmail.com" 465 1 ;;
+  OUTLOOK)
+    info "<b>Atencao:</b> em contas pessoais Outlook/Hotmail a Microsoft desativou senha para IMAP/SMTP.\nSe falhar, use <b>OAuth2</b> (Claws 4.1+) nas preferencias da conta."
+    provedor "Outlook" "https://account.microsoft.com/security" \
+      "Contas corporativas podem exigir OAuth2." \
+      "outlook.office365.com" 993 1 "smtp.office365.com" 587 2 ;;
+  OUTRO)  manual ;;
+  WIZARD) wizard ;;
+  *) exit 0 ;;
+esac
+
+# oferece integrar ao menu do Openbox, se aplicavel
+if pgrep -x openbox >/dev/null 2>&1 \
+   && ! grep -q 'configurar-claws' "$HOME/.config/openbox/menu.xml" 2>/dev/null \
+   && command -v claws-mail-openbox-integra >/dev/null 2>&1; then
+  perg "Detectei o <b>Openbox</b>.\n\nAdicionar 'Claws Mail' e 'Configurar Claws Mail' ao menu do botao direito?" \
+    && claws-mail-openbox-integra >/dev/null 2>&1 \
+    && info "Menu do Openbox atualizado."
+fi
+exit 0

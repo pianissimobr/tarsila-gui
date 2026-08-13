@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Tarsila AppFinder
+Comment=Lançador com ícones reais (YAD)
+Exec=/usr/local/bin/tarsila-appfinder-yad.sh
+Icon=application-x-executable
+Terminal=false
+Categories=System;Utility;
+StartupNotify=true

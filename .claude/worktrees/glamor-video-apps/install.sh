@@ -1,0 +1,76 @@
+#!/bin/bash
+#
+# Tarsila — instalador da camada gráfica (BETA)
+#
+# Instala a interface Tarsila (XFCE + Plank + top bar + Loja) sobre um
+# Debian 13 (trixie) já instalado. Pensado para ARM64 (tvbox/SBC), mas os
+# scripts são independentes de arquitetura.
+#
+# Uso:  sudo ./install.sh <usuario>
+#       sudo ./install.sh <usuario> --with-plymouth   (inclui splash de boot)
+#
+set -euo pipefail
+
+[ "$(id -u)" -eq 0 ] || { echo "Rode como root: sudo ./install.sh <usuario>"; exit 1; }
+TARSILA_USER="${1:-}"
+[ -n "$TARSILA_USER" ] || { echo "Uso: sudo ./install.sh <usuario> [--with-plymouth]"; exit 1; }
+id "$TARSILA_USER" >/dev/null 2>&1 || { echo "Usuário '$TARSILA_USER' não existe (crie com adduser)"; exit 1; }
+WITH_PLYMOUTH=0; [ "${2:-}" = "--with-plymouth" ] && WITH_PLYMOUTH=1
+REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+HOME_DIR="$(getent passwd "$TARSILA_USER" | cut -d: -f6)"
+
+echo "==> [1/6] Instalando dependências (apt)…"
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y \
+  xfce4-session xfce4-panel xfce4-settings xfdesktop4 xfwm4 \
+  xfce4-genmon-plugin xfce4-pulseaudio-plugin xfce4-power-manager \
+  xfce4-notifyd xfce4-terminal xfce4-appfinder \
+  plank devilspie2 yad lightdm lightdm-gtk-greeter \
+  papirus-icon-theme thunar gvfs gvfs-daemons \
+  python3-gi gir1.2-gtk-3.0 python3-gi-cairo \
+  network-manager wmctrl xdotool x11-xserver-utils dconf-cli \
+  lxpolkit sudo curl chromium
+[ "$WITH_PLYMOUTH" = 1 ] && apt-get install -y plymouth plymouth-themes
+
+echo "==> [2/6] Copiando arquivos do sistema (overlay)…"
+# sudoers vai por caminho separado (precisa de validação); o resto copia direto
+tar -cf - -C "$REPO_DIR/overlay" --exclude=./etc/sudoers.d . | tar -xpf - -C /
+chmod 755 /usr/local/bin/tarsila-* /opt/tarsila-store/bin/* 2>/dev/null || true
+
+echo "==> [3/6] Configurando sudoers (usuário: $TARSILA_USER)…"
+install -m 440 "$REPO_DIR/overlay/etc/sudoers.d/tarsila-store" /etc/sudoers.d/tarsila-store
+sed "s/^alan /$TARSILA_USER /" "$REPO_DIR/overlay/etc/sudoers.d/tarsila-config" > /etc/sudoers.d/tarsila-config
+chmod 440 /etc/sudoers.d/tarsila-config
+visudo -c >/dev/null || { echo "ERRO: sudoers inválido"; exit 1; }
+usermod -aG sudo "$TARSILA_USER"
+
+echo "==> [4/6] Configurações do usuário $TARSILA_USER…"
+if [ -d "$HOME_DIR/.config/xfce4" ]; then
+  BK="$HOME_DIR/.config-pre-tarsila-$(date +%Y%m%d%H%M%S)"
+  echo "    (backup do .config atual em $BK)"
+  cp -a "$HOME_DIR/.config" "$BK"
+fi
+tar -cf - -C "$REPO_DIR/skel" .config user-dirs.dirs user-dirs.locale 2>/dev/null | tar -xpf - -C "$HOME_DIR" || \
+  cp -a "$REPO_DIR/skel/.config" "$HOME_DIR/"
+sudo -u "$TARSILA_USER" dbus-run-session -- dconf load /net/launchpad/plank/ < "$REPO_DIR/skel/plank-dconf.ini" || \
+  echo "    AVISO: dconf load falhou — a ordem da dock será aplicada no primeiro login"
+chown -R "$TARSILA_USER:$TARSILA_USER" "$HOME_DIR"
+
+echo "==> [5/6] MIME, ícones e serviços…"
+update-desktop-database /usr/share/applications 2>/dev/null || true
+gtk-update-icon-cache -q /usr/share/icons/Tarsila-icons 2>/dev/null || true
+systemctl enable lightdm NetworkManager >/dev/null 2>&1 || true
+
+if [ "$WITH_PLYMOUTH" = 1 ]; then
+  echo "==> [6/6] Splash de boot (plymouth)…"
+  plymouth-set-default-theme tarsila-boot 2>/dev/null && update-initramfs -u || \
+    echo "    AVISO: plymouth não configurado (sem initramfs? veja o README)"
+else
+  echo "==> [6/6] Splash de boot: pulado (use --with-plymouth para incluir)"
+fi
+
+echo
+echo "Tarsila instalada. Reinicie (ou 'systemctl restart lightdm') e entre como $TARSILA_USER."
+echo "BETA: testada na tvbox de referência (Debian 13 arm64); em outros sistemas"
+echo "podem faltar ajustes — abra uma issue com o que encontrar."

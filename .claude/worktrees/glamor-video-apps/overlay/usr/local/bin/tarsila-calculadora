@@ -1,0 +1,21 @@
+#!/bin/bash
+# A calculadora abre redimensionavel e com botao de maximizar. Numa
+# calculadora isso nao serve para nada: esticar a janela so estica os botoes, e
+# maximizar deixa uma calculadora ocupando a tela inteira. O usuario pediu o
+# mesmo tratamento da tela "Aplicativos Instalados".
+#
+# Ali dava para usar o --fixed do yad. Aqui o programa e o galculator, que nao
+# tem essa opcao, entao travamos por fora: assim que a janela aparece, marcamos
+# minimo = maximo nas dicas de tamanho dela. Vendo isso, o Openbox esconde o
+# botao de maximizar e recusa o arrasto das bordas -- e a mesma regra que faz a
+# tela de aplicativos ficar travada.
+#
+# MOVER continua funcionando: o usuario arrasta pela barra de titulo quando
+# quiser. O pedido foi tirar o redimensionar, nao o mover.
+
+# O trabalho de travar e feito pelo tarsila-travar-janela, que chama a funcao
+# propria do X. A primeira versao usava xprop e nao funcionou: ele grava a
+# propriedade como CARDINAL, e o Openbox, esperando WM_SIZE_HINTS, ignorava --
+# o botao de maximizar continuava aparecendo.
+/usr/local/bin/tarsila-travar-janela galculator 20 &
+exec galculator "$@"

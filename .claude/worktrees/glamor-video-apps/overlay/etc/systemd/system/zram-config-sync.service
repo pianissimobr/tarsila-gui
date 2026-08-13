@@ -1,0 +1,7 @@
+[Unit]
+Description=Sync zram-config RAM-backed directories to disk
+After=zram-config.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/zram-config sync

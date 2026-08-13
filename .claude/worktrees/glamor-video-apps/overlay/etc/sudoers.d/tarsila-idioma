@@ -1,0 +1,3 @@
+# A tela de Ajustes troca o idioma do sistema por este utilitario. Caminho
+# fixo; ele so aceita idiomas que a biblioteca padrao reconhece.
+alan ALL=(root) NOPASSWD: /usr/local/sbin/tarsila-idioma *

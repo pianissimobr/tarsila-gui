@@ -1,0 +1,309 @@
+#!/usr/bin/env python3
+"""Menus suspensos da barra de cima: som e rede.
+
+Antes, clicar no alto-falante abria o Controle de Volume inteiro, e clicar na
+rede abria o editor de conexoes -- duas janelas grandes para uma pergunta
+pequena ("esta alto demais?", "em que rede eu estou?"). Aqui a resposta vem
+num quadrinho abaixo do icone, e a janela grande fica a um clique de distancia
+para quem realmente precisar dela.
+
+Fecha ao perder o foco ou com Esc, como todo menu.
+
+Uso:  tarsila-barra-menu som
+      tarsila-barra-menu rede
+      tarsila-barra-menu calendario
+"""
+
+import re
+import subprocess
+import sys
+
+import gi
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk, Gdk, GLib
+
+SINK = "@DEFAULT_AUDIO_SINK@"
+
+
+def roda(*args, tempo=6):
+    try:
+        r = subprocess.run(args, capture_output=True, text=True, timeout=tempo)
+        return r.returncode == 0, r.stdout.strip()
+    except Exception:
+        return False, ""
+
+
+# ---------------------------------------------------------------- som
+def volume_atual():
+    """(porcentagem, mudo).
+
+    Mesma cadeia que a barra usa: wpctl primeiro, pactl se ele nao responder.
+    Sem o plano B, o menu mostrava 0% enquanto a barra mostrava o som ligado --
+    dois numeros diferentes para a mesma coisa."""
+    ok, saida = roda("wpctl", "get-volume", SINK)
+    if ok and "Volume:" in saida:
+        try:
+            pct = int(round(float(saida.split()[1]) * 100))
+        except (IndexError, ValueError):
+            pct = 0
+        return pct, "MUTED" in saida.upper()
+
+    ok, saida = roda("pactl", "get-sink-volume", "@DEFAULT_SINK@")
+    pct = 0
+    if ok:
+        achado = re.search(r"(\d+)%", saida)
+        if achado:
+            pct = int(achado.group(1))
+    ok2, mudo = roda("pactl", "get-sink-mute", "@DEFAULT_SINK@")
+    return pct, bool(ok2 and "yes" in mudo.lower())
+
+
+def aplica_volume(pct):
+    # O teto de 100% evita distorcao: o PipeWire aceita passar disso, e o som
+    # satura sem o usuario entender por que "aumentar" piorou.
+    pct = max(0, min(100, int(pct)))
+    if not roda("wpctl", "set-volume", SINK, "%d%%" % pct)[0]:
+        roda("pactl", "set-sink-volume", "@DEFAULT_SINK@", "%d%%" % pct)
+    return pct
+
+
+def corta_som(ligar_mudo):
+    if not roda("wpctl", "set-mute", SINK, "1" if ligar_mudo else "0")[0]:
+        roda("pactl", "set-sink-mute", "@DEFAULT_SINK@",
+             "1" if ligar_mudo else "0")
+
+
+# --------------------------------------------------------------- rede
+def estado_da_rede():
+    """(titulo, nome da rede, endereco IP) da conexao em uso."""
+    ok, saida = roda("nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION",
+                     "device", "status")
+    if not ok:
+        return "Sem conexão", "", ""
+    escolhido = None
+    for linha in saida.splitlines():
+        p = linha.split(":")
+        if len(p) >= 4 and p[2] == "connected" and p[1] in ("ethernet", "wifi"):
+            # Cabo ganha do Wi-Fi quando os dois estao ligados, que e por onde
+            # a maquina realmente sai.
+            if p[1] == "ethernet":
+                escolhido = p
+                break
+            escolhido = escolhido or p
+    if not escolhido:
+        return "Sem conexão", "", ""
+    titulo = ("Conexão por cabo" if escolhido[1] == "ethernet"
+              else "Conexão Wi-Fi")
+    ok, ip = roda("nmcli", "-g", "IP4.ADDRESS", "device", "show", escolhido[0])
+    ip = ip.splitlines()[0].split("/")[0].strip() if ok and ip.strip() else ""
+    return titulo, escolhido[3], ip
+
+
+# -------------------------------------------------------------- janela
+class Popup(Gtk.Window):
+    def __init__(self, modo):
+        # TOPLEVEL, nao POPUP: janela POPUP nao recebe foco, e entao o
+        # "perdeu o foco" que fecha o menu disparava no instante em que ele
+        # abria. Com TOPLEVEL sem decoracao temos a mesma aparencia e o
+        # comportamento certo.
+        super().__init__(type=Gtk.WindowType.TOPLEVEL)
+        self.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+        self.set_decorated(False)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_keep_above(True)
+        self.set_resizable(False)
+        self.set_border_width(0)
+
+        moldura = Gtk.Frame()
+        moldura.set_shadow_type(Gtk.ShadowType.OUT)
+        self.add(moldura)
+        caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        caixa.set_margin_start(14)
+        caixa.set_margin_end(14)
+        caixa.set_margin_top(12)
+        caixa.set_margin_bottom(10)
+        moldura.add(caixa)
+
+        if modo == "som":
+            self._monta_som(caixa)
+        elif modo == "calendario":
+            self._monta_calendario(caixa)
+        else:
+            self._monta_rede(caixa)
+
+        # Fecha ao clicar FORA. So o "perdeu o foco" nao bastava: no Openbox
+        # um clique na area de trabalho ou numa janela que nao aceita foco nao
+        # tira o foco daqui, e o menu ficava aberto. Com o ponteiro agarrado,
+        # todo clique passa por nos e sabemos se caiu dentro ou fora.
+        self.connect("focus-out-event", lambda *_: Gtk.main_quit())
+        self.connect("button-press-event", self._clique)
+        self.connect("map-event", self._agarrar_ponteiro)
+        self.connect("key-press-event", self._tecla)
+
+    def _agarrar_ponteiro(self, *_a):
+        janela = self.get_window()
+        if janela is None:
+            return False
+        semente = Gdk.Display.get_default().get_default_seat()
+        semente.grab(janela, Gdk.SeatCapabilities.ALL_POINTING, True,
+                     None, None, None, None)
+        return False
+
+    def _clique(self, _w, ev):
+        largura, altura = self.get_size()
+        # Coordenadas relativas a esta janela: fora dela, fecha.
+        if not (0 <= ev.x <= largura and 0 <= ev.y <= altura):
+            Gtk.main_quit()
+        return False
+
+    @staticmethod
+    def _tecla(_w, ev):
+        if ev.keyval == Gdk.KEY_Escape:
+            Gtk.main_quit()
+        return False
+
+    def _rodape(self, caixa, rotulo, comando):
+        """Link discreto, alinhado a direita, para a janela completa."""
+        linha = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        linha.set_halign(Gtk.Align.END)
+        btn = Gtk.Button(label=rotulo)
+        btn.set_relief(Gtk.ReliefStyle.NONE)
+        btn.connect("clicked", lambda *_: (
+            subprocess.Popen(comando, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True),
+            Gtk.main_quit()))
+        linha.pack_start(btn, False, False, 0)
+        caixa.pack_start(linha, False, False, 0)
+
+    # ---- som
+    def _monta_som(self, caixa):
+        """Barra deslizante em vez de + e -.
+
+        Apertar um botao varias vezes para chegar no volume desejado e o tipo
+        de coisa que cansa: sao cinco toques para andar 25%. Arrastar mostra
+        onde se esta e chega em qualquer ponto de uma vez -- e e o gesto que a
+        pessoa ja conhece da TV e do celular."""
+        pct, mudo = volume_atual()
+
+        self.lbl = Gtk.Label()
+        self._mostra(pct, mudo)
+        caixa.pack_start(self.lbl, False, False, 0)
+
+        linha = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.mudo_btn = Gtk.Button()
+        self.mudo_btn.set_relief(Gtk.ReliefStyle.NONE)
+        self._icone_mudo(mudo)
+        self.mudo_btn.set_size_request(44, 44)
+        self.mudo_btn.connect("clicked", lambda *_: self._corta())
+        linha.pack_start(self.mudo_btn, False, False, 0)
+
+        self.escala = Gtk.Scale.new_with_range(
+            Gtk.Orientation.HORIZONTAL, 0, 100, 1)
+        self.escala.set_draw_value(False)
+        self.escala.set_size_request(210, 44)
+        self.escala.set_value(pct)
+        # Marcas discretas: dao referencia de onde esta o meio e o topo.
+        for ponto in (0, 50, 100):
+            self.escala.add_mark(ponto, Gtk.PositionType.BOTTOM, None)
+        self._mudando = False
+        self.escala.connect("value-changed", self._arrastou)
+        linha.pack_start(self.escala, True, True, 0)
+        caixa.pack_start(linha, False, False, 0)
+
+        self._rodape(caixa, "Mixer de áudio", ["pavucontrol"])
+
+    def _icone_mudo(self, mudo):
+        nome = "audio-volume-muted" if mudo else "audio-speakers"
+        img = Gtk.Image.new_from_icon_name(nome, Gtk.IconSize.LARGE_TOOLBAR)
+        self.mudo_btn.set_image(img)
+        self.mudo_btn.set_tooltip_text("Ligar o som" if mudo else "Cortar o som")
+
+    def _mostra(self, pct, mudo):
+        self.lbl.set_markup(
+            "<b>Som desligado</b>" if mudo else "<b>Volume %d%%</b>" % pct)
+
+    def _arrastou(self, escala):
+        if self._mudando:
+            return
+        novo = int(escala.get_value())
+        aplica_volume(novo)
+        # Mexer no volume tira do mudo: e o que a pessoa espera ao arrastar.
+        corta_som(False)
+        self._mostra(novo, False)
+        self._icone_mudo(False)
+
+    def _corta(self):
+        _, mudo = volume_atual()
+        corta_som(not mudo)
+        pct, agora = volume_atual()
+        self._mostra(pct, agora)
+        self._icone_mudo(agora)
+
+    # ---- calendário
+    def _monta_calendario(self, caixa):
+        """Só o calendário do mês, sem nada em volta.
+
+        Quem clica no relógio quer ver "que dia é hoje" ou "em que dia da
+        semana cai o dia 20". Um seletor de mês e ano já bastaria confundir,
+        então ficam só as setas do próprio calendário."""
+        cal = Gtk.Calendar()
+        cal.set_display_options(Gtk.CalendarDisplayOptions.SHOW_HEADING
+                                | Gtk.CalendarDisplayOptions.SHOW_DAY_NAMES)
+        # Clicar num dia não faz nada -- não há para onde ir. Mas o duplo
+        # clique voltaria para o mês de hoje, que é útil depois de navegar.
+        cal.connect("day-selected-double-click", lambda *_: self._hoje(cal))
+        caixa.pack_start(cal, False, False, 0)
+
+    @staticmethod
+    def _hoje(cal):
+        agora = GLib.DateTime.new_now_local()
+        cal.select_month(agora.get_month() - 1, agora.get_year())
+        cal.select_day(agora.get_day_of_month())
+
+    # ---- rede
+    def _monta_rede(self, caixa):
+        titulo, nome, ip = estado_da_rede()
+        t = Gtk.Label(xalign=0)
+        t.set_markup("<b>%s</b>" % GLib.markup_escape_text(titulo))
+        caixa.pack_start(t, False, False, 0)
+        for rotulo, valor in (("Rede", nome), ("Endereço IP", ip)):
+            if not valor:
+                continue
+            linha = Gtk.Label(xalign=0)
+            linha.set_markup(
+                '<small><span alpha="70%%">%s</span>  %s</small>'
+                % (GLib.markup_escape_text(rotulo),
+                   GLib.markup_escape_text(valor)))
+            caixa.pack_start(linha, False, False, 0)
+        self._rodape(caixa, "Ver conexões", ["nm-connection-editor"])
+
+
+def main():
+    modo = sys.argv[1] if len(sys.argv) > 1 else "som"
+    janela = Popup(modo)
+    janela.show_all()
+
+    # Encostado no canto de onde saiu o clique, logo abaixo da barra.
+    tela = janela.get_screen()
+    largura_tela = tela.get_width()
+    _, altura = janela.get_size()
+    largura, _ = janela.get_size()
+    ponteiro = tela.get_display().get_default_seat().get_pointer()
+    _, x, _ = ponteiro.get_position()[:3]
+    barra = 34
+    ok, saida = roda("xdotool", "search", "--class", "polybar")
+    if ok and saida.split():
+        _, geo = roda("xdotool", "getwindowgeometry", "--shell",
+                      saida.split()[0])
+        d = dict(l.split("=", 1) for l in geo.splitlines() if "=" in l)
+        barra = int(d.get("Y", 0)) + int(d.get("HEIGHT", 34))
+    x = max(4, min(x - largura // 2, largura_tela - largura - 4))
+    janela.move(x, barra + 2)
+    janela.present()
+    janela.grab_focus()
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    main()

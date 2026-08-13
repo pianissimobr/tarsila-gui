@@ -1,0 +1,9 @@
+[Desktop Entry]
+StartupNotify=true
+Type=Application
+Name=Arquivos
+Comment=Thunar File Manager
+Exec=/usr/local/bin/tarsila-abrindo thunar %u
+Icon=org.xfce.thunar
+Terminal=false
+Categories=System;FileManager;

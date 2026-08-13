@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Tarsila Monitor
+Comment=Daemon unico da sessao: wincount, sons, titulos amigaveis e prioridade
+Exec=/usr/local/bin/tarsila-monitor.sh
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

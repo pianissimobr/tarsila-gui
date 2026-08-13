@@ -1,0 +1,92 @@
+#!/bin/sh
+# Autostart da sessão Tarsila-Openbox. Sobe os mesmos componentes da
+# sessão XFCE que são independentes do ambiente (Plank, devilspie2,
+# tarsila-monitor) + os substitutos leves do XFCE (xsettingsd no lugar do
+# xfsettingsd, dunst no lugar do xfce4-notifyd, polybar no lugar do
+# xfce4-panel, feh/wallpaper-apply no lugar do xfdesktop).
+
+# marcador: identifica a sessao Openbox p/ os scripts compartilhados do XFCE
+# (guard robusto contra chamadas a xfce4-panel; nao depende de env)
+touch "${XDG_RUNTIME_DIR:-/tmp}/tarsila-openbox.session"
+
+# tema GTK/ícones/fonte/cursor
+xsettingsd -c "$HOME/.config/xsettingsd/xsettingsd.conf" &
+
+# notificações (a Tarsila Store usa notify-send ao concluir instalação)
+dunst &
+
+# agente de autenticação de administrador (polkit)
+# lxpolkit era iniciado aqui E de novo no laco de agentes polkit abaixo.
+# Ficou so o laco, que e o portatil (tenta gnome/lxde/mate/kde na ordem).
+
+# papel de parede + adaptação à resolução real da TV (grava geometria da
+# barra em ~/.config/tarsila/ e sobe o polybar no fim)
+/usr/local/bin/tarsila-ob-wallpaper-apply.sh &
+
+# dock (reaplica ordem/tema antes de abrir o Plank)
+( /usr/local/bin/tarsila-dock-apply.sh 2>/dev/null; exec plank ) &
+
+# Reage ao estado da tela (com/sem janela maximizada): botao de mostrar e
+# esconder a Dock, fundo da barra de cima e espaco reservado no alto.
+# Sobe depois do plank porque precisa medir onde a Dock ficou.
+(sleep 4; /usr/local/bin/tarsila-tela-estados) &
+
+# Aquece o cache de disco do navegador enquanto a area de trabalho sobe. Sem
+# isto o Chromium leva ~18s para abrir na primeira vez do dia e ~5s nas
+# seguintes -- medido. O programa espera a area de trabalho terminar de subir,
+# confere se ha memoria sobrando e faz o trabalho fora da tela.
+/usr/local/bin/tarsila-aquecer &
+
+# regras de janela (workspace lógico 2, unmaximize, exceções) — igual XFCE
+# Tamanho das janelas Abrir/Salvar como (chave unica do GTK, valida para
+# todos os aplicativos). Conserta no login um valor que tenha sido
+# esticado durante o uso.
+/usr/local/bin/tarsila-dialogos &
+
+devilspie2 &
+
+# daemon residente: contagem/sons/renice + alimenta o estado do top bar
+/usr/local/bin/tarsila-monitor.sh &
+
+# Decoracao ao maximizar. O goto3.sh/goto2.sh (botao maximizar e duplo clique)
+# ja tiram/devolvem a barra de titulo sozinhos. MAS quem maximiza por OUTRO
+# caminho escapava: o devilspie2 maximiza o Chromium e chama undecorate(), que
+# usa _MOTIF_WM_HINTS -- e o Openbox NAO honra isso com a janela ja mapeada.
+# Resultado: duas barras de titulo, a da janela e a do sistema.
+# Este vigia cobre esses casos: le o state file e dispara a acao Undecorate do
+# proprio Openbox (a unica que funciona ao vivo). E event-driven por inotify,
+# nao faz polling.
+/usr/local/bin/tarsila-ob-decor.sh &
+
+# cursor de "carregando" até a sessão montar
+/usr/local/bin/tarsila-boot-cursor.sh &
+
+# compositor xrender: cantos arredondados (janelas flutuantes) + Plank
+/usr/local/bin/tarsila-ob-picom.sh &
+# --- claws-mail-suite (nao editar esta secao) ---
+for a in /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 /usr/bin/lxpolkit /usr/lib/mate-polkit/polkit-mate-authentication-agent-1 /usr/lib/*/libexec/polkit-kde-authentication-agent-1; do [ -x "$a" ] && { "$a" & break; }; done
+command -v clipit >/dev/null 2>&1 && clipit &
+command -v parcellite >/dev/null 2>&1 && ! command -v clipit >/dev/null 2>&1 && parcellite &
+command -v tint2 >/dev/null 2>&1 && tint2 &
+# 2026-07-26: REMOVIDO o disparo automatico do assistente de e-mail.
+# Ele abria o 'configurar-claws' 4 s apos TODO login enquanto nao houvesse
+# conta configurada -- ou seja, sempre, na cara do usuario. Configurar
+# e-mail e ato deliberado: agora so pelo icone da Dock.
+# (linha antiga guardada em autostart.bak-20260726)
+
+# Nextcloud: monta o WebDAV (gvfs) se ja houver credenciais; sai calado se nao.
+# TEM de ficar AQUI e nao em ~/.config/autostart: o autostart XDG NAO roda nesta
+# sessao (openbox-autostart exige PyXDG, que nao esta instalado). O sleep da
+# tempo de a rede subir antes de tentar montar.
+(sleep 5; python3 "$HOME/.local/bin/nc-mount.py") &
+
+# Modo de espera: video em loop com a hora, depois de N minutos parado.
+# N vem de ~/.config/tarsila/descanso-minutos (0 desliga). O video vem de
+# ~/.config/tarsila/descanso-video. Custo medido: ~85% de 400% de CPU e +2C.
+# Para desligar sem editar nada: echo 0 > ~/.config/tarsila/descanso-minutos
+/usr/local/bin/tarsila-descanso-vigia &
+
+# Avisa quando um aparelho e conectado (duas etapas: percebido / pronto).
+# Roda na sessao do usuario de proposito: assim ja tem o DBUS das notificacoes
+# e nao precisa de regra de udev com root.
+/usr/local/bin/tarsila-dispositivos &

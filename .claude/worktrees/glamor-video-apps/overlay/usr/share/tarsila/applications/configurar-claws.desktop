@@ -1,0 +1,20 @@
+[Desktop Entry]
+Actions=tirar-dock;desinstalar;
+StartupNotify=true
+X-Package=claws-mail-suite
+Name=Configurar Claws Mail
+Comment=Instala e configura Gmail/Outlook: so nome, e-mail e senha
+Exec=/usr/local/bin/tarsila-abrindo /usr/local/bin/tarsila-email
+Icon=internet-mail
+Type=Application
+Categories=Network;Email;
+Terminal=false
+Keywords=email;gmail;outlook;imap;claws;openbox;
+
+[Desktop Action tirar-dock]
+Name=Tirar do Dock
+Exec=/usr/local/bin/tarsila-dock-item.sh remove /usr/share/tarsila/applications/configurar-claws.desktop
+
+[Desktop Action desinstalar]
+Name=Desinstalar
+Exec=/usr/local/bin/tarsila-app-uninstall.sh /usr/share/tarsila/applications/configurar-claws.desktop

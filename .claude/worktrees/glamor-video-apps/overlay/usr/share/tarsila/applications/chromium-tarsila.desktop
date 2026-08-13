@@ -1,0 +1,19 @@
+[Desktop Entry]
+Actions=tirar-dock;desinstalar;
+StartupNotify=true
+Type=Application
+Name=Chromium
+Comment=Navegador otimizado para este computador
+Exec=/usr/local/bin/tarsila-abrindo /usr/local/bin/tarsila-chromium %U
+Icon=chromium
+Terminal=false
+Categories=Network;WebBrowser;
+MimeType=text/html;text/xml;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;
+
+[Desktop Action tirar-dock]
+Name=Tirar do Dock
+Exec=/usr/local/bin/tarsila-dock-item.sh remove /usr/share/tarsila/applications/chromium-tarsila.desktop
+
+[Desktop Action desinstalar]
+Name=Desinstalar
+Exec=/usr/local/bin/tarsila-app-uninstall.sh /usr/share/tarsila/applications/chromium-tarsila.desktop

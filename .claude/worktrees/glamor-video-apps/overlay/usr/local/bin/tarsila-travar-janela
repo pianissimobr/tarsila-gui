@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""Trava o tamanho de uma janela: sem redimensionar, sem botao de maximizar.
+
+Por que existe: alguns programas abrem redimensionaveis quando nao deveriam --
+uma calculadora esticada so estica os botoes, e maximizada ocupa a tela toda.
+Onde o programa e feito com yad basta o --fixed; aqui vale para qualquer um.
+
+Como funciona: marca minimo = maximo nas dicas de tamanho da janela. Vendo
+isso, o Openbox esconde o botao de maximizar e recusa o arrasto das bordas.
+MOVER continua funcionando -- e so o redimensionar que sai.
+
+Por que nao da para usar o xprop: as dicas ficam numa propriedade do tipo
+WM_SIZE_HINTS, e o xprop so sabe gravar tipos genericos como CARDINAL. Gravando
+com o tipo errado, o Openbox simplesmente ignora -- foi o que aconteceu na
+primeira tentativa, e o botao de maximizar continuou la. Aqui chamamos a
+funcao propria do X, que grava com o tipo certo.
+
+Uso:  tarsila-travar-janela <classe-da-janela> [segundos de espera]
+"""
+
+import ctypes
+import subprocess
+import sys
+import time
+
+PMinSize = 1 << 4
+PMaxSize = 1 << 5
+
+
+class XSizeHints(ctypes.Structure):
+    _fields_ = [("flags", ctypes.c_long),
+                ("x", ctypes.c_int), ("y", ctypes.c_int),
+                ("width", ctypes.c_int), ("height", ctypes.c_int),
+                ("min_width", ctypes.c_int), ("min_height", ctypes.c_int),
+                ("max_width", ctypes.c_int), ("max_height", ctypes.c_int),
+                ("width_inc", ctypes.c_int), ("height_inc", ctypes.c_int),
+                ("min_aspect_x", ctypes.c_int), ("min_aspect_y", ctypes.c_int),
+                ("max_aspect_x", ctypes.c_int), ("max_aspect_y", ctypes.c_int),
+                ("base_width", ctypes.c_int), ("base_height", ctypes.c_int),
+                ("win_gravity", ctypes.c_int)]
+
+
+def achar_janela(classe, limite):
+    fim = time.time() + limite
+    while time.time() < fim:
+        r = subprocess.run(["xdotool", "search", "--onlyvisible", "--class", classe],
+                           capture_output=True, text=True)
+        ids = [l for l in r.stdout.split() if l.strip()]
+        if ids:
+            return int(ids[-1])
+        time.sleep(0.25)
+    return None
+
+
+def tamanho(win):
+    r = subprocess.run(["xdotool", "getwindowgeometry", "--shell", str(win)],
+                       capture_output=True, text=True)
+    d = dict(l.split("=", 1) for l in r.stdout.splitlines() if "=" in l)
+    return int(d.get("WIDTH", 0)), int(d.get("HEIGHT", 0))
+
+
+def main():
+    if len(sys.argv) < 2:
+        sys.exit("uso: tarsila-travar-janela <classe> [espera]")
+    classe = sys.argv[1]
+    espera = float(sys.argv[2]) if len(sys.argv) > 2 else 20.0
+
+    win = achar_janela(classe, espera)
+    if not win:
+        return
+    time.sleep(0.6)          # deixa a janela assentar no tamanho dela
+    larg, alt = tamanho(win)
+    if larg <= 0 or alt <= 0:
+        return
+
+    x11 = ctypes.CDLL("libX11.so.6")
+    x11.XOpenDisplay.restype = ctypes.c_void_p
+    dpy = x11.XOpenDisplay(None)
+    if not dpy:
+        return
+    h = XSizeHints()
+    h.flags = PMinSize | PMaxSize
+    h.min_width = h.max_width = larg
+    h.min_height = h.max_height = alt
+    x11.XSetWMNormalHints.argtypes = [ctypes.c_void_p, ctypes.c_ulong,
+                                      ctypes.POINTER(XSizeHints)]
+    x11.XSetWMNormalHints(dpy, win, ctypes.byref(h))
+    x11.XFlush(dpy)
+    x11.XCloseDisplay(dpy)
+
+
+if __name__ == "__main__":
+    main()

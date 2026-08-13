@@ -1,0 +1,418 @@
+#!/usr/bin/env python3
+# Gerenciador do Dock (Tarsila) - janela flutuante aberta pelo botao
+# "Gerenciar Dock" do AppFinder (tarsila-appfinder-yad.sh).
+#
+# Duas colunas: a esquerda os apps que estao no dock (de cima para
+# baixo = da esquerda para a direita no dock), a direita os apps
+# curados fora do dock em ordem alfabetica. O botao de troca move o
+# app selecionado de uma coluna para a outra; as setas sobem/descem o
+# app dentro do dock. Nada e aplicado ao vivo (leve para a tvbox de
+# 2 GB): so o "Salvar Configuração" reescreve o dock e reinicia o
+# Plank, e fechar com mudancas pendentes pede confirmacao.
+#
+# Ao salvar, os .dockitem sao regravados com prefixo numerico (01-,
+# 02-, ...) porque tanto o tarsila-dock-apply.sh (rodado a cada login)
+# quanto o sync do AppFinder ordenam o dock pelo nome de arquivo - o
+# prefixo e o que torna a ordem escolhida permanente. O Plank precisa
+# estar PARADO enquanto os arquivos mudam (o inotify dele apaga ou
+# reescreve dockitems mexidos ao vivo); a ordem aqui e sempre:
+# parar Plank -> gravar arquivos -> dock-apply (dconf) -> iniciar Plank.
+
+import ast
+import glob
+import os
+import subprocess
+import time
+
+import gi
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk, GLib, GdkPixbuf, Pango
+
+CURATED_DIR = "/usr/share/tarsila/applications"
+GAMES_DIR = "/usr/share/tarsila/games"
+ICONS_DIR = "/usr/share/tarsila/icons"
+VERMAIS_DESKTOP = os.path.join(CURATED_DIR, "vermais-tarsila.desktop")
+# Os cinco ultimos da Dock sao fixos, NESTA ordem. Sao os itens que o usuario
+# procura pela POSICAO ("o ultimo", "o do cantinho"), nao pelo desenho -- se um
+# aplicativo novo cai no meio deles, essa referencia se perde. Aconteceu: o OBS
+# entrou depois da Lixeira. Tudo que se instala entra ANTES deste bloco.
+CAUDA_FIXA = [os.path.join(CURATED_DIR, nome) for nome in (
+    "terminal-tarsila.desktop",
+    "files-tarsila.desktop",
+    "configuracao-tarsila.desktop",
+    "lixeira-tarsila.desktop",
+    "vermais-tarsila.desktop",
+)]
+LAUNCHERS = os.path.join(os.path.expanduser("~"), ".config/plank/dock1/launchers")
+DOCK_DCONF_KEY = "/net/launchpad/plank/docks/dock1/dock-items"
+DOCK_APPLY = "/usr/local/bin/tarsila-dock-apply.sh"
+DOCK_LIMIT = 19  # 20 contando o "Ver mais aplicativos", que e fixo
+NATIVES_FILE = "/usr/share/tarsila/native-apps.txt"
+
+ICON_SIZE = 28
+
+
+def parse_desktop(path):
+    """Retorna (Name, Icon) de um .desktop, sem depender de lib externa."""
+    name, icon = None, None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if line.startswith("Name=") and name is None:
+                    name = line[5:].strip()
+                elif line.startswith("Icon=") and icon is None:
+                    icon = line[5:].strip()
+    except OSError:
+        pass
+    return name, icon
+
+
+def load_icon(icon_name):
+    theme = Gtk.IconTheme.get_default()
+    candidates = []
+    if icon_name:
+        if icon_name.startswith("/"):
+            candidates.append(icon_name)
+        else:
+            candidates.append(os.path.join(ICONS_DIR, icon_name + ".png"))
+            candidates.append(os.path.join(ICONS_DIR, icon_name + ".svg"))
+    for c in candidates:
+        if os.path.isfile(c):
+            try:
+                return GdkPixbuf.Pixbuf.new_from_file_at_size(c, ICON_SIZE, ICON_SIZE)
+            except GLib.Error:
+                pass
+    for name in (icon_name, "application-x-executable"):
+        if not name:
+            continue
+        try:
+            return theme.load_icon(name, ICON_SIZE, Gtk.IconLookupFlags.FORCE_SIZE)
+        except GLib.Error:
+            pass
+    return None
+
+
+def dockitem_launcher(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if line.startswith("Launcher=file://"):
+                    return line[len("Launcher=file://"):].strip()
+    except OSError:
+        pass
+    return None
+
+
+def read_dock_order():
+    """Lista de caminhos .desktop na ordem atual do dock (sem o vermais)."""
+    files = {os.path.basename(p): p for p in glob.glob(os.path.join(LAUNCHERS, "*.dockitem"))}
+    ordered_bases = []
+    try:
+        out = subprocess.run(["dconf", "read", DOCK_DCONF_KEY],
+                             capture_output=True, text=True, timeout=5).stdout.strip()
+        if out:
+            ordered_bases = [b for b in ast.literal_eval(out) if b in files]
+    except Exception:
+        ordered_bases = []
+    for b in sorted(files):
+        if b not in ordered_bases:
+            ordered_bases.append(b)
+    result = []
+    for b in ordered_bases:
+        launcher = dockitem_launcher(files[b])
+        if not launcher or launcher == VERMAIS_DESKTOP:
+            continue
+        result.append(launcher)
+    return result
+
+
+def read_curated():
+    """{Name: caminho .desktop} do que pode ir para a Dock (sem o vermais).
+
+    Jogos entram junto: eles tambem podem ser fixados na Dock, entao precisam
+    aparecer nesta lista. Antes so a pasta de aplicativos era varrida e por
+    isso nenhum jogo podia ser escolhido aqui."""
+    apps = {}
+    for base in (CURATED_DIR, GAMES_DIR):
+        for p in sorted(glob.glob(os.path.join(base, "*.desktop"))):
+            if p == VERMAIS_DESKTOP:
+                continue
+            name, _ = parse_desktop(p)
+            if name:
+                apps[name] = p
+    return apps
+
+
+def read_natives():
+    """Apps nativos do sistema: sempre na Dock, sem opcao de troca."""
+    natives = set()
+    try:
+        with open(NATIVES_FILE, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    natives.add(os.path.join(CURATED_DIR, line))
+    except OSError:
+        pass
+    return natives
+
+
+class DockManager(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="Gerenciar Dock")
+        self.set_wmclass("tarsila-dock-manager", "Tarsila-dock-manager")
+        self.set_default_size(720, 440)
+        # Travada, como as outras telas do Tarsila: sem botao de maximizar e
+        # sem arrastar as bordas. E uma lista de duas colunas com tamanho
+        # pensado -- esticar nao mostra mais nada, so estica o vazio.
+        self.set_resizable(False)
+        self.set_position(Gtk.WindowPosition.CENTER)
+        self.set_border_width(12)
+        self.dirty = False
+
+        curated = read_curated()
+        path_to_name = {v: k for k, v in curated.items()}
+        self.natives = read_natives()
+        dock_paths = read_dock_order()
+
+        # Apps nativos que por algum motivo nao estejam no dock entram
+        # no fim da lista (e o proximo Salvar os torna permanentes).
+        for p in sorted(self.natives):
+            if p not in dock_paths and os.path.isfile(p):
+                dock_paths.append(p)
+                self.dirty = True
+
+        # colunas: [icone, nome exibido, caminho .desktop]
+        self.store_dock = Gtk.ListStore(GdkPixbuf.Pixbuf, str, str)
+        self.store_out = Gtk.ListStore(GdkPixbuf.Pixbuf, str, str)
+
+        for p in dock_paths:
+            row = self._row(p, path_to_name)
+            if p in self.natives:
+                row[1] += "  (fixo)"
+            self.store_dock.append(row)
+        in_dock = set(dock_paths)
+        for name in sorted(curated, key=str.casefold):
+            if curated[name] not in in_dock:
+                self.store_out.append(self._row(curated[name], path_to_name))
+
+        self.view_dock = self._make_view(self.store_dock)
+        self.view_out = self._make_view(self.store_out)
+        # selecao exclusiva: escolher de um lado limpa o outro
+        self.view_dock.get_selection().connect("changed", self._exclusive, self.view_out)
+        self.view_out.get_selection().connect("changed", self._exclusive, self.view_dock)
+
+        btn_up = Gtk.Button.new_from_icon_name("go-up", Gtk.IconSize.LARGE_TOOLBAR)
+        btn_up.set_tooltip_text("Mover para cima (para a esquerda no dock)")
+        btn_up.connect("clicked", self.on_move, -1)
+        btn_down = Gtk.Button.new_from_icon_name("go-down", Gtk.IconSize.LARGE_TOOLBAR)
+        btn_down.set_tooltip_text("Mover para baixo (para a direita no dock)")
+        btn_down.connect("clicked", self.on_move, 1)
+
+        btn_swap = Gtk.Button(label="Trocar")
+        btn_swap.set_image(Gtk.Image.new_from_icon_name(
+            "object-flip-horizontal", Gtk.IconSize.LARGE_TOOLBAR))
+        btn_swap.set_always_show_image(True)
+        btn_swap.set_tooltip_text("Move o aplicativo escolhido para a outra lista")
+        btn_swap.connect("clicked", self.on_swap)
+
+        btn_save = Gtk.Button(label="Salvar Configuração")
+        btn_save.get_style_context().add_class("suggested-action")
+        btn_save.connect("clicked", self.on_save)
+
+        arrows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        arrows.set_valign(Gtk.Align.CENTER)
+        arrows.pack_start(btn_up, False, False, 0)
+        arrows.pack_start(btn_down, False, False, 0)
+
+        middle = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        middle.set_valign(Gtk.Align.CENTER)
+        middle.pack_start(btn_swap, False, False, 0)
+
+        left = self._column("Na Dock", self.view_dock,
+                            "De cima para baixo = da esquerda para a direita")
+        right = self._column("Fora da Dock", self.view_out,
+                             "Em ordem alfabética")
+
+        cols = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        cols.pack_start(arrows, False, False, 0)
+        cols.pack_start(left, True, True, 0)
+        cols.pack_start(middle, False, False, 0)
+        cols.pack_start(right, True, True, 0)
+        # as duas colunas com exatamente a mesma largura: sem o
+        # SizeGroup o GTK so divide o espaco EXTRA, e a coluna da
+        # esquerda (nomes longos + sufixo "(fixo)") ficava maior
+        iguais = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.HORIZONTAL)
+        iguais.add_widget(left)
+        iguais.add_widget(right)
+
+        bottom = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        bottom.pack_end(btn_save, False, False, 0)
+
+        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        root.pack_start(cols, True, True, 0)
+        root.pack_start(bottom, False, False, 0)
+        self.add(root)
+
+        self.connect("delete-event", self.on_close)
+        self.connect("destroy", Gtk.main_quit)
+
+    def _row(self, desktop_path, path_to_name):
+        name = path_to_name.get(desktop_path)
+        if not name:
+            name, _ = parse_desktop(desktop_path)
+            name = name or os.path.basename(desktop_path)
+        _, icon = parse_desktop(desktop_path)
+        return [load_icon(icon), name, desktop_path]
+
+    def _make_view(self, store):
+        view = Gtk.TreeView(model=store)
+        view.set_headers_visible(False)
+        col = Gtk.TreeViewColumn()
+        r_icon = Gtk.CellRendererPixbuf()
+        r_text = Gtk.CellRendererText()
+        # nomes muito longos nao podem alargar a coluna (largura fixa
+        # pelo SizeGroup) - corta com reticencias
+        r_text.props.ellipsize = Pango.EllipsizeMode.END
+        col.pack_start(r_icon, False)
+        col.pack_start(r_text, True)
+        col.add_attribute(r_icon, "pixbuf", 0)
+        col.add_attribute(r_text, "text", 1)
+        view.append_column(col)
+        return view
+
+    def _column(self, title, view, subtitle):
+        label = Gtk.Label()
+        label.set_markup("<b>%s</b>" % GLib.markup_escape_text(title))
+        sub = Gtk.Label(label=subtitle)
+        sub.get_style_context().add_class("dim-label")
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_shadow_type(Gtk.ShadowType.IN)
+        scroll.add(view)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        box.pack_start(label, False, False, 0)
+        box.pack_start(sub, False, False, 0)
+        box.pack_start(scroll, True, True, 0)
+        return box
+
+    def _exclusive(self, selection, other_view):
+        if selection.get_selected()[1] is not None:
+            other_view.get_selection().unselect_all()
+
+    def _msg(self, kind, text, buttons=Gtk.ButtonsType.OK):
+        d = Gtk.MessageDialog(transient_for=self, modal=True,
+                              message_type=kind, buttons=buttons, text=text)
+        resp = d.run()
+        d.destroy()
+        return resp
+
+    def on_move(self, _btn, direction):
+        model, it = self.view_dock.get_selection().get_selected()
+        if it is None:
+            self._msg(Gtk.MessageType.INFO,
+                      "Escolha primeiro um aplicativo na lista 'Na Dock'.")
+            return
+        path = model.get_path(it).get_indices()[0]
+        target = path + direction
+        if target < 0 or target >= len(model):
+            return
+        model.swap(it, model.get_iter((target,)))
+        self.dirty = True
+
+    def on_swap(self, _btn):
+        model, it = self.view_dock.get_selection().get_selected()
+        if it is not None:
+            if model[it][2] in self.natives:
+                self._msg(Gtk.MessageType.INFO,
+                          "%s é um aplicativo do sistema\n"
+                          "e fica sempre na Dock.\n\n"
+                          "Você pode apenas mudar a posição dele\n"
+                          "com as setas." % model[it][1].replace("  (fixo)", ""))
+                return
+            row = list(model[it])
+            model.remove(it)
+            # reinsere no lado de fora mantendo a ordem alfabetica
+            pos = 0
+            for existing in self.store_out:
+                if str.casefold(existing[1]) < str.casefold(row[1]):
+                    pos += 1
+                else:
+                    break
+            self.store_out.insert(pos, row)
+            self.dirty = True
+            return
+        model, it = self.view_out.get_selection().get_selected()
+        if it is not None:
+            if len(self.store_dock) >= DOCK_LIMIT:
+                self._msg(Gtk.MessageType.WARNING,
+                          "O dock já está cheio (%d aplicativos).\n"
+                          "Remova algum antes de adicionar outro." % DOCK_LIMIT)
+                return
+            row = list(model[it])
+            model.remove(it)
+            self.store_dock.append(row)  # entra como ultimo (antes do "Ver mais")
+            self.dirty = True
+            return
+        self._msg(Gtk.MessageType.INFO,
+                  "Escolha um aplicativo em uma das listas e toque em Trocar.")
+
+    def on_save(self, btn):
+        btn.set_sensitive(False)
+        while Gtk.events_pending():
+            Gtk.main_iteration()
+        try:
+            self._apply()
+        except Exception as e:
+            btn.set_sensitive(True)
+            self._msg(Gtk.MessageType.ERROR,
+                      "Não foi possível salvar o dock.\n\n%s" % e)
+            return
+        self.dirty = False
+        self._msg(Gtk.MessageType.INFO, "Pronto! O dock foi atualizado.")
+        self.destroy()
+
+    def _apply(self):
+        # Plank parado antes de tocar nos arquivos (ver comentario no topo)
+        subprocess.run(["pkill", "-x", "plank"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(0.5)
+        os.makedirs(LAUNCHERS, exist_ok=True)
+        for f in glob.glob(os.path.join(LAUNCHERS, "*.dockitem")):
+            os.remove(f)
+        entries = [row[2] for row in self.store_dock]
+        # A cauda fixa vai para o fim na ordem definida, nao importa onde o
+        # usuario os tenha arrastado na lista.
+        entries = [e for e in entries if e not in CAUDA_FIXA]
+        entries += [e for e in CAUDA_FIXA if os.path.isfile(e)]
+        for i, desktop in enumerate(entries, 1):
+            base = os.path.basename(desktop)
+            if base.endswith(".desktop"):
+                base = base[:-len(".desktop")]
+            item = os.path.join(LAUNCHERS, "%02d-%s.dockitem" % (i, base))
+            with open(item, "w", encoding="utf-8") as f:
+                f.write("[PlankDockItemPreferences]\nLauncher=file://%s\n" % desktop)
+        if os.access(DOCK_APPLY, os.X_OK):
+            subprocess.run([DOCK_APPLY], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=15)
+        subprocess.Popen(["plank"], stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+
+    def on_close(self, *_args):
+        if not self.dirty:
+            return False
+        resp = self._msg(Gtk.MessageType.QUESTION,
+                         "Deseja sair sem salvar as configurações?",
+                         Gtk.ButtonsType.YES_NO)
+        return resp != Gtk.ResponseType.YES  # True = nao fecha
+
+
+def main():
+    GLib.set_prgname("tarsila-dock-manager")
+    win = DockManager()
+    win.show_all()
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    main()

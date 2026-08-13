@@ -1,0 +1,23 @@
+[Desktop Entry]
+Actions=tirar-dock;desinstalar;
+X-Package=agenda-tarsila
+Version=1.0
+Name=Agenda Tarsila
+GenericName=Calendário
+Comment=Calendário nativo integrado ao Google Agenda
+Exec=/usr/local/bin/tarsila-abrindo tarsila-agenda
+Icon=x-office-calendar
+Terminal=false
+Type=Application
+Categories=Office;Calendar;GTK;
+Keywords=agenda;calendário;calendar;google;eventos;
+StartupNotify=true
+StartupWMClass=agenda-tarsila
+
+[Desktop Action tirar-dock]
+Name=Tirar do Dock
+Exec=/usr/local/bin/tarsila-dock-item.sh remove /usr/share/tarsila/applications/agenda-tarsila.desktop
+
+[Desktop Action desinstalar]
+Name=Desinstalar
+Exec=/usr/local/bin/tarsila-app-uninstall.sh /usr/share/tarsila/applications/agenda-tarsila.desktop

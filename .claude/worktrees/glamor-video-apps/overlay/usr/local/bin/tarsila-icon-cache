@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+# tarsila-icon-cache: normaliza ícones de aplicativos para PNG de
+# tamanho fixo, para a grade do AppFinder (o yad 0.40 não redimensiona
+# ícones que já vêm grandes do tema/arquivo).
+#
+# Lê no stdin linhas no formato:  <icone> TAB <saida.png> TAB <tamanho>
+# onde <icone> é um caminho absoluto de imagem OU um nome de ícone de
+# tema (resolvido via Papirus, com fallback hicolor). Gera cada
+# <saida.png> já em <tamanho>x<tamanho>. Linhas com erro são ignoradas
+# (quem chama usa o ícone original como fallback).
+import sys
+import os
+
+import gi
+gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import GdkPixbuf
+
+THEME = None
+try:
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk
+    Gtk.init_check()
+    THEME = Gtk.IconTheme.new()
+    THEME.set_custom_theme("Papirus")
+except Exception:
+    pass
+
+
+def render(spec, size):
+    if os.path.isabs(spec):
+        if not os.path.isfile(spec):
+            return None
+        return GdkPixbuf.Pixbuf.new_from_file_at_size(spec, size, size)
+    if THEME is None:
+        return None
+    info = THEME.lookup_icon(spec, size, Gtk.IconLookupFlags.FORCE_SIZE)
+    if info is None:
+        return None
+    return info.load_icon()
+
+
+def main():
+    for line in sys.stdin:
+        line = line.rstrip("\n")
+        if not line:
+            continue
+        parts = line.split("\t")
+        if len(parts) != 3:
+            continue
+        spec, out, size = parts
+        try:
+            pixbuf = render(spec, int(size))
+            if pixbuf is None:
+                continue
+            pixbuf.savev(out, "png", [], [])
+        except Exception:
+            try:
+                os.unlink(out)
+            except OSError:
+                pass
+
+
+if __name__ == "__main__":
+    main()

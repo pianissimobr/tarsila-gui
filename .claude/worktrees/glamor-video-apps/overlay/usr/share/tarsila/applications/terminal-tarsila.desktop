@@ -1,0 +1,9 @@
+[Desktop Entry]
+StartupNotify=true
+Type=Application
+Name=Terminal
+Comment=Xfce Terminal
+Exec=/usr/local/bin/tarsila-abrindo xfce4-terminal
+Icon=org.xfce.terminal
+Terminal=false
+Categories=System;TerminalEmulator;

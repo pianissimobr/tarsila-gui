@@ -1,0 +1,75 @@
+#!/bin/bash
+# Troca o idioma do sistema, gerando o novo e apagando o antigo.
+#
+# O ingles NUNCA sai. Ele e a lingua de recurso de todo o sistema: se o idioma
+# escolhido faltar em algum programa, e para o ingles que ele cai. Sem essa
+# rede, um programa sem traducao mostraria identificadores crus.
+#
+# Uso:  tarsila-idioma <locale>       ex.: tarsila-idioma es_ES.UTF-8
+# Saida (ultima linha):
+#   OK=<locale>     trocado
+#   ERRO=<motivo>
+
+set -uo pipefail
+export LC_ALL=C
+
+BASE="en_US.UTF-8"          # a que fica, sempre
+GEN=/etc/locale.gen
+REGISTRO=/opt/tarsila-diag/idioma.log
+
+anotar() {
+    mkdir -p "$(dirname "$REGISTRO")" 2>/dev/null
+    printf '%s %s\n' "$(date '+%F %T')" "$*" >> "$REGISTRO" 2>/dev/null
+}
+
+[ "$(id -u)" = "0" ] || { echo "ERRO=precisa ser root"; exit 1; }
+NOVO="${1:-}"
+[ -n "$NOVO" ] || { echo "ERRO=falta dizer o idioma"; exit 1; }
+
+# So aceita o que a biblioteca padrao conhece: evita gravar lixo no locale.gen.
+if ! grep -qE "^#? *${NOVO} " /usr/share/i18n/SUPPORTED 2>/dev/null; then
+    anotar "recusado: $NOVO nao e um idioma conhecido"
+    echo "ERRO=idioma desconhecido"
+    exit 1
+fi
+
+ATUAL=$(. /etc/default/locale 2>/dev/null; echo "${LANG:-}")
+anotar "trocando de ${ATUAL:-nenhum} para $NOVO"
+
+CODIF=$(awk -v l="$NOVO" '$1==l {print $2}' /usr/share/i18n/SUPPORTED | head -1)
+[ -n "$CODIF" ] || CODIF="UTF-8"
+
+# 1) Liga o novo no locale.gen (descomenta se ja estiver la, senao acrescenta).
+if grep -qE "^#? *${NOVO} " "$GEN"; then
+    sed -i "s|^# *\(${NOVO} .*\)|\1|" "$GEN"
+else
+    printf '%s %s\n' "$NOVO" "$CODIF" >> "$GEN"
+fi
+# O ingles entra junto se por acaso nao estiver.
+grep -qE "^${BASE} " "$GEN" || printf '%s UTF-8\n' "$BASE" >> "$GEN"
+
+# 2) Desliga o antigo -- menos se for o ingles ou o proprio novo.
+if [ -n "$ATUAL" ] && [ "$ATUAL" != "$NOVO" ] && [ "$ATUAL" != "$BASE" ]; then
+    RAIZ="${ATUAL%%.*}"       # pt_BR.UTF-8 -> pt_BR, para pegar as variantes
+    sed -i "s|^\(${RAIZ}[. ].*\)|# \1|" "$GEN"
+    anotar "desligado: $ATUAL (e variantes de $RAIZ)"
+fi
+
+# 3) Gera. O locale-gen refaz o arquivo do zero, entao o que foi comentado
+#    some de verdade -- e essa a parte que "exclui o idioma atual".
+if ! locale-gen >>"$REGISTRO" 2>&1; then
+    anotar "locale-gen falhou"
+    echo "ERRO=nao consegui preparar o idioma"
+    exit 1
+fi
+
+# 4) Passa a valer no proximo login.
+if ! update-locale LANG="$NOVO" LANGUAGE="$NOVO" LC_MESSAGES="$NOVO" \
+        >>"$REGISTRO" 2>&1; then
+    anotar "update-locale falhou"
+    echo "ERRO=nao consegui gravar a escolha"
+    exit 1
+fi
+
+anotar "pronto: $NOVO"
+echo "OK=$NOVO"

@@ -1,0 +1,71 @@
+AGENDA TARSILA 4.0
+==================
+
+Cliente nativo GTK3 do Google Agenda.
+
+  * Sem dependencias externas. OAuth 2.0 (Installed App + PKCE) e a
+    Calendar API v3 usam apenas a biblioteca padrao do Python.
+  * Sync incremental (syncToken) sobre cache SQLite: navegar nao gera
+    requisicoes e o app funciona offline com os dados ja baixados.
+
+CREDENCIAL (obrigatorio)
+------------------------
+E preciso um "ID do cliente OAuth" do tipo **App para desktop**
+(NAO "Aplicativo Web"), criado em:
+
+    https://console.cloud.google.com/apis/credentials
+
+ 1. Crie/selecione um projeto.
+ 2. APIs e servicos > Biblioteca > ative "Google Calendar API".
+ 3. Tela de permissao OAuth: tipo Externo, modo Teste, e adicione o seu
+    e-mail em "Usuarios de teste" (senao o login retorna access_denied).
+ 4. Credenciais > Criar credenciais > ID do cliente OAuth >
+    Tipo: App para desktop > Criar > Fazer download do JSON.
+ 5. Renomeie para credentials.json e:
+      - coloque em /etc/agenda-tarsila/credentials.json (todos os usuarios), ou
+      - use "Selecionar credentials.json..." na tela de login (o arquivo e
+        copiado para ~/.config/agenda-tarsila/ com permissao 600).
+
+ARQUIVOS
+--------
+  /opt/agenda-tarsila/agenda_tarsila.py       aplicacao
+  /etc/agenda-tarsila/credentials.json        cliente OAuth (opcional, global)
+  ~/.config/agenda-tarsila/credentials.json   cliente OAuth (por usuario)
+  ~/.config/agenda-tarsila/token.json         sessao OAuth (chmod 600)
+  ~/.config/agenda-tarsila/settings.json      preferencias
+  ~/.local/share/agenda-tarsila/cache.db      cache de eventos (SQLite)
+
+LINHA DE COMANDO
+----------------
+  agenda-tarsila                 abre o aplicativo
+  agenda-tarsila --diagnostico   ambiente, credenciais, cache e syncTokens
+  agenda-tarsila --reset-cache   apaga o cache local (forca full sync)
+  agenda-tarsila --version
+
+ATALHOS
+-------
+  D / W / M   visualizacao Dia, Semana, Mes
+  T           hoje
+  <- ->       navegar
+  N           novo evento
+  R / F5      sincronizar agora
+  duplo-clique na grade cria evento no dia/hora clicados
+
+COMO A SINCRONIZACAO FUNCIONA
+-----------------------------
+Na primeira execucao cada agenda recebe um full sync de -400 a +800 dias e
+guarda um syncToken. Depois, cada sincronizacao pede apenas o que mudou
+(delta de poucos bytes). Exclusoes chegam como status=cancelled e sao
+aplicadas ao cache. Se o Google invalidar o token (HTTP 410), a agenda e
+resincronizada automaticamente. Ao navegar para fora do horizonte, a base
+daquela agenda e refeita. O sync roda a cada 3 minutos com a janela em foco,
+depois de cada gravacao e no botao de atualizar.
+
+PROBLEMAS COMUNS
+----------------
+* "GTK ausente" ->
+      sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0
+* "access_denied" -> adicione seu e-mail em Usuarios de teste
+* "Aplicativo Web" -> gere um cliente do tipo App para desktop
+* Eventos estranhos/duplicados -> menu (engrenagem) > Ressincronizar tudo
+* Trocar de conta -> menu (engrenagem) > Sair da conta

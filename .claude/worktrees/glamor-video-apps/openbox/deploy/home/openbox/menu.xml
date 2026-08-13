@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_menu xmlns="http://openbox.org/3.4/menu">
+  <menu id="root-menu" label="Tarsila">
+    <item label="Ver mais aplicativos">
+      <action name="Execute"><command>/usr/local/bin/tarsila-appfinder-yad.sh</command></action>
+    </item>
+    <item label="Ajustes">
+      <action name="Execute"><command>tarsila-config</command></action>
+    </item>
+    <separator/>
+    <item label="Sair">
+      <action name="Exit"><prompt>yes</prompt></action>
+    </item>
+  </menu>
+</openbox_menu>

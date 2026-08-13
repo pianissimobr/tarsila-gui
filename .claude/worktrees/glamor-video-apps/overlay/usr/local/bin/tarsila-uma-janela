@@ -1,0 +1,66 @@
+#!/bin/bash
+# Garante que um aplicativo abra em UMA janela so.
+#
+# Clicar duas vezes no icone da Dock abria uma segunda copia -- duas Lixeiras,
+# dois Ajustes -- e o usuario ficava sem saber qual era "a" janela. Aqui o
+# segundo clique traz a janela existente para a frente, que e o que ele espera.
+#
+# Uso:  tarsila-uma-janela <chave> <regex-do-titulo> <comando> [argumentos...]
+#
+#   chave   nome curto do arquivo de trava (sem espacos)
+#   regex   como achar a janela ja aberta, pelo titulo
+#
+# A trava e um arquivo bloqueado com flock e vive enquanto o processo viver:
+# se o aplicativo morrer de qualquer jeito -- inclusive travado ou morto a
+# forca --, o sistema solta o bloqueio sozinho, e nao fica lixo impedindo a
+# proxima abertura. Foi por isso que nao usei arquivo de PID.
+
+set -uo pipefail
+
+CHAVE="${1:-}"; REGEX="${2:-}"; shift 2 2>/dev/null || true
+[ -n "$CHAVE" ] && [ $# -gt 0 ] || {
+    echo "uso: tarsila-uma-janela <chave> <regex-titulo> <comando...>" >&2
+    exit 2
+}
+
+DIR="${XDG_RUNTIME_DIR:-/tmp}"
+TRAVA="$DIR/tarsila-uma-$CHAVE.lock"
+
+exec 9>"$TRAVA" 2>/dev/null || exec "$@"
+
+if flock -n 9; then
+    # Ninguem rodando: abre normalmente. O "exec" mantem o descritor 9 aberto,
+    # entao a trava so e solta quando o aplicativo terminar.
+    exec "$@"
+fi
+
+# Ja existe uma janela. Traz para a frente em vez de abrir outra.
+if command -v xdotool >/dev/null 2>&1 && [ -n "$REGEX" ]; then
+    JANELA=$(xdotool search --onlyvisible --name "$REGEX" 2>/dev/null | tail -n1)
+    if [ -n "$JANELA" ]; then
+        xdotool windowmap "$JANELA" 2>/dev/null
+        xdotool windowactivate "$JANELA" 2>/dev/null
+        xdotool windowraise "$JANELA" 2>/dev/null
+        exit 0
+    fi
+fi
+
+# A trava existe mas nenhuma janela apareceu -- o aplicativo pode estar
+# abrindo ainda. Esperar e melhor do que abrir uma segunda copia.
+for _ in 1 2 3 4 5 6 7 8; do
+    sleep 0.5
+    JANELA=$(xdotool search --onlyvisible --name "$REGEX" 2>/dev/null | tail -n1)
+    if [ -n "$JANELA" ]; then
+        xdotool windowactivate "$JANELA" 2>/dev/null
+        exit 0
+    fi
+done
+
+# Esperamos e nao veio janela nenhuma: a trava esta velha. Isso acontece
+# quando o aplicativo deixa um processo em segundo plano que herdou o
+# descritor da trava e sobreviveu a ele -- a Tarsila Store fez exatamente
+# isso, e ficou horas sem abrir, sem dizer nada ao usuario.
+#
+# Entre "talvez abrir duas janelas" e "nao abrir nunca", abrir e melhor: o
+# usuario clicou e espera ver alguma coisa.
+exec "$@"

@@ -1,0 +1,22 @@
+Package: agenda-tarsila
+Version: 4.0.0
+Section: office
+Priority: optional
+Architecture: all
+Depends: python3 (>= 3.7), python3-gi, python3-gi-cairo, gir1.2-gtk-3.0, ca-certificates
+Recommends: xdg-utils
+Replaces: agenda-tarsila (<< 4.0.0)
+Maintainer: Piano Lab Ribeirao <adm@pianolabribeirao.com.br>
+Homepage: https://pianolabribeirao.com.br
+Description: Agenda Tarsila - cliente nativo GTK3 do Google Agenda
+ Calendario leve em GTK3 com visualizacoes de dia, semana e mes,
+ mini-calendario, multiplas agendas e criacao, edicao e exclusao de
+ eventos sincronizados com a sua conta do Google.
+ .
+ Nao requer pip, venv nem internet durante a instalacao: OAuth 2.0
+ (Installed App com PKCE) e a Calendar API v3 sao implementados com a
+ biblioteca padrao do Python.
+ .
+ Sincronizacao incremental com syncToken sobre um cache SQLite local:
+ navegar entre semanas e meses nao gera requisicoes e o app abre com
+ os dados na tela, mesmo offline.

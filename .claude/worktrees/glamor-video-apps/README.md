@@ -2,7 +2,7 @@
 
 **Uma interface amigável para quem nunca usou computador — sobre Debian.**
 
-Tarsila transforma um Debian 13 OpenBox em um ambiente pensado para usuários
+Tarsila transforma um Debian 13 (XFCE) em um ambiente pensado para usuários
 totalmente leigos: zero linha de comando, uma dock com os aplicativos
 essenciais, uma loja de aplicativos curada e uma barra superior simples com
 espaços de trabalho em "bolinhas". Nasceu para rodar em tvboxes ARM64 com 2 GB

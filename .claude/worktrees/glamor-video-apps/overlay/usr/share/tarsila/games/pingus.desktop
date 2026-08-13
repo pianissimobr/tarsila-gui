@@ -1,0 +1,22 @@
+[Desktop Entry]
+Actions=tirar-dock;desinstalar;
+StartupNotify=true
+Name=Pingus
+GenericName=Free Lemmings(TM) clone
+GenericName[de]=Freier Lemmings(TM)-Klon
+Comment=Guide a horde of penguins through various obstacles
+Comment[de]=Führe eine Pinguinkolonie durch verschiedene Hindernisse
+Exec=pingus
+Icon=/usr/share/tarsila/icons/pingus.png
+Terminal=false
+Type=Application
+Categories=Game;StrategyGame;
+Keywords=lemmings;obstacles;traps;penguins;
+
+[Desktop Action tirar-dock]
+Name=Tirar do Dock
+Exec=/usr/local/bin/tarsila-dock-item.sh remove /usr/share/tarsila/games/pingus.desktop
+
+[Desktop Action desinstalar]
+Name=Desinstalar
+Exec=/usr/local/bin/tarsila-app-uninstall.sh /usr/share/tarsila/games/pingus.desktop

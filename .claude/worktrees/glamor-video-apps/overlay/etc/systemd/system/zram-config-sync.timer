@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodic sync of zram-config RAM-backed directories
+
+[Timer]
+OnBootSec=1h
+OnUnitActiveSec=6h
+Persistent=false
+
+[Install]
+WantedBy=timers.target
