@@ -130,6 +130,29 @@ não bloquear e CPU enxuta.
   já está correta — caso comum no login e em troca de tema sem mudança de altura
   da barra.
 
+## 8. Serviços de Sistema — Heartbeat com menos forks
+
+Categoria "Serviços de Sistema e Diagnóstico". O único loop contínuo é o
+`tarsila-heartbeat` (a cada 30s); os demais são one-shot ou já bloqueantes.
+
+**Problema.** O heartbeat disparava ~10 processos por ciclo de 30s: 2× `awk`
+(lendo `/proc/meminfo` duas vezes), 2× `cat` (GPU freq e temperatura), 2×
+`pgrep`, 1× `date`, 1× `sync` e 1× `wc -l` (que relia o log inteiro a cada
+ciclo só para conferir o teto de 2000 linhas).
+
+**Solução.**
+- 2× `awk` → **1× `awk`** que lê `/proc/meminfo` uma vez e extrai
+  `MemAvailable` + `SwapFree` + `SwapTotal`.
+- 2× `cat` → 2× `read` (builtin; 2 forks a menos).
+- `wc -l` do log passa a rodar só a cada **10 ciclos** (5 min) — o teto só
+  importa perto das ~17h de uso, não a cada 30s.
+- Total: de ~10 para ~5 forks por ciclo, com o `sync -f` preservado (a
+  garantia de sobreviver ao reset do watchdog não muda).
+
+Sem mudanças em `tarsila-kmsg` (já é `os.read()` bloqueante — o kernel acorda a
+thread quando chega mensagem, sem polling) nem em `tarsila-atualizar`,
+`tarsila-aquecer` e `tarsila-devfreq-gpu` (one-shot com `Nice`/`ionice`).
+
 ## O que NÃO mudou (já estava correto)
 
 - **Agenda**: sync já roda em thread de fundo e publica via `GLib.idle_add`

@@ -7,17 +7,27 @@
 # que estado ela estava.
 F=/opt/tarsila-diag/heartbeat.log
 G=/sys/class/devfreq/fe400000.gpu
+T=/sys/class/thermal/thermal_zone0/temp
+n=0
 while :; do
     read -r l1 l5 _ < /proc/loadavg
-    mem=$(awk '/MemAvailable/{printf "%d", $2/1024}' /proc/meminfo)
-    swap=$(awk '/SwapFree/{f=$2} /SwapTotal/{t=$2} END{printf "%d", (t-f)/1024}' /proc/meminfo)
-    gpu=$(( $(cat $G/cur_freq 2>/dev/null || echo 0) / 1000000 ))
-    tmp=$(( $(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo 0) / 1000 ))
+    # Uma unica leitura do /proc/meminfo resolve os tres numeros (antes eram
+    # dois awk lendo o mesmo arquivo duas vezes).
+    read -r mem swap < <(awk '/MemAvailable/{m=$2/1024} /SwapFree/{f=$2} /SwapTotal/{t=$2} END{printf "%d %d", m, (t-f)/1024}' /proc/meminfo)
+    # read builtin no lugar de cat (2 forks a menos por ciclo).
+    read -r gpu < "$G/cur_freq" 2>/dev/null || gpu=0
+    gpu=$(( gpu / 1000000 ))
+    read -r tmp < "$T" 2>/dev/null || tmp=0
+    tmp=$(( tmp / 1000 ))
     printf '%s load=%s/%s memdisp=%sMB swap=%sMB gpu=%sMHz temp=%sC xorg=%s chromium=%s\n' \
         "$(date '+%F %T')" "$l1" "$l5" "$mem" "$swap" "$gpu" "$tmp" \
-        "$(pgrep -cx Xorg)" "$(pgrep -cx chromium)" >> $F
-    # teto de ~2000 linhas (~17 h) para nao crescer sem fim no eMMC
-    if [ "$(wc -l < $F)" -gt 2000 ]; then tail -n 1500 $F > $F.tmp && mv $F.tmp $F; fi
-    sync -f $F
+        "$(pgrep -cx Xorg)" "$(pgrep -cx chromium)" >> "$F"
+    # teto de ~2000 linhas (~17 h): checar a cada 10 ciclos (5 min) para nao
+    # ler o arquivo inteiro a cada 30 s so para contar linhas.
+    n=$((n + 1))
+    if [ $((n % 10)) -eq 0 ]; then
+        if [ "$(wc -l < "$F")" -gt 2000 ]; then tail -n 1500 "$F" > "$F.tmp" && mv "$F.tmp" "$F"; fi
+    fi
+    sync -f "$F"
     sleep 30
 done
