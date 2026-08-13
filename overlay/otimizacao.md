@@ -331,6 +331,22 @@ Pendência: `tarsila-appfinder.sh` é o launcher **legado** (zenity, caminho
 `tarsila-appfinder-yad.sh` — os `.desktop` e o menu apontam todos para o `-yad`.
 Mesmo destino dos demais legados quando a limpeza vier.
 
+## 17. Cloud — Nextcloud one-shot (sem mudança)
+
+Categoria "Cloud". Os quatro scripts (`nc-mount.py`, `nc-edit-online.py`,
+`nc-share.py`, `nc-setup.py`) são todos one-shot, disparados por ação do usuário
+(menu do Thunar, wizard) ou uma vez no login:
+
+- **`nc-mount.py`** — roda `(sleep 5; …) &` no autostart (fora do caminho da
+  sessão); um `gio mount` + um `gio mount -l` para conferir, e o laço de espera
+  do gvfs é limitado (25×1s) e em segundo plano.
+- **`nc-edit-online.py`** / **`nc-share.py`** — uma única chamada HTTP
+  (PROPFIND / POST share) com `timeout=10`, depois `xdg-open`/`xclip`. Sem loop.
+- **`nc-setup.py`** — wizard com três diálogos zenity e um `GET` de validação.
+
+Todas as chamadas de rede têm timeout explícito e nenhum polling; nada a mudar
+na categoria.
+
 ## O que NÃO mudou (já estava correto)
 
 - **Agenda**: sync já roda em thread de fundo e publica via `GLib.idle_add`
