@@ -76,6 +76,15 @@ echo "==> [2/6] Copiando arquivos do sistema (overlay)…"
 tar -cf - -C "$REPO_DIR/overlay" --exclude=./etc/sudoers.d . | tar -xpf - -C /
 chmod 755 /usr/local/bin/tarsila-* /opt/tarsila-store/bin/* 2>/dev/null || true
 
+# Adota no catálogo curado os apps de repositórios separados. Os .deb do
+# email e da agenda instalam só o .desktop genérico em /usr/share/applications/;
+# o tarsila-atalho-criar cria o curado em /usr/share/tarsila/applications/
+# (com ações de dock e desinstalação), para aparecerem no dock/appfinder.
+if [ -x /usr/local/bin/tarsila-atalho-criar ]; then
+  tarsila-atalho-criar agenda-tarsila 2>/dev/null || true
+  tarsila-atalho-criar tarsila-email 2>/dev/null || true
+fi
+
 echo "==> [3/6] Configurando sudoers (usuário: $TARSILA_USER)…"
 install -m 440 "$REPO_DIR/overlay/etc/sudoers.d/tarsila-store" /etc/sudoers.d/tarsila-store
 sed "s/^alan /$TARSILA_USER /" "$REPO_DIR/overlay/etc/sudoers.d/tarsila-config" > /etc/sudoers.d/tarsila-config
