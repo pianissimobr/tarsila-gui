@@ -46,6 +46,19 @@ if ! apt-get install -y tarsila-app-management; then
 fi
 [ "$WITH_PLYMOUTH" = 1 ] && apt-get install -y plymouth plymouth-themes
 
+# agenda-tarsila vem de repositório separado (pacotes/agenda-tarsila/ no repo).
+# Se o apt ainda não o conhece, constrói e instala o .deb local.
+if ! apt-get install -y agenda-tarsila; then
+  if [ -d "$REPO_DIR/pacotes/agenda-tarsila/DEBIAN" ]; then
+    dpkg-deb --build --root-owner-group "$REPO_DIR/pacotes/agenda-tarsila" /tmp/agenda-tarsila.deb >/dev/null 2>&1
+    apt-get install -y /tmp/agenda-tarsila.deb || \
+      echo "    AVISO: não foi possível instalar agenda-tarsila"
+    rm -f /tmp/agenda-tarsila.deb
+  else
+    echo "    AVISO: agenda-tarsila não encontrado — Agenda indisponível"
+  fi
+fi
+
 echo "==> [2/6] Copiando arquivos do sistema (overlay)…"
 # sudoers vai por caminho separado (precisa de validação); o resto copia direto
 tar -cf - -C "$REPO_DIR/overlay" --exclude=./etc/sudoers.d . | tar -xpf - -C /

@@ -94,6 +94,22 @@ Scripts movidos do core para o repositório separado `tarsila-app-management`
 | `usr/share/applications/tarsila-appfinder.desktop` | **Deletado** (duplicata legada) |
 
 Mudança de comportamento: os desinstaladores agora funcionam **sem a Store**.
-Se a Store estiver instalada (`/opt/tarsila-store/bin/tarsila-pkg` existe),
-delegam para ela (preserva a whitelist do catálogo); se não, usam
-`apt-get remove` direto. Ver `PLANO-MIGRACAO.md` na raiz do repo.
+Se a Store estiver instalada E o pacote estiver em sua whitelist, delegam
+para ela; se não, usam `apt-get remove` direto.
+Ver `PLANO-MIGRACAO.md` na raiz do repo.
+
+---
+
+## 8. Extração para `agenda-tarsila` (ago/2026)
+
+App movido do core para o repositório `.deb` em `pacotes/agenda-tarsila/`.
+
+| Arquivo (no overlay) | Destino |
+|---|---|
+| `opt/agenda-tarsila/agenda_tarsila.py` | `.deb` em `pacotes/agenda-tarsila/` |
+| `usr/local/bin/tarsila-agenda` | **Deletado** (.deb instala `/usr/bin/agenda-tarsila`) |
+
+Ajustes: `.desktop` corrigido (`Exec=tarsila-agenda` → `agenda-tarsila`;
+nome do binário do .deb), `plank-dconf.ini` corrigido (`agenda-google` →
+`agenda-tarsila`, nome real do dockitem), `install.sh` adiciona o pacote
+com fallback para build local.
