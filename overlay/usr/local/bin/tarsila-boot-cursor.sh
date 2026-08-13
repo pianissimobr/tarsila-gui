@@ -7,7 +7,7 @@ xsetroot -cursor_name watch 2>/dev/null
 
 for _ in $(seq 1 60); do
   if pgrep -u "$USER" -x plank >/dev/null 2>&1 \
-     && pgrep -u "$USER" -x xfce4-panel >/dev/null 2>&1; then
+     && pgrep -u "$USER" -x polybar >/dev/null 2>&1; then
     break
   fi
   sleep 0.5

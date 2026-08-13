@@ -197,6 +197,33 @@ reconfigure por outro motivo (troca de tema, margens) também recolhe a regra.
 Resultado: **1 reconfigure por abertura em vez de 2**, e o cursor de espera é
 liberado antes.
 
+## 11. Aparência e Personalização — Cursor de boot e uma leitura de xrandr
+
+Categoria "Aparência e Personalização". A maioria dos módulos é one-shot
+(aplicação de tema, wallpaper, dock, entrada) e já vive no `comum.sh` como
+funções puras sem cópia — as decisões (mapa tema→Dock, ícone por altura de
+tela, pintura do fundo) existem num lugar só.
+
+**Problema 1 — cursor de "carregando" preso ~32s a cada boot.**
+`tarsila-boot-cursor.sh` mostra o cursor `watch` e espera a sessão montar com
+um laço `pgrep plank && pgrep xfce4-panel`. Mas esta sessão é Openbox+polybar:
+o `xfce4-panel` **nunca sobe** (o substituto dele é a polybar, ver o autostart).
+O segundo `pgrep` nunca casava, o laço esgotava as 60 iterações (30s) mais o
+`sleep 2`, e o cursor de espera ficava na cara do usuário por ~32s mesmo com o
+desktop pronto — além de ~120 `pgrep` desperdiçados por login.
+
+**Solução.** `xfce4-panel` → `polybar`. O laço agora quebra assim que a Dock e
+a barra estão de pé; o teto de 30s fica só como segurança (cursor sempre volta
+à seta mesmo se algo não subir).
+
+**Problema 2 — três leituras de `xrandr --query` no login.**
+`tarsila-resolucao-apply.sh` chamava `xrandr --query` três vezes (para achar a
+saída conectada, a lista de modos e o modo atual), cada uma re-negociando com a
+GPU.
+
+**Solução.** Uma única captura `XRANDR=$(xrandr --query)`, e os três usos
+bebem dela.
+
 ## O que NÃO mudou (já estava correto)
 
 - **Agenda**: sync já roda em thread de fundo e publica via `GLib.idle_add`

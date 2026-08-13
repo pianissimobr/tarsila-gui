@@ -21,17 +21,23 @@ case "$MODO" in
     ''|*[!0-9x]*) exit 0 ;;   # so aceita algo como 1366x768
 esac
 
-SAIDA=$(xrandr --query 2>/dev/null | awk '/ connected/{print $1; exit}')
+# Uma unica leitura do xrandr: os tres usos abaixo (saida, lista de modos e
+# modo atual) passam a beber da mesma captura. Era 3x `xrandr --query` -- cada
+# um negocia de novo com a GPU, e no login isso pesa junto com o resto que sobe.
+XRANDR=$(xrandr --query 2>/dev/null)
+[ -n "$XRANDR" ] || exit 0
+
+SAIDA=$(printf '%s\n' "$XRANDR" | awk '/ connected/{print $1; exit}')
 [ -n "$SAIDA" ] || exit 0
 
 # O modo esta na lista desta saida?
-if ! xrandr --query 2>/dev/null | sed -n "/^$SAIDA connected/,/^[^ ]/p" \
+if ! printf '%s\n' "$XRANDR" | sed -n "/^$SAIDA connected/,/^[^ ]/p" \
      | grep -qE "^[[:space:]]+$MODO[[:space:]]"; then
     exit 0
 fi
 
 # Ja esta nele? Nao mexe -- trocar de modo pisca a tela sem necessidade.
-ATUAL=$(xrandr --query 2>/dev/null | awk -v s="$SAIDA" '$1==s{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+x[0-9]+\+/){split($i,a,"+"); print a[1]; exit}}')
+ATUAL=$(printf '%s\n' "$XRANDR" | awk -v s="$SAIDA" '$1==s{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+x[0-9]+\+/){split($i,a,"+"); print a[1]; exit}}')
 [ "$ATUAL" = "$MODO" ] && exit 0
 
 xrandr --output "$SAIDA" --mode "$MODO" 2>/dev/null
