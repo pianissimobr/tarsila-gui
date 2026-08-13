@@ -224,6 +224,29 @@ GPU.
 **Solução.** Uma única captura `XRANDR=$(xrandr --query)`, e os três usos
 bebem dela.
 
+## 12. Rede e Conectividade — Já event-driven (sem mudança)
+
+Categoria "Rede e Conectividade". Verificada por inteiro; o caminho **ativo**
+já está otimizado:
+
+- **Indicador da barra** — o polybar usa `net.sh` (event-driven via
+  `nmcli monitor`, `tail = true`; já coberto na seção 7). Zero polling em
+  repouso.
+- **`tarsila-wifi` (GTK)** — todas as chamadas `nmcli` (status do device, lista
+  de redes, conectividade, taxa do link) rodam em **thread de fundo** e voltam
+  via `GLib.idle_add`; o scan real (`rescan`) só dispara no botão "Procurar
+  redes". A janela nunca congela por causa de rede.
+- **`tarsila-net-set`** — one-shot (`nmcli connection modify` + `up`), já com a
+  regra sudoers corrigida (seção 9).
+- **`tarsila-vpn-importar`** — one-shot; deduz o tipo por extensão/conteúdo e
+  delega ao `nmcli connection import`.
+
+Única pendência: `tarsila-net.sh` (`usr/local/bin/`) é o genmon do **xfce4-panel**
+(ícone com barras de sinal + tooltip + clique), referenciado apenas pelas
+configurações do painel XFCE (`skel/.config/xfce4/…`) e **não** pelo polybar da
+sessão Openbox. Ficou como legado — mesmo destino do backend WebKit da Store
+quando a migração estiver completa.
+
 ## O que NÃO mudou (já estava correto)
 
 - **Agenda**: sync já roda em thread de fundo e publica via `GLib.idle_add`
