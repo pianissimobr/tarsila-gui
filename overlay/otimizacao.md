@@ -119,6 +119,17 @@ não bloquear e CPU enxuta.
 - `topbar.sh`: state file lido numa única passagem com `read`/`case` (builtins,
   zero forks).
 
+**Segunda rodada (mesma categoria).**
+- `topbar.sh`: o `read -t 2` re-emite o título a cada 2s para acompanhar troca
+  de aba sem troca de foco. A cada re-emit rodava `xdotool getwindowname` +
+  `xprop WM_CLASS` + `sed`. Como WM_CLASS só muda quando a janela muda, a classe
+  agora é cacheada por id: no re-emit periódico resta só o `getwindowname`
+  (necessário) — ~60 spawns/min a menos em Estado A.
+- `tarsila-ob-margins.sh`: passou a pular `openbox --reconfigure` (re-parse do
+  `rc.xml` + reaplicação de regras em todas as janelas) quando a margem `<top>`
+  já está correta — caso comum no login e em troca de tema sem mudança de altura
+  da barra.
+
 ## O que NÃO mudou (já estava correto)
 
 - **Agenda**: sync já roda em thread de fundo e publica via `GLib.idle_add`
@@ -127,7 +138,10 @@ não bloquear e CPU enxuta.
   `dpkg-query` batelado e as ações (`sudo -n tarsila-pkg`) rodam em thread.
 - **Sessão**: `picom-xrender.conf` já sem sombra/fading e com
   `unredir-if-possible`; `autostart` já sobe componentes em `&` (paralelo);
-  `xsettingsd`/`dunst`/`devilspie2` são residentes sem polling.
+  `xsettingsd`/`dunst`/`devilspie2` são residentes sem polling;
+  `tarsila-tela-estados` e `tarsila-ob-decor.sh` já são event-driven (inotify/
+  X); `tarsila-polybar-hitboxes.py`, `tarsila-dialogos`, `tarsila-limpar.sh` e
+  `tarsila-ob-power.sh` são one-shot.
 
 ## Pendências (futuro)
 

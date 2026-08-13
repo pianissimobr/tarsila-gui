@@ -6,6 +6,12 @@ RT="${XDG_RUNTIME_DIR:-/tmp}"
 STATE="$RT/tarsila-topbar-state.txt"
 CLOSE=$(printf "\xef\x80\x8d")
 RESTORE=$(printf "\xef\x81\xa6")
+# Cache da classe da janela por id: WM_CLASS so muda quando a janela muda,
+# mas o titulo pode mudar sem troca de foco (aba do navegador). No re-emit
+# periodico de 2s (o "read -t 2" la embaixo) reaproveitamos a classe e
+# deixamos de rodar xprop+sed a cada volta.
+LAST_ID=""
+LAST_WMCLASS=""
 
 emit(){
   local max id name wmclass t
@@ -34,7 +40,13 @@ emit(){
 
   t=$(xdotool getwindowname "$id" 2>/dev/null || true)
   name=$t
-  wmclass=$(xprop -id "$id" WM_CLASS 2>/dev/null | sed -n "s/.*\"\\([^\"]*\\)\", \"[^\"]*\".*/\\1/p")
+  if [ "$id" = "$LAST_ID" ]; then
+    wmclass=$LAST_WMCLASS
+  else
+    wmclass=$(xprop -id "$id" WM_CLASS 2>/dev/null | sed -n "s/.*\"\\([^\"]*\\)\", \"[^\"]*\".*/\\1/p")
+    LAST_ID=$id
+    LAST_WMCLASS=$wmclass
+  fi
   case "${wmclass,,}" in
     thunar)          name="Arquivos" ;;
     galculator)      name="Calculadora" ;;
