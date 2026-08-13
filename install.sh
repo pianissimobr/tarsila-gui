@@ -31,6 +31,19 @@ apt-get install -y \
   python3-gi gir1.2-gtk-3.0 python3-gi-cairo \
   network-manager wmctrl xdotool x11-xserver-utils dconf-cli \
   lxpolkit sudo curl chromium
+
+# tarsila-app-management (AppFinder, instalador/desinstalador de .deb)
+# vive em repositório separado. Se o apt ainda não o conhece, instala o
+# .deb local construído pelo repositório irmão.
+if ! apt-get install -y tarsila-app-management; then
+  LOCAL_DEB=$(ls "$REPO_DIR"/../tarsila-app-management/*_all.deb 2>/dev/null | head -1 || true)
+  if [ -n "$LOCAL_DEB" ]; then
+    apt-get install -y "$LOCAL_DEB" || \
+      echo "    AVISO: não foi possível instalar tarsila-app-management"
+  else
+    echo "    AVISO: tarsila-app-management não encontrado — AppFinder e desinstalador indisponíveis"
+  fi
+fi
 [ "$WITH_PLYMOUTH" = 1 ] && apt-get install -y plymouth plymouth-themes
 
 echo "==> [2/6] Copiando arquivos do sistema (overlay)…"

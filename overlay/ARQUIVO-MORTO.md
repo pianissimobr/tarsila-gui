@@ -75,3 +75,25 @@ normal. Vale a rede de segurança.
 
 Chamava `exec startxfce4`. Inútil — o LightDM já gerencia a sessão via
 `.xsession`, que força Openbox.
+
+---
+
+## 7. Extração para `tarsila-app-management` (ago/2026)
+
+Scripts movidos do core para o repositório separado `tarsila-app-management`
+(pacote nativo do Tarsila OS — instalador/desinstalador de .deb + AppFinder):
+
+| Arquivo (no overlay) | Destino |
+|---|---|
+| `usr/local/bin/tarsila-app-uninstall.sh` | `tarsila-app-management` |
+| `usr/local/bin/tarsila-appfinder-yad.sh` | `tarsila-app-management` |
+| `opt/tarsila-store/bin/tarsila-deb-gui.py` | `tarsila-app-management` |
+| `opt/tarsila-store/bin/tarsila-deb-instalar` | `tarsila-app-management` |
+| `usr/share/applications/tarsila-deb-installer.desktop` | `tarsila-app-management` |
+| `usr/share/applications/tarsila-appfinder-yad.desktop` | `tarsila-app-management` |
+| `usr/share/applications/tarsila-appfinder.desktop` | **Deletado** (duplicata legada) |
+
+Mudança de comportamento: os desinstaladores agora funcionam **sem a Store**.
+Se a Store estiver instalada (`/opt/tarsila-store/bin/tarsila-pkg` existe),
+delegam para ela (preserva a whitelist do catálogo); se não, usam
+`apt-get remove` direto. Ver `PLANO-MIGRACAO.md` na raiz do repo.
