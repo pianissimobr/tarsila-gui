@@ -379,12 +379,13 @@ Nada a mudar na categoria.
 
 ## Pendências (futuro)
 
-- **Store WebKit legado**: `GET /api/instalados` a cada 60s e `/api/tarefas` a
-  cada 2.5s (polling). A versão GTK já substituiu isso; o backend WebKit pode
-  ser desligado quando a migração estiver completa.
-- **IDLE (`tarsila-email-idle.py`)**: o `fetch_one_new()` ainda usa `sync_folder`
-  com `SEARCH` completo no primeiro toque (o caminho incremental só cobre o
-  sync principal).
+- **Migração Store WebKit → GTK concluída:** backend (`tarsila-backend.py`),
+  launcher WebKit e o polling (`GET /api/instalados` 60s + `/api/tarefas` 2.5s)
+  removidos do overlay. A Store GTK (`tarsila-store-gtk.py`) é o caminho ativo
+  com `/usr/bin/tarsila-store` → symlink para ela. Build autônomo em
+  `pacotes/tarsila-store/build-deb.sh` (v4.0.0, sem WebKit). O frontend WebKit
+  (`loja/index.html`, `loja/js/store.js`) foi removido do overlay. A troca
+  derrubou de 4 processos / 327,9 MB para 1 processo / 49,2 MB.
 
 ## Verificação
 
