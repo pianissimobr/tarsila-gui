@@ -308,6 +308,29 @@ abertura da página, que nesta sessão Openbox (sem xfconfd) ainda falha devagar
 Removidas a chamada morta e as funções `xfconf_get`/`xfconf_set`, que só ela
 usava.
 
+## 16. Utilitários e Acessórios — Já event-driven (sem mudança)
+
+Categoria "Utilitários e Acessórios". Verificada por inteiro; nada no caminho
+ativo roda em polling:
+
+- **`tarsila-topbar-dots.py`** — event-driven via Wnck (`active-window-changed`,
+  `state-changed`), sem polling; o `timeout` de 60s é só rede de segurança.
+- **`tarsila-dispositivos`** — lê `udevadm monitor` em leitura bloqueante (o
+  kernel acorda quando há evento); sem laço de varredura.
+- **`tarsila-barra-menu`** — one-shot: abre, tira uma foto do `/proc`/`statvfs`
+  uma vez e morre com a janela. A "medição" de CPU (2 leituras separadas por
+  0,25s) só roda no menu "sistema" quando aberto.
+- **`tarsila-chromium`**, **`tarsila-obs`**, **`tarsila-calculadora`**,
+  **`tarsila-vermais.sh`**, **`tarsila-greeter-power-gtk.py`** — one-shot.
+- **`tarsila-appfinder-yad.sh`** — one-shot; o cache de ícones é persistente por
+  usuário (só ícone novo é renderizado) e a medição da Dock (`import`+PIL) é
+  pontual, por abertura.
+
+Pendência: `tarsila-appfinder.sh` é o launcher **legado** (zenity, caminho
+`/root/.config/plank` fixo e `sudo apt remove` direto), já substituído pelo
+`tarsila-appfinder-yad.sh` — os `.desktop` e o menu apontam todos para o `-yad`.
+Mesmo destino dos demais legados quando a limpeza vier.
+
 ## O que NÃO mudou (já estava correto)
 
 - **Agenda**: sync já roda em thread de fundo e publica via `GLib.idle_add`
