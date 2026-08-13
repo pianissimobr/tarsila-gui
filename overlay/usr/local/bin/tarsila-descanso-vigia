@@ -9,7 +9,7 @@
 # de sair e entrar de novo. Ler um arquivo de dois digitos a cada 20 s nao
 # custa nada perto disso.
 while sleep 20; do
-    MIN="$(cat "$HOME/.config/tarsila/descanso-minutos" 2>/dev/null)"
+    read -r MIN < "$HOME/.config/tarsila/descanso-minutos" 2>/dev/null || true
     case "$MIN" in ''|*[!0-9]*) MIN=10 ;; esac
     [ "$MIN" -lt 1 ] && continue      # 0 = desligado, mas segue vigiando
     LIMITE=$(( MIN * 60 * 1000 ))

@@ -247,6 +247,29 @@ configurações do painel XFCE (`skel/.config/xfce4/…`) e **não** pelo polyba
 sessão Openbox. Ficou como legado — mesmo destino do backend WebKit da Store
 quando a migração estiver completa.
 
+## 13. Mídia — Modo Cinema e Descanso (só um fork a menos)
+
+Categoria "Mídia". Verificada por inteiro; quase tudo já é event-driven ou
+one-shot:
+
+- **`cinema_host.py`** — host de native messaging one-shot: lê uma mensagem do
+  stdin e responde; o `abrir_no_mpv` faz um `pgrep mpv` (dedupe de clique) e um
+  `Popen`. Sem loop.
+- **Extensão (`cinema-ext/*.js`)** — o service worker aplica as regras uma vez
+  no install/startup; os content scripts reagem a eventos (`MutationObserver`
+  com debounce no `cinema.js`, listeners de toque no `toque.js`). O único
+  `setInterval` (700ms) é o `youtube.js`, que re-desmuta o vídeo — deliberado
+  (o YouTube re-muta sozinho na troca de qualidade/faixa) e limitado à página
+  do YouTube.
+- **`tarsila-descanso`** — one-shot: DPMS off ou `exec mpv` (a escolha do vídeo
+  já é explícita, sem custo de decodificação quando ninguém olha).
+
+**Mudança.** `tarsila-descanso-vigia` (loop de 20s) lia o arquivo de minutos
+com `cat` (fork externo a cada volta). Virou `read` (builtin, zero forks) —
+mesmo critério da seção 8. O `xprintidle` a cada 20s é mantido: é a consulta
+MIT-SCREEN-SAVER do X, não há alternativa mais leve no trixie e o custo é
+desprezível.
+
 ## O que NÃO mudou (já estava correto)
 
 - **Agenda**: sync já roda em thread de fundo e publica via `GLib.idle_add`
