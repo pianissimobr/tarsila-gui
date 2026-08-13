@@ -12,8 +12,8 @@
       <action name="Exit"><prompt>yes</prompt></action>
     </item>
   <separator label="E-mail" />
-  <item label="Claws Mail">
-    <action name="Execute"><execute>claws-mail</execute></action>
+  <item label="Tarsila Email">
+    <action name="Execute"><execute>tarsila-email</execute></action>
   </item>
   </menu>
 </openbox_menu>

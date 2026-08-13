@@ -28,20 +28,12 @@ conferir() {          # $1=rotulo  $2=arquivo A  $3=arquivo B
     fi
 }
 
-# O build-deb do claws guarda os dois programas embutidos como heredoc.
-# Extraimos e comparamos com o que o overlay instala.
-BUILD=pacotes/claws-mail-suite/build-deb-openbox.sh
-TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
-
-awk 'f && /^__FIM_ASSISTENTE__$/ {exit} f; /^cat > "\$PAYLOAD\/configurar-claws" <</ {f=1}' \
-    "$BUILD" > "$TMP/configurar-claws"
-awk 'f && /^__FIM_GUI__$/ {exit} f; /^cat > "\$PAYLOAD\/configurar-claws-gui" <</ {f=1}' \
-    "$BUILD" > "$TMP/configurar-claws-gui"
-
-conferir "configurar-claws"      "$TMP/configurar-claws"      overlay/usr/bin/configurar-claws
-conferir "configurar-claws-gui"  "$TMP/configurar-claws-gui"  overlay/usr/bin/configurar-claws-gui
-conferir "agenda_tarsila.py"     pacotes/agenda-tarsila/opt/agenda-tarsila/agenda_tarsila.py \
-                                 overlay/opt/agenda-tarsila/agenda_tarsila.py
+# Nota (ago/2026): as conferências pacotes/ vs overlay/ foram removidas à
+# medida que os apps foram extraídos do overlay para repositórios próprios:
+#   - configurar-claws/configurar-claws-gui -> legado (claws-mail-suite)
+#   - agenda_tarsila.py -> agenda-tarsila (Fase 2)
+#   - tarsila-email -> tarsila-email (Fase 3)
+# Cada app agora tem seu .deb como fonte canônica, sem cópia no overlay.
 
 # ------------------------------------------------------------------
 # O repositório tem TRÊS árvores que instalam arquivos, e cada uma tem o

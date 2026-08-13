@@ -59,6 +59,18 @@ if ! apt-get install -y agenda-tarsila; then
   fi
 fi
 
+# tarsila-email vem de repositório separado (tarsila-email/). Se o apt ainda
+# não o conhece, instala o .deb local construído pelo repositório irmão.
+if ! apt-get install -y tarsila-email; then
+  LOCAL_DEB=$(ls "$REPO_DIR"/../tarsila-email/*_all.deb 2>/dev/null | head -1 || true)
+  if [ -n "$LOCAL_DEB" ]; then
+    apt-get install -y "$LOCAL_DEB" || \
+      echo "    AVISO: não foi possível instalar tarsila-email"
+  else
+    echo "    AVISO: tarsila-email não encontrado — E-mail indisponível"
+  fi
+fi
+
 echo "==> [2/6] Copiando arquivos do sistema (overlay)…"
 # sudoers vai por caminho separado (precisa de validação); o resto copia direto
 tar -cf - -C "$REPO_DIR/overlay" --exclude=./etc/sudoers.d . | tar -xpf - -C /

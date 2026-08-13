@@ -106,7 +106,7 @@ Servidor HTTP `ThreadingHTTPServer` na porta **8475** (`127.0.0.1`). CORS aberto
 | Módulo | Descrição |
 |---|---|
 | `api_client.py` | Cliente HTTP Python para a API local. Usado pela UI GTK nativa. Métodos: `get()`, `post()`, `ok()`, `fetch_bytes()`. |
-| `config.py` | **Configuração multi-conta.** Armazena em `~/.config/tarsila-email/config.json`. Suporta múltiplas contas com chaveamento. Senha ofuscada com XOR + base64 (`passkey0`). Migração automática de contas do Claws Mail (`migrate_from_claws()`). |
+| `config.py` | **Configuração multi-conta.** Armazena em `~/.config/tarsila-email/config.json`. Suporta múltiplas contas com chaveamento. Senha ofuscada com XOR + base64 (`passkey0`). |
 | `db.py` | **Cache SQLite local.** Tabelas: `folders` (pastas IMAP), `messages` (cache de mensagens), `sync_state` (último UID sincronizado). Schema com índices para busca e paginação. Teto de 500 mensagens com `prune_cache()`. |
 | `imap_sync.py` | **Sincronização IMAP.** Conexão `IMAP4_SSL` com Gmail. Descobre pastas por atributos `SPECIAL-USE` (RFC 6154) + fallback por nome (com decodificação UTF-7 modificado). Sync incremental (últimos N UIDs) com fetch de `FLAGS` + `BODY.PEEK[HEADER.FIELDS]`. Suporte a IDLE, movimentação entre pastas, rascunhos. |
 | `smtp_send.py` | **Envio SMTP.** `SMTP_SSL` com Gmail. Suporta anexos (base64). Após envio, sincroniza a pasta "sent". |
@@ -117,18 +117,14 @@ Servidor HTTP `ThreadingHTTPServer` na porta **8475** (`127.0.0.1`). CORS aberto
 | Script | Descrição |
 |---|---|
 | `tarsila-email-gtk.py` | **UI 100% GTK3 nativa.** Sem WebKit. Usa `Api` client para todas as operações. Gerencia backend (inicia se necessário) e IDLE daemon. Tema CSS em `gmail-gtk.css`. Funcionalidades: lista de mensagens com pastas, busca, composição com anexos, diálogo de contas, leitura com ações (responder, estrela, apagar). |
-| `tarsila-email-app.py` | **UI WebView (WebKit2).** Shell GTK3 que embute um `WebKit2.WebView` carregando `http://127.0.0.1:8475/`. Inicia backend e IDLE. Bloqueia navegação externa via `decide-policy`. |
-| `UI Web (index.html + app.js)` | **SPA vanilla JS.** Roda dentro do WebView ou em qualquer navegador. Consome a API REST local via `fetch()`. Funcionalidades completas: pastas, mensagens, composição, múltiplas contas, logout. |
-| `tarsila-email-setup.py` | **Assistente de configuração.** Wizard GTK3 em duas telas: (1) tela inicial com link para Google App Passwords e explicação, (2) formulário e-mail + senha de app. Testa conexão IMAP antes de salvar. Abre o app principal ao concluir. |
-| `configurar-claws` | **Motor shell** do assistente legado. Testa IMAP (`--testar-imap`), abre navegador na página de senhas de app (`--abrir`), grava conta no `accountrc` do Claws (`--gravar`). Se disponível, delega para `configurar-claws-gui`. |
-| `configurar-claws-gui` | **Assistente GTK legado.** Versão anterior do setup, com wizard de 3 telas e integração direta com Claws Mail. |
+| `UI Web (index.html + app.js)` | **SPA vanilla JS.** Consome a API REST local via `fetch()`. Funcionalidades completas: pastas, mensagens, composição, múltiplas contas, logout. |
+| `tarsila-email-setup.py` | **Assistente de configuração.** Wizard GTK3 em duas telas: (1) tela inicial com link para Google App Passwords e explicação, (2) formulário e-mail + senha de app. Testa conexão IMAP (imaplib) antes de salvar. Abre o app principal ao concluir. |
 
 ### Daemons
 
 | Script | Descrição |
 |---|---|
 | `tarsila-email-idle.py` | **Push de novos e-mails.** Loop infinito com `IMAP IDLE` na INBOX. Ao detectar mudança (via `select.select`), busca a mensagem mais recente e dispara `notify-send`. Reconecta a cada ~9 min (timeout do Gmail). Fallback: sleep de 5 min em caso de erro. |
-| `tarsila-email-fetch-recent.py` | **Download inicial.** Chamado uma vez após configurar conta. Baixa os últimos N e-mails (padrão 25) do Gmail para o Maildir local do Claws (`~/Mail/inbox/`). Lê a senha do `accountrc`/`passwordstorerc`. |
 
 ---
 

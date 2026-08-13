@@ -113,3 +113,34 @@ Ajustes: `.desktop` corrigido (`Exec=tarsila-agenda` → `agenda-tarsila`;
 nome do binário do .deb), `plank-dconf.ini` corrigido (`agenda-google` →
 `agenda-tarsila`, nome real do dockitem), `install.sh` adiciona o pacote
 com fallback para build local.
+
+---
+
+## 9. Extração para `tarsila-email` + limpeza do Claws (ago/2026)
+
+App extraído do core para o repositório separado `tarsila-email/`. O cliente
+é 100% standalone (GTK3, sem WebKit, sem Claws Mail).
+
+**Resíduos do Claws removidos do código do email:**
+
+| Arquivo/função | O que era |
+|---|---|
+| `bin/configurar-claws` | Motor shell legado (testava IMAP, abria navegador, gravava `accountrc`) |
+| `bin/configurar-claws-gui` | Assistente GTK legado (3 telas, integração com Claws) |
+| `lib/config.py:migrate_from_claws()` | Migração de credenciais do `~/.claws-mail/accountrc` |
+| `lib/config.py:SKIP_CLAWS_MIGRATE` | Marcador de "Sair" para não reimportar Claws |
+| `bin/tarsila-email-fetch-recent.py` | Download inicial para `~/Mail/inbox` (formato MH do Claws) |
+| `bin/tarsila-email-app.py` | Shell WebKit2 (a antiga "capa visual" sobre o Claws) |
+
+**Substituições no `tarsila-email-setup.py`:**
+- Teste IMAP agora é direto em Python (`imaplib`), sem o motor shell
+- Abertura da página de senha Google agora via `xdg-open`
+
+**Outras mudanças:**
+- `.desktop` ganhou `X-Package=tarsila-email` (desinstalação correta; antes
+  resolvia o pacote errado via `dpkg -S tarsila-abrindo`)
+- `menu.xml`: "Claws Mail" → "Tarsila Email"
+- `autostart`: marcador `claws-mail-suite` e comentários mortos removidos
+- `install.sh`: adiciona `tarsila-email` com fallback para .deb local
+- `verificar.sh`: conferências `configurar-claws`/`agenda` removidas (apps
+  extraídos têm o .deb como fonte canônica)

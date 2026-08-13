@@ -119,25 +119,21 @@ Wi-Fi, indicador da barra, IP e VPN.
 
 ## 7. Comunicação — Tarsila Email
 
-Cliente de e-mail com backend HTTP local e três front-ends.
+Cliente de e-mail GTK3 nativo (sem WebKit, sem Claws), com backend HTTP local.
 
 | Item | Tipo | Função |
 |---|---|---|
 | `tarsila-email-backend.py` | Py | Servidor HTTP local (`127.0.0.1:8475`) com as rotas `/api/*`. |
 | `lib/api_client.py` | Lib | Cliente HTTP Python para a API local. |
-| `lib/config.py` | Lib | Configuração multi-conta (JSON + senha ofuscada + migração do Claws). |
+| `lib/config.py` | Lib | Configuração multi-conta (JSON + senha ofuscada). |
 | `lib/db.py` | Lib | Cache SQLite de pastas/mensagens/sync (teto de 500). |
 | `lib/imap_sync.py` | Lib | Sync IMAP (SPECIAL-USE, UTF-7 modificado, incremental, flags, rascunhos). |
 | `lib/smtp_send.py` | Lib | Envio SMTP com anexos. |
 | `lib/avatar.py` | Lib | Resolve avatar (unavatar/Google Photos/Gravatar) com cache local. |
 | `tarsila-email-gtk.py` | GTK3 | UI nativa GTK3 (sem WebKit); gerencia backend e IDLE. |
-| `tarsila-email-app.py` | GTK3 | Shell com `WebKit2.WebView` carregando a UI web. |
 | `ui/index.html` + `ui/js/app.js` | JS | SPA vanilla que consome a API REST local. |
-| `tarsila-email-setup.py` | GTK3 | Assistente de configuração (wizard de 2 telas). |
-| `configurar-claws` | Shell | Motor legado de setup do Claws Mail. |
-| `configurar-claws-gui` | GTK3 | Assistente GTK legado. |
+| `tarsila-email-setup.py` | GTK3 | Assistente de configuração (wizard de 2 telas; testa IMAP via imaplib). |
 | `tarsila-email-idle.py` | Daemon | Push de novos e-mails via IMAP IDLE + `notify-send`. |
-| `tarsila-email-fetch-recent.py` | Py | Download inicial de e-mails para o Maildir do Claws. |
 
 ---
 
