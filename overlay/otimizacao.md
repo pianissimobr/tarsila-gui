@@ -92,12 +92,42 @@ A UI web (`app.js`) e a GTK passaram a consumir esses contratos.
 - `fields=` de resposta parcial no `sync_events`, restringindo o JSON aos
   campos usados pela interface.
 
+## 7. Sessão Gráfica — Indicadores event-driven e sem spawns pesados
+
+Categoria "Infraestrutura e Sessão Gráfica" (`openbox/deploy/`): os módulos da
+Polybar e o alternador de barra. Mesmos três critérios: redução de chamadas,
+não bloquear e CPU enxuta.
+
+**Problema.**
+- `net.sh` rodava `nmcli` a cada 5s (polling) — 12 spawns/min acordando a CPU
+  da TV Box sem necessidade, só para re-exibir o mesmo ícone.
+- `sound.sh` rodava a cada 3s com `awk` + `grep` (dois processos por ciclo).
+- `tarsila-polybar-mode.sh` media a largura do glifo "▼" com `pango-view` +
+  `identify` (ImageMagick) a **cada** alternância full/compact — dois processos
+  pesados por clique de maximizar/desmaximizar, para um valor constante.
+- `topbar.sh` lia o state file com 2× `sed` + 2× `head` (4 forks) por emissão.
+
+**Solução.**
+- `net.sh` virou **event-driven** via `nmcli monitor` (residente; reavalia só
+  quando o NetworkManager avisa mudança), com `tail = true` no módulo e
+  fallback para polling suave de 5s se o monitor não existir. 12 spawns/min → 0
+  em repouso.
+- `sound.sh` extrai volume + mute numa **única passagem `awk`** (antes 2
+  processos) e o intervalo caiu de 3s para 5s (≈40% menos spawns).
+- `tarsila-polybar-mode.sh`: largura do glifo medida **uma vez** e cacheada em
+  `~/.config/tarsila/bar-compact-glyph`; toggles posteriores só leem o cache.
+- `topbar.sh`: state file lido numa única passagem com `read`/`case` (builtins,
+  zero forks).
+
 ## O que NÃO mudou (já estava correto)
 
 - **Agenda**: sync já roda em thread de fundo e publica via `GLib.idle_add`
   (`_sync_worker`, `save_event`, `delete_event`, `push_local_to_google`).
 - **Store GTK**: não usa HTTP — `tarsila_store_dados.instalados()` faz um único
   `dpkg-query` batelado e as ações (`sudo -n tarsila-pkg`) rodam em thread.
+- **Sessão**: `picom-xrender.conf` já sem sombra/fading e com
+  `unredir-if-possible`; `autostart` já sobe componentes em `&` (paralelo);
+  `xsettingsd`/`dunst`/`devilspie2` são residentes sem polling.
 
 ## Pendências (futuro)
 
@@ -112,3 +142,4 @@ A UI web (`app.js`) e a GTK passaram a consumir esses contratos.
 
 - `python3 -m py_compile` em todos os `.py` alterados: sem erro.
 - `node --check` no `app.js`: sintaxe válida.
+- `bash -n` e `sh -n` nos scripts de sessão alterados: sintaxe válida.

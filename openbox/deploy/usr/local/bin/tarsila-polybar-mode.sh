@@ -23,6 +23,10 @@ GEN="${XDG_CONFIG_HOME:-$HOME/.config}/polybar/config.gen.ini"
 MODE_FILE="${XDG_RUNTIME_DIR:-/tmp}/tarsila-polybar-mode.txt"
 TOP="${XDG_RUNTIME_DIR:-/tmp}/tarsila-topbar-state.txt"
 LOCK="${XDG_RUNTIME_DIR:-/tmp}/tarsila-polybar-mode.lock"
+CFG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/tarsila"
+WW_CACHE="$CFG_DIR/bar-compact-glyph"
+WW_PNG="$CFG_DIR/.bar-compact-glyph.png"
+mkdir -p "$CFG_DIR" 2>/dev/null || true
 
 case "$MODE" in
   full|A) MODE=full ;;
@@ -88,19 +92,25 @@ sw=$(xdpyinfo 2>/dev/null | awk '/dimensions:/{print $2}' | cut -d x -f1)
 [ -n "$sw" ] || sw=1366
 
 compact_w() {
-  local tmp ww w
-  tmp=$(mktemp)
-  pango-view --font="DejaVu Sans 12" -q -t "▼" --output="$tmp.png" 2>/dev/null || true
-  if command -v identify >/dev/null 2>&1 && [ -f "$tmp.png" ]; then
-    ww=$(identify -format "%w" "$tmp.png" 2>/dev/null || echo 14)
-  else
-    ww=14
+  local ww w
+  # A largura do glifo "▼" e uma constante (so depende da fonte, que nao
+  # muda entre toggles). Medir com pango-view + identify (ImageMagick) a cada
+  # alternancia full/compact era desperdicio: dois processos pesados por
+  # clique de maximizar/desmaximizar. Mede-se UMA vez e guarda em cache.
+  ww=$(cat "$WW_CACHE" 2>/dev/null)
+  if [ -z "$ww" ]; then
+    if command -v pango-view >/dev/null 2>&1 && command -v identify >/dev/null 2>&1; then
+      pango-view --font="DejaVu Sans 12" -q -t "▼" --output="$WW_PNG" 2>/dev/null \
+        && ww=$(identify -format "%w" "$WW_PNG" 2>/dev/null)
+      rm -f "$WW_PNG" 2>/dev/null || true
+    fi
+    if [ -n "$ww" ]; then
+      printf '%s' "$ww" > "$WW_CACHE" 2>/dev/null || true
+    else
+      ww=14
+    fi
   fi
-  rm -f "$tmp" "$tmp.png" 2>/dev/null || true
   # date + ▼ + limpar + sound + netw + power + pads
-  # Os 70px da bandeja sairam daqui em 2026-08-02: ela nao existe mais na
-  # barra (ver comentario no config.ini). Deixar a conta antiga abriria um
-  # buraco vazio do lado direito no modo B.
   w=$((70 + ww + 14 + 36 + 42 + 36 + 36 + 28))
   [ "$w" -lt 240 ] && w=240
   [ "$w" -gt "$sw" ] && w=$sw

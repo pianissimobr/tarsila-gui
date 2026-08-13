@@ -10,9 +10,14 @@ RESTORE=$(printf "\xef\x81\xa6")
 emit(){
   local max id name wmclass t
   max=0; id=""
+  # Le MAX e ID numa unica passagem (builtin, sem sed+head por ciclo).
   if [ -f "$STATE" ]; then
-    max=$(sed -n "s/^MAX=//p" "$STATE" | head -1)
-    id=$(sed -n "s/^ID=//p" "$STATE" | head -1)
+    while IFS='=' read -r k v; do
+      case "$k" in
+        MAX) max="$v" ;;
+        ID)  id="$v" ;;
+      esac
+    done < "$STATE"
   fi
   # Fonte de verdade e o MAX do state file. O antigo MODE_FILE
   # (tarsila-polybar-mode.txt) foi ABANDONADO em 06/08 porque podia mentir,
