@@ -24,16 +24,20 @@ programas" a um usuário leigo sem dar root a ele.
 
 | Pasta | O que é |
 |---|---|
-| `src/` | o aplicativo GTK — janela, catálogo em memória, desenho dos cartões |
-| `backend/` | o que precisa de privilégio: `tarsila-pkg`, criação de atalhos, instalador de `.deb` avulso |
-| `loja/` | catálogo (`catalog/*.js`), capas, ícones e a interface web antiga |
-| `legado/` | a versão WebKit (v3) e o backend HTTP que ela usava — mantidos para referência |
-| `desktop/` | atalhos `.desktop` e o ícone |
-| `docs/` | notas da conversão para GTK |
+| `src/` | o aplicativo GTK — janela, catálogo em memória, desenho dos cartões (e as libs `tarsila_store_*.py`) |
+| `backend/` | o que precisa de privilégio: `tarsila-pkg` e o handler do protocolo `tarsila://` |
+| `loja/` | catálogo (`catalog/*.js`), capas, ícones e o CSS da interface |
+| `desktop/` | atalhos `.desktop` e o ícone do lançador |
+| `etc/sudoers.d/` | regra NOPASSWD do `tarsila-pkg` (a loja instala sem pedir senha) |
 
 O catálogo continua sendo lido de `loja/catalog/` **no formato JavaScript da
 versão web** — de propósito. Converter para JSON criaria uma segunda cópia dos
 dados, e catálogo duplicado é catálogo divergente.
+
+> A criação de atalhos (`tarsila-atalho-criar`) e o instalador de `.deb`
+> avulso (`tarsila-deb-instalar`/`tarsila-deb-gui.py`) não moram mais aqui:
+> foram para o `tarsila-app-management`, do qual a Store depende. O
+> `tarsila-pkg` usa o `/usr/local/bin/tarsila-atalho-criar` dele.
 
 ### Dois atalhos, de propósito
 
