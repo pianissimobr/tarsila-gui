@@ -11,3 +11,5 @@ pacotes/**/credentials.json
 *.deb
 release/
 .claude/
+overlay/*.md
+PLANO-MIGRACAO.md
