@@ -347,6 +347,23 @@ Categoria "Cloud". Os quatro scripts (`nc-mount.py`, `nc-edit-online.py`,
 Todas as chamadas de rede têm timeout explícito e nenhum polling; nada a mudar
 na categoria.
 
+## 18. Arquivos de Configuração e Assets — Estáticos, já corretos (sem mudança)
+
+Categoria "Arquivos de Configuração e Assets". São ativos estáticos (temas GTK,
+ícones, temas da Dock, tema de boot do Plymouth, listas `aquecer.txt`/
+`native-apps.txt`, manifestos da extensão) — não executam nada por conta própria
+e não têm custo de CPU/rede em repouso. Os dois únicos que afetam runtime já
+estavam otimizados:
+
+- **`picom-xrender.conf`** — backend `xrender` (sem GLX), `shadow=false`,
+  `fading=false`, `unredir-if-possible=true` e `corner-radius=0` (a sombra
+  custava 4% de CPU contínuos; o vídeo em tela cheia ganhou 26→33 fps).
+- **`descanso/relogio.lua`** — redesenha o OSD só quando o texto muda (uma vez
+  por minuto); redesenhar a cada segundo levava o modo de espera de 50% para
+  91% de CPU.
+
+Nada a mudar na categoria.
+
 ## O que NÃO mudou (já estava correto)
 
 - **Agenda**: sync já roda em thread de fundo e publica via `GLib.idle_add`
