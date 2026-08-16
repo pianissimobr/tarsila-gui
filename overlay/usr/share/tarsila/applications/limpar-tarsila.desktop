@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Limpar a tela
+Comment=Fechar todos os aplicativos abertos
+Icon=edit-clear-all
+Exec=/usr/local/bin/tarsila-limpar.sh
+Terminal=false
+StartupNotify=false
+NoDisplay=true
+Categories=System;
+X-Tarsila-Indicador=true

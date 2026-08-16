@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Menus suspensos da barra de cima: som e rede.
+"""Menus suspensos dos indicadores da Dock: som, rede, calendario e sistema.
 
 Antes, clicar no alto-falante abria o Controle de Volume inteiro, e clicar na
 rede abria o editor de conexoes -- duas janelas grandes para uma pergunta
@@ -434,27 +434,55 @@ class Popup(Gtk.Window):
         self._rodape(caixa, "Ver conexões", ["nm-connection-editor"])
 
 
+def topo_da_dock(altura_janela):
+    """Y onde o menu deve comecar para ficar encostado por CIMA da Dock.
+
+    O calculo por pixel mora no tarsila-pos-dock e e o mesmo que a Lixeira e
+    a tela "Aplicativos Instalados" usam: o Plank ocupa a largura toda da
+    tela mas so pinta o pedaco do meio, entao nao da para usar a geometria
+    da janela dele -- tem de olhar ate onde ela esta pintada.
+
+    Nao chamamos o pos-dock aqui porque ele devolve X e Y de um canto, e o X
+    dele encosta o menu no fim da Dock. Estes menus saem de um icone
+    especifico e seguem o ponteiro na horizontal; so o Y interessa.
+    """
+    ok, saida = roda("xdotool", "search", "--class", "plank")
+    if ok:
+        for w in saida.split():
+            _, geo = roda("xdotool", "getwindowgeometry", "--shell", w)
+            d = dict(l.split("=", 1) for l in geo.splitlines() if "=" in l)
+            # As janelas auxiliares do Plank sao estreitas; a de verdade
+            # ocupa a tela inteira (mesmo criterio do tarsila-pos-dock).
+            if int(d.get("WIDTH", 0)) > 1000:
+                topo = int(d.get("Y", 0))
+                if topo > 0:
+                    return topo - altura_janela - 2
+    return None
+
+
 def main():
     modo = sys.argv[1] if len(sys.argv) > 1 else "som"
     janela = Popup(modo)
     janela.show_all()
 
-    # Encostado no canto de onde saiu o clique, logo abaixo da barra.
+    # Sai de CIMA do icone que foi clicado na Dock, como um menu que brota
+    # dele. Ate 2026-08-15 estes menus desciam da barra de cima; ela nao
+    # existe mais e o clique agora vem de baixo.
     tela = janela.get_screen()
     largura_tela = tela.get_width()
-    _, altura = janela.get_size()
-    largura, _ = janela.get_size()
+    altura_tela = tela.get_height()
+    largura, altura = janela.get_size()
     ponteiro = tela.get_display().get_default_seat().get_pointer()
     _, x, _ = ponteiro.get_position()[:3]
-    barra = 34
-    ok, saida = roda("xdotool", "search", "--class", "polybar")
-    if ok and saida.split():
-        _, geo = roda("xdotool", "getwindowgeometry", "--shell",
-                      saida.split()[0])
-        d = dict(l.split("=", 1) for l in geo.splitlines() if "=" in l)
-        barra = int(d.get("Y", 0)) + int(d.get("HEIGHT", 34))
+
+    y = topo_da_dock(altura)
+    if y is None or y < 0:
+        # Dock escondida, ainda subindo, ou medida sem sentido: encosta no
+        # rodape da tela em vez de deixar o menu no canto superior esquerdo.
+        y = max(4, altura_tela - altura - 4)
+
     x = max(4, min(x - largura // 2, largura_tela - largura - 4))
-    janela.move(x, barra + 2)
+    janela.move(x, y)
     janela.present()
     janela.grab_focus()
     Gtk.main()

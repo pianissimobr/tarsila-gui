@@ -1,4 +1,3 @@
-Tarsila OS 1.0 (tester)
 <?xml version="1.0" encoding="UTF-8"?>
 <openbox_config xmlns="http://openbox.org/3.4/rc">
   <resistance>
@@ -58,9 +57,9 @@ Tarsila OS 1.0 (tester)
     <drawContents>yes</drawContents>
     <popupShow>Never</popupShow>
   </resize>
-  <margins>
-    <top>24</top>
-  </margins>
+  <!-- SEM <margins>. A margem do topo reservava a faixa da barra de cima,
+       que nao existe mais: a janela maximizada vai ate o topo da tela e leva
+       a propria barra de titulo junto. -->
   <keyboard>
     <keybind key="A-Tab">
       <action name="NextWindow"><finalactions><action name="Focus"/><action name="Raise"/></finalactions></action>
@@ -71,10 +70,9 @@ Tarsila OS 1.0 (tester)
     <keybind key="A-F4">
       <action name="Close"/>
     </keybind>
-    <!-- usados pelo tarsila-ob-decor.sh p/ tirar/devolver a barra de titulo
-         ao maximizar/restaurar (nao sao atalhos p/ o usuario) -->
-    <keybind key="W-u"><action name="Undecorate"/></keybind>
-    <keybind key="W-i"><action name="Decorate"/></keybind>
+    <!-- W-u/W-i (Undecorate/Decorate) sairam junto com a barra de cima. Eles
+         existiam porque a janela maximizada perdia a propria barra de titulo,
+         que passava a ser desenhada pela polybar. Agora ela a mantem. -->
 
     <!-- Foto da tela. O scrot ja vem instalado. A notificacao existe porque
          sem ela o usuario aperta a tecla e nao tem nenhum sinal de que algo
@@ -115,14 +113,11 @@ Tarsila OS 1.0 (tester)
         <action name="Raise"/>
         <action name="Move"/>
       </mousebind>
-      <mousebind button="Left" action="Release">
-        <action name="Execute"><command>/usr/local/bin/tarsila-clamp-on-release.sh</command></action>
-      </mousebind>
-      <mousebind button="Left" action="DoubleClick"><action name="Execute"><command>/usr/local/bin/tarsila-goto3.sh</command></action></mousebind>
+      <mousebind button="Left" action="DoubleClick"><action name="ToggleMaximizeFull"/></mousebind>
       <mousebind button="Right" action="Press"><action name="ShowMenu"><menu>client-menu</menu></action></mousebind>
     </context>
     <context name="Maximize">
-      <mousebind button="Left" action="Click"><action name="Execute"><command>/usr/local/bin/tarsila-goto3.sh</command></action></mousebind>
+      <mousebind button="Left" action="Click"><action name="ToggleMaximizeFull"/></mousebind>
       <mousebind button="Middle" action="Click"><action name="ToggleMaximizeVert"/></mousebind>
       <mousebind button="Right" action="Click"><action name="ToggleMaximizeHorz"/></mousebind>
     </context>
@@ -152,9 +147,6 @@ Tarsila OS 1.0 (tester)
         <action name="Raise"/>
         <action name="Move"/>
       </mousebind>
-      <mousebind button="A-Left" action="Release">
-        <action name="Execute"><command>/usr/local/bin/tarsila-clamp-on-release.sh</command></action>
-      </mousebind>
     </context>
     <!-- sem Press no Frame — isso quebrava o segura-e-arrasta na decoração -->
     <context name="Frame">
@@ -162,9 +154,6 @@ Tarsila OS 1.0 (tester)
         <action name="Focus"/>
         <action name="Raise"/>
         <action name="Move"/>
-      </mousebind>
-      <mousebind button="A-Left" action="Release">
-        <action name="Execute"><command>/usr/local/bin/tarsila-clamp-on-release.sh</command></action>
       </mousebind>
       <mousebind button="A-Right" action="Drag"><action name="Resize"/></mousebind>
     </context>
@@ -199,14 +188,6 @@ Tarsila OS 1.0 (tester)
     <context name="Desktop">
       <!-- Clique direito na área de trabalho desabilitado (Tarsila) -->
     </context>
-    <context name="MoveResize">
-      <mousebind button="Left" action="Release">
-        <action name="Execute"><command>/usr/local/bin/tarsila-clamp-on-release.sh</command></action>
-      </mousebind>
-      <mousebind button="A-Left" action="Release">
-        <action name="Execute"><command>/usr/local/bin/tarsila-clamp-on-release.sh</command></action>
-      </mousebind>
-    </context>
   </mouse>
   <menu>
     <file>menu.xml</file>
@@ -218,10 +199,6 @@ Tarsila OS 1.0 (tester)
       <decor>no</decor>
       <focus>no</focus>
       <layer>dock</layer>
-    </application>
-    <application class="Polybar">
-      <decor>no</decor>
-      <focus>no</focus>
     </application>
     <!-- Redes sociais (Facebook/Instagram/X) abrem em janela tamanho de
          celular; centralizamos p/ não nascerem desproporcionais. O WhatsApp

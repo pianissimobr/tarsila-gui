@@ -38,12 +38,12 @@ fi
 
 if [ -d /usr/share/tarsila/openbox-home ]; then
   mkdir -p "$HOME_DIR/.config"
-  for d in openbox polybar xsettingsd dunst mpv; do
+  for d in openbox xsettingsd dunst mpv; do
     [ -d "/usr/share/tarsila/openbox-home/$d" ] || continue
     cp -a "/usr/share/tarsila/openbox-home/$d" "$HOME_DIR/.config/$d"
   done
   [ -f /usr/share/tarsila/openbox-home/dot-xsession ] && cp -f /usr/share/tarsila/openbox-home/dot-xsession "$HOME_DIR/.xsession"
-  chmod +x "$HOME_DIR/.config/openbox/autostart" "$HOME_DIR/.config/polybar/"*.sh 2>/dev/null || true
+  chmod +x "$HOME_DIR/.config/openbox/autostart" 2>/dev/null || true
   chmod +x "$HOME_DIR/.xsession" 2>/dev/null || true
 fi
 

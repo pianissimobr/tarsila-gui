@@ -1,5 +1,5 @@
 #!/bin/bash
-# Menu de energia do top bar (clique no ícone de energia do polybar):
+# Menu de energia (clique no ícone de energia da Dock):
 # Desligar / Reiniciar / Sair. Usa yad (já instalado).
 yad --title="Energia" --text="O que você deseja fazer?" \
     --center --width=340 --borders=14 --buttons-layout=center \

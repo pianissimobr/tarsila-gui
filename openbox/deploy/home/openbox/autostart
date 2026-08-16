@@ -2,8 +2,9 @@
 # Autostart da sessão Tarsila-Openbox. Sobe os mesmos componentes da
 # sessão XFCE que são independentes do ambiente (Plank, devilspie2,
 # tarsila-monitor) + os substitutos leves do XFCE (xsettingsd no lugar do
-# xfsettingsd, dunst no lugar do xfce4-notifyd, polybar no lugar do
-# xfce4-panel, feh/wallpaper-apply no lugar do xfdesktop).
+# xfsettingsd, dunst no lugar do xfce4-notifyd, feh/wallpaper-apply no lugar
+# do xfdesktop). NAO ha substituto do xfce4-panel: a barra de cima foi
+# removida e o que estava nela virou icone da Dock.
 
 # marcador: identifica a sessao Openbox p/ os scripts compartilhados do XFCE
 # (guard robusto contra chamadas a xfce4-panel; nao depende de env)
@@ -19,8 +20,8 @@ dunst &
 # lxpolkit era iniciado aqui E de novo no laco de agentes polkit abaixo.
 # Ficou so o laco, que e o portatil (tenta gnome/lxde/mate/kde na ordem).
 
-# papel de parede + adaptação à resolução real da TV (grava geometria da
-# barra em ~/.config/tarsila/ e sobe o polybar no fim)
+# papel de parede + adaptação à resolução real da TV (o tamanho do ícone da
+# Dock sai daqui; a geometria da barra de cima deixou de existir)
 # Resolucao preferida do usuario, escolhida na tela de Ajustes.
 # TEM de vir ANTES do wallpaper-apply: e ele quem calcula a geometria da barra
 # a partir da altura da tela. Se rodasse depois, a barra sairia dimensionada
@@ -35,8 +36,8 @@ dunst &
 ( /usr/local/bin/tarsila-dock-apply.sh 2>/dev/null; exec plank ) &
 
 # Reage ao estado da tela (com/sem janela maximizada): botao de mostrar e
-# esconder a Dock, fundo da barra de cima e espaco reservado no alto.
-# Sobe depois do plank porque precisa medir onde a Dock ficou.
+# esconder a Dock e o vetor de abertura. O fundo da barra de cima saiu junto
+# com a barra. Sobe depois do plank porque precisa medir onde a Dock ficou.
 (sleep 4; /usr/local/bin/tarsila-tela-estados) &
 
 # Aquece o cache de disco do navegador enquanto a area de trabalho sobe. Sem
@@ -59,15 +60,10 @@ devilspie2 &
 # daemon residente: contagem/sons/renice + alimenta o estado do top bar
 /usr/local/bin/tarsila-monitor.sh &
 
-# Decoracao ao maximizar. O goto3.sh/goto2.sh (botao maximizar e duplo clique)
-# ja tiram/devolvem a barra de titulo sozinhos. MAS quem maximiza por OUTRO
-# caminho escapava: o devilspie2 maximiza o Chromium e chama undecorate(), que
-# usa _MOTIF_WM_HINTS -- e o Openbox NAO honra isso com a janela ja mapeada.
-# Resultado: duas barras de titulo, a da janela e a do sistema.
-# Este vigia cobre esses casos: le o state file e dispara a acao Undecorate do
-# proprio Openbox (a unica que funciona ao vivo). E event-driven por inotify,
-# nao faz polling.
-/usr/local/bin/tarsila-ob-decor.sh &
+# FONTE DE VERDADE DO ESTADO DA TELA (substitui o par polybar-mode.sh +
+# title.sh). Responde "ha janela maximizada?" por evento do X e reimpoe a
+# politica da Dock a cada troca. Custa zero parado.
+/usr/local/bin/tarsila-estado.sh &
 
 # cursor de "carregando" até a sessão montar
 /usr/local/bin/tarsila-boot-cursor.sh &

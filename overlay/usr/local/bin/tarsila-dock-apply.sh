@@ -13,24 +13,55 @@ set -euo pipefail
 LAUNCHERS_DIR="$HOME/.config/plank/dock1/launchers"
 [ -d "$LAUNCHERS_DIR" ] || exit 0
 
-# "Ver mais aplicativos" (o item que abre o AppFinder) precisa ficar sempre
-# na extremidade direita do dock, com qualquer app fixado pelo usuario
-# aparecendo a esquerda dele. Identificamos o item pelo Launcher= (conteudo),
-# nao pelo nome do arquivo, para nao depender de numeracao/renomeacao.
-VERMAIS_DESKTOP="/usr/share/tarsila/applications/vermais-tarsila.desktop"
+# A ORDEM DA DOCK, EM TRES BLOCOS
+#
+#   [ aplicativos ]  [ Ver mais ]  [ indicadores ]
+#
+# Os indicadores (volume, rede, calendario, sistema, limpar, energia) sao o
+# que morava no canto superior direito da barra de cima. Eles ficam na
+# extremidade direita porque e onde ja estavam -- o usuario procura status no
+# mesmo canto de antes, so que embaixo.
+#
+# "Ver mais aplicativos" fecha o bloco de aplicativos. Ate aqui ele era o
+# ultimo item de todos; deixou de ser quando os indicadores chegaram, porque
+# ele pertence ao grupo dos aplicativos, nao ao de status.
+#
+# Os dois blocos fixos sao identificados pelo Launcher= (conteudo), nao pelo
+# nome do arquivo, para nao depender de numeracao nem de renomeacao.
+APPS_DIR="/usr/share/tarsila/applications"
+VERMAIS_DESKTOP="$APPS_DIR/vermais-tarsila.desktop"
+INDICADORES="volume rede calendario sistema limpar energia"
+
+item_de() {   # <nome-base do .desktop> -> nome do .dockitem que aponta pra ele
+  local alvo="$1" f
+  for f in "$LAUNCHERS_DIR"/*.dockitem; do
+    [ -e "$f" ] || continue
+    grep -q "^Launcher=file://$APPS_DIR/$alvo\.desktop\$" "$f" 2>/dev/null \
+      && { basename "$f"; return 0; }
+  done
+  return 1
+}
+
+# Tudo que nao e Ver mais nem indicador entra no primeiro bloco, na ordem
+# alfabetica dos arquivos (que e a ordem numerica do prefixo 01-, 02-...).
+fixos=" "
+for ind in $INDICADORES; do
+  b=$(item_de "$ind-tarsila" || true); [ -n "$b" ] && fixos+="$b "
+done
+b=$(item_de "vermais-tarsila" || true); vermais_item="${b:-}"
+[ -n "$vermais_item" ] && fixos+="$vermais_item "
 
 items=""
-vermais_item=""
 for f in "$LAUNCHERS_DIR"/*.dockitem; do
   [ -e "$f" ] || continue
   base="$(basename "$f")"
-  if grep -q "^Launcher=file://$VERMAIS_DESKTOP\$" "$f" 2>/dev/null; then
-    vermais_item="$base"
-    continue
-  fi
+  case "$fixos" in *" $base "*) continue ;; esac
   items+="'$base', "
 done
 [ -n "$vermais_item" ] && items+="'$vermais_item', "
+for ind in $INDICADORES; do
+  b=$(item_de "$ind-tarsila" || true); [ -n "$b" ] && items+="'$b', "
+done
 [ -n "$items" ] || exit 0
 items="[${items%, }]"
 

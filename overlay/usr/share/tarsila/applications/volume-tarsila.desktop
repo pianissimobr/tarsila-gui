@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Volume
+Comment=Ajustar o som
+Icon=audio-volume-high
+Exec=/usr/local/bin/tarsila-barra-menu som
+Terminal=false
+StartupNotify=false
+NoDisplay=true
+Categories=System;
+X-Tarsila-Indicador=true

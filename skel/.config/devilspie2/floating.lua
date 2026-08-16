@@ -12,29 +12,12 @@ if SYSTEM_CLASSES[get_window_class()] then
   return
 end
 
-local function app_maximizado()
-  local rt = os.getenv("XDG_RUNTIME_DIR") or "/tmp"
-  local f = io.open(rt .. "/tarsila-topbar-state.txt")
-  if not f then return false end
-  local conteudo = f:read("*a")
-  f:close()
-  return conteudo:match("MAX=1") ~= nil
-end
-
-local function ja_esta_em_estado_b()
-  local rt = os.getenv("XDG_RUNTIME_DIR") or "/tmp"
-  local f = io.open(rt .. "/tarsila-polybar-mode.txt")
-  if not f then return false end
-  local modo = f:read("*a"):gsub("%s+", "")
-  f:close()
-  return modo == "compact"
-end
-
-if not app_maximizado() then
-  if not ja_esta_em_estado_b() then
-    os.execute("/usr/local/bin/tarsila-goto2.sh")
-  end
-end
+-- Nao ha mais "estados de tela" a consultar. Ate aqui este arquivo lia
+-- tarsila-topbar-state.txt e tarsila-polybar-mode.txt para decidir se
+-- chamava o tarsila-goto2.sh. O segundo arquivo nao existia no runtime desde
+-- 06/08, entao a condicao era sempre falsa e TODA janela nova disparava um
+-- goto2.sh -- que por sua vez rodava um wmctrl -lx, um laco de wmctrl -ir por
+-- janela e um xdotool. Custo puro, em cima do caminho mais quente do sistema.
 
 local wclass = get_window_class() or ""
 if wclass == "Yad"

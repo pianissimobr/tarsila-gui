@@ -25,5 +25,7 @@ PLK=$(icone_dock)
 atual=$(dconf read /net/launchpad/plank/docks/dock1/icon-size 2>/dev/null)
 [ "$atual" = "$PLK" ] || dconf write /net/launchpad/plank/docks/dock1/icon-size "$PLK" 2>/dev/null
 
-# Sobe a barra de cima (le tema + resolucao, exporta TB_* e chama o polybar).
-/usr/local/bin/tarsila-ob-bar.sh
+# A barra de cima foi removida em 2026-08-15 -- aqui terminava com uma
+# chamada ao tarsila-ob-bar.sh, que lia tema e resolucao, gerava o
+# config.gen.ini e subia o polybar. O que estava na barra virou icone da
+# Dock, e o icone da Dock ja foi dimensionado logo acima.

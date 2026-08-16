@@ -6,7 +6,7 @@
 export DISPLAY="${DISPLAY:-:0}"
 # Shell/sistema fora da lista: a varinha nao pode matar o botao da Dock
 # nem o fundo da topbar (mesmo processo: tarsila-tela-estados).
-apps(){ wmctrl -lx 2>/dev/null | grep -viE 'plank|polybar|xfce4-panel|xfdesktop|tarsila-tela-estados' | awk '{print $1}'; }
+apps(){ wmctrl -lx 2>/dev/null | grep -viE 'plank|xfdesktop|tarsila-tela-estados' | awk '{print $1}'; }
 
 wins=$(apps)
 [ -z "$wins" ] && exit 0   # mesa ja limpa, nada a fazer

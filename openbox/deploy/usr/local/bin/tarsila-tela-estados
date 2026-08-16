@@ -1,33 +1,39 @@
 #!/usr/bin/env python3
 """Reage ao estado da tela: com ou sem janela maximizada.
 
-Um processo só, porque as três coisas abaixo dependem da mesma pergunta —
-"há alguma janela maximizada?" — e ficar com três vigias custaria caro nesta
+Um processo só, porque as duas coisas abaixo dependem da mesma pergunta —
+"há alguma janela maximizada?" — e ficar com dois vigias custaria caro nesta
 máquina.
 
-1. BOTÃO DA DOCK. Encosta no meio da borda de cima da Dock — é a própria Dock
-   para efeitos de UI: botão e Plank sobem/somem juntos, nunca um sem o outro.
-   Clicou, a Dock some e o botão desce para o rodapé; clicou de novo, os dois
-   voltam. A escolha manual é esquecida a cada troca de estado: maximizou,
-   some (Dock+botão); desmaximizou, aparece (Dock+botão).
+1. BOTÃO DA DOCK. Encosta no meio da borda de cima da Dock. Clicou, a Dock
+   recolhe e o botão desce para o rodapé; clicou de novo, os dois voltam.
+   A escolha manual é esquecida a cada troca de estado: maximizou, recolhe;
+   desmaximizou, aparece. O botão funciona SEMPRE, inclusive por cima de uma
+   janela maximizada — é o único jeito de chamar a Dock de volta sem
+   desmaximizar.
 
-2. FUNDO DA BARRA DE CIMA. Sem nada maximizado, a barra do sistema fica
-   transparente e os ícones flutuam sobre o papel de parede — o retângulo
-   claro some. Com algo maximizado, esta janela pinta o fundo sólido atrás
-   dela e tudo volta a ser como era. Fazemos assim porque o polybar só lê a
-   cor de fundo ao iniciar: trocar a cor exigiria reiniciar a barra a cada
-   maximização, e ela piscaria toda vez.
+2. VETOR DE ABERTURA. O desenho animado que ocupa a vaga enquanto o
+   aplicativo abre. Mora aqui, e não num processo próprio, porque subir uma
+   janela GTK+Python nova leva ~1115 ms nesta box — mais do que o vetor
+   inteiro dura.
 
 Regra que vale sobre tudo: havendo janela maximizada, é o estado maximizado
 que manda, mesmo com outras janelas flutuando na tela.
 
-Sobre o topo da tela: a liberdade de arrastar as janelas por cima da faixa
-da barra NÃO é feita aqui. Ela vem de <screen_edge_strength>0 no rc.xml, uma
-vez só. A margem do Openbox continua fixa na altura da barra, e isso é de
-propósito: ela decide onde o aplicativo maximizado termina. Zerá-la na hora
-da maximização fazia a janela crescer até o topo e ser reajustada logo em
-seguida -- ela era desenhada duas vezes, e dava um embaralhado visível na
-barra.
+O QUE SAIU DAQUI EM 2026-08-15
+
+Havia uma terceira responsabilidade, o FUNDO DA BARRA DE CIMA: um retângulo
+sólido que esta janela pintava atrás do polybar quando algo era maximizado,
+porque o polybar só lê a cor de fundo ao iniciar e trocá-la exigiria
+reiniciar a barra a cada maximização. Não há mais barra de cima — o que
+estava nela virou ícone na Dock —, então o retângulo, as funções
+altura_da_barra()/cor_do_fundo() e os arquivos ~/.config/tarsila/bar-height
+e bar-bg foram todos embora.
+
+Quem responde "há janela maximizada?" passou a ser o tarsila-estado.sh, que
+escreve o mesmo arquivo de sempre (tarsila-topbar-state.txt) a partir de um
+xprop -spy. Antes era o tarsila-polybar-mode.sh, que respondia isso como
+efeito colateral de matar e relançar o processo da barra.
 """
 
 import ctypes
@@ -133,9 +139,9 @@ def _geometria_x(xid):
 
 # ---- escutar a janela da Dock -------------------------------------------
 #
-# O botao da Dock e um BOTAO: clica, mostra e esconde a Dock, e fica apagado
-# e inerte quando ha janela maximizada. Nada disso muda aqui. O que muda e de
-# onde ele tira a POSICAO.
+# O botao da Dock e um BOTAO: clica, mostra e esconde a Dock -- em qualquer
+# estado, inclusive por cima de uma janela maximizada. Nada disso muda aqui.
+# O que muda e de onde ele tira a POSICAO.
 #
 # Ate 06/08 ele deduzia: lia os arquivos de estado, concluia "a Dock deve
 # estar escondida" e ia para o rodape. Quando a deducao chegava antes de a
@@ -215,9 +221,11 @@ def _empilha_abaixo(meu_xid, irmao_xid):
 # de novo a cada segundo.
 RT = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
 ESTADO_TOPO = os.path.join(RT, "tarsila-topbar-state.txt")
-# Modo A/B da topbar, escrito SO POR EVENTO pelo tarsila-polybar-mode.sh
-# ("full" = A/maximizado, "compact" = B). E a fonte de verdade da Dock.
-MODO_TOPBAR = os.path.join(RT, "tarsila-polybar-mode.txt")
+# Ate 2026-08-15 havia aqui um segundo arquivo de estado, o
+# tarsila-polybar-mode.txt. Ele foi abandonado em 06/08 e ninguem mais o
+# escrevia -- mas este programa continuava lendo e vigiando: um Gio.FileMonitor
+# num arquivo que nunca existiu, e um ramo de decisao que nunca era tomado.
+# Agora ha um arquivo de estado so, escrito pelo tarsila-estado.sh.
 # Pedido do vetor de abertura: "pid x y largura altura" enquanto um app esta
 # abrindo; arquivo vazio ou ausente = nada a mostrar. Quem escreve e o
 # tarsila-abrindo.
@@ -226,89 +234,23 @@ PEDIDO_VETOR = os.path.join(RT, "tarsila-vetor.txt")
 CASA = os.path.expanduser("~")
 CFG = os.path.join(CASA, ".config", "tarsila")
 
-
-def altura_da_barra():
-    """Altura real da barra, escrita pelo tarsila-ob-bar.sh."""
-    try:
-        with open(os.path.join(CFG, "bar-height"), encoding="utf-8") as f:
-            return int(f.read().strip())
-    except (OSError, ValueError):
-        return 34
+# Como a Dock se esconde. Escrito pelo botao para forcar visivel ('none') ou
+# recolhida ('autohide'); volta a 'dodge-maximized' pelo tarsila-estado.sh a
+# cada maximizar/desmaximizar.
+DCONF_HIDE = "/net/launchpad/plank/docks/dock1/hide-mode"
 
 
-def cor_do_fundo():
-    """Cor sólida da barra, escrita pelo tarsila-ob-bar.sh."""
-    try:
-        with open(os.path.join(CFG, "bar-bg"), encoding="utf-8") as f:
-            cor = f.read().strip()
-            if cor.startswith("#") and len(cor) in (7, 9):
-                return cor
-    except OSError:
-        pass
-    return "#EDF1F4"
-
-
-class Fundo(Gtk.Window):
-    """O retângulo sólido atrás da barra de cima.
-
-    Só aparece quando há janela maximizada. Sem ele, a barra transparente
-    deixaria o papel de parede à mostra por cima do aplicativo."""
-
-    def __init__(self):
-        super().__init__(type=Gtk.WindowType.TOPLEVEL)
-        self.set_type_hint(Gdk.WindowTypeHint.DOCK)
-        self.set_decorated(False)
-        self.set_skip_taskbar_hint(True)
-        self.set_skip_pager_hint(True)
-        self.set_accept_focus(False)
-        self.set_resizable(False)
-        self.set_app_paintable(True)
-        tela = self.get_screen()
-        self.set_size_request(tela.get_width(), altura_da_barra())
-        self.connect("draw", self._desenha)
-
-    @staticmethod
-    def _desenha(_w, cr):
-        cor = Gdk.RGBA()
-        cor.parse(cor_do_fundo())
-        cr.set_source_rgba(cor.red, cor.green, cor.blue, 1.0)
-        cr.paint()
-        return False
-
-    def abaixar(self):
-        """Empurra o retangulo solido para BAIXO da polybar. Idempotente.
-
-        Corrige o bug de 2026-08-02 ("a barra fica pintada mas sem escrita"):
-        show_all() mapeia a janela NO TOPO da pilha do X, e o lower() logo em
-        seguida corre com esse mapeamento -- as vezes perde. Quando perde,
-        este retangulo fica POR CIMA da polybar e cobre titulo e botoes. Como
-        aplicar() so roda na TRANSICAO de estado (ver Botao._reavalia), nada
-        corrigia depois: so um restart do polybar (que remapeia a janela dele
-        no topo) devolvia a escrita -- ate a proxima maximizacao.
-
-        Comprovado na box: com o fundo por cima, a faixa do topo media uma
-        unica cor (#EDF1F4) em 100% dos pixels; levantando a polybar, os
-        pixels do texto (#2a2e32) reapareciam na hora.
-
-        Retorna False de proposito: serve direto como callback de
-        GLib.idle_add, que assim roda uma vez so.
-        """
-        janela = self.get_window()
-        if janela is not None:
-            janela.lower()
-        return False
-
-    def aplicar(self, maximizada):
-        if maximizada:
-            self.show_all()
-            self.move(0, 0)
-            # Abaixo da barra, para os ícones continuarem por cima.
-            self.abaixar()
-            # De novo assim que o X terminar de processar o mapeamento: o
-            # lower() acima sozinho perde a corrida com o proprio show_all().
-            GLib.idle_add(self.abaixar)
-        else:
-            self.hide()
+# O RETANGULO SOLIDO ATRAS DA BARRA DE CIMA SAIU DAQUI (2026-08-15).
+#
+# A classe Fundo existia por um motivo especifico: o polybar so le a cor de
+# fundo ao iniciar, entao pintar a barra de solido ao maximizar exigiria
+# reiniciar a barra a cada maximizacao -- e ela piscaria. Este programa
+# desenhava o retangulo por baixo dela para contornar isso, junto com as
+# funcoes altura_da_barra() e cor_do_fundo(), que liam ~/.config/tarsila/
+# bar-height e bar-bg.
+#
+# Sem barra de cima nao ha o que pintar. Foram embora a classe, as duas
+# funcoes e os dois arquivos de configuracao.
 
 
 class Vetor(Gtk.Window):
@@ -516,6 +458,15 @@ def roda(*args):
         pass
 
 
+def saida_de(*args):
+    """Roda e devolve a saida limpa, ou "" se algo der errado."""
+    try:
+        r = subprocess.run(args, capture_output=True, timeout=4, text=True)
+        return (r.stdout or "").strip()
+    except Exception:
+        return ""
+
+
 def estado_da_tela():
     """(há janela maximizada, id da janela ativa)."""
     try:
@@ -534,45 +485,24 @@ def estado_da_tela():
 
 
 def ha_maximizada():
-    """Estado A da topbar (arquivo). Só o Fundo cinza usa isto."""
+    """Há janela maximizada? Vem do arquivo que o tarsila-estado.sh escreve."""
     return estado_da_tela()[0]
 
 
 def ha_dock_recolhida():
-    """Critério do botão/Dock: Estado A (maximizado) manda.
+    """A regra automatica manda a Dock se recolher?
 
-    Le o MESMO arquivo de modo que o tarsila-polybar-mode.sh escreve, que e
-    a fonte de verdade do A/B e so muda POR EVENTO (goto3 / goto2 / ✕ /
-    devilspie do Chromium). Nao varre o X.
+    Uma pergunta, um arquivo. Ate 2026-08-15 esta funcao cruzava DOIS
+    arquivos que descreviam a mesma coisa por caminhos diferentes
+    (tarsila-polybar-mode.txt e tarsila-topbar-state.txt) e tinha um ramo
+    inteiro para o caso de eles se contradizerem -- o que acontecia quando o
+    polybar-mode.sh desistia no meio (flock de 8 s estourado) e deixava
+    "modo=compact + MAX=1". O segundo arquivo simplesmente deixou de existir.
 
-    Ate 2026-08-02 aqui havia um ha_maximizada_x() que rodava "wmctrl -lx"
-    mais um "xprop" POR JANELA a cada 450ms, chamado pelo vigilante de
-    250ms. Existia so para enxergar o Chromium, que nasce maximizado pelo
-    devilspie sem passar pelo goto3 -- ou seja, um poll de subprocessos para
-    cobrir um evento que ninguem emitia. O furo foi tapado na origem: o
-    floating.lua agora chama o mode.sh ao maximizar o Chromium. Sem poll.
+    Quem executa o recolhimento e o proprio Plank, pelo hide-mode
+    dodge-maximized. Isto aqui e so para o botao saber como se desenhar e
+    onde se posicionar.
     """
-    modo = ""
-    try:
-        with open(MODO_TOPBAR, encoding="utf-8", errors="ignore") as f:
-            modo = f.read().strip()
-    except OSError:
-        modo = ""
-    if modo == "full":
-        return True
-    # Maximizado ganha de qualquer testemunha (03/08). Ate aqui era
-    # "if modo: return modo == 'full'", ou seja, o arquivo de modo podia
-    # VETAR o estado da topbar -- e os dois arquivos descrevem a mesma coisa
-    # por caminhos diferentes: o mode.sh escreve os dois, mas quem maximiza
-    # pela topbar escreve o MAX=1 primeiro. Nessa janela de tempo, e em
-    # qualquer caso em que o mode.sh nao complete (ele desiste sozinho se o
-    # flock demorar mais de 8s, ou se o config.gen.ini sumir), ficava
-    # "modo=compact + MAX=1": fundo cinza de maximizado, mas Dock aberta e o
-    # botao parado em cima dela, no meio da tela, por cima do Chromium. Era
-    # so o que faltava para o botao "nao ir ate embaixo".
-    #
-    # Continua sem varrer o X e sem relogio: os dois arquivos ja sao ouvidos
-    # por inotify em _liga_vigia().
     return ha_maximizada()
 
 
@@ -715,8 +645,7 @@ class _VetorNulo:
 class Botao(Gtk.Window):
     vetor = _VetorNulo()
 
-    def __init__(self, fundo):
-        self.fundo = fundo
+    def __init__(self):
         super().__init__(type=Gtk.WindowType.TOPLEVEL)
         # DOCK: o gerenciador trata como parte do painel -- não recebe foco,
         # não entra no Alt+Tab e não é levada para outra área de trabalho
@@ -750,8 +679,8 @@ class Botao(Gtk.Window):
 
         self.escondida = False      # escolha manual do usuário
         self.destacado = False      # mouse em cima
+        self.revelado = False       # Dock chamada pelo cursor, provisoriamente
         self.max_antes = ha_dock_recolhida()   # botão/Dock
-        self.max_arquivo_antes = ha_maximizada()  # Fundo / Estado A
         self.memoria = MemoriaDeJanelas()
         self.plank = self._acha_plank()
 
@@ -767,11 +696,13 @@ class Botao(Gtk.Window):
         subprocessos permanente numa maquina fraca -- pesava so de abrir uma
         janela.
 
-        Agora escutamos os DOIS arquivos que descrevem o estado, via inotify
-        (Gio.FileMonitor). Ambos sao escritos exclusivamente por evento pelo
-        tarsila-polybar-mode.sh (goto3 / goto2 / ✕ / devilspie do Chromium).
-        Enquanto nada acontece, este processo fica parado de verdade: zero
-        CPU, zero processo novo.
+        Agora escutamos o arquivo de estado via inotify (Gio.FileMonitor).
+        Ele e escrito exclusivamente por evento pelo tarsila-estado.sh, que
+        por sua vez dorme num xprop -spy. Enquanto nada acontece, os dois
+        processos ficam parados de verdade: zero CPU, zero processo novo.
+
+        Eram dois arquivos ate 2026-08-15; o segundo estava morto desde 06/08
+        e o monitor dele nunca disparava.
 
         Guardamos os monitores em self para o GC nao os recolher -- se forem
         coletados, os sinais param de chegar e a Dock congela.
@@ -786,7 +717,7 @@ class Botao(Gtk.Window):
             pass
 
         self._monitores = []
-        for caminho in (MODO_TOPBAR, ESTADO_TOPO):
+        for caminho in (ESTADO_TOPO,):
             try:
                 gf = Gio.File.new_for_path(caminho)
                 mon = gf.monitor_file(Gio.FileMonitorFlags.NONE, None)
@@ -808,7 +739,29 @@ class Botao(Gtk.Window):
             pass
 
     def _pendura_na_dock_uma_vez(self):
+        """Retentativa do arranque: insiste ate a Dock existir, e ao achar
+        recoloca o botao.
+
+        Era um disparo unico aos 5 s. Dois furos, os dois vistos na VM de
+        teste (ARM emulado, lenta):
+
+        1. O Plank demorava mais que os 5 s, e nao havia terceira chance.
+        2. Mesmo achando, o _pendura_na_dock() so liga o vigia -- nao mexe o
+           botao. Ele tinha ido para o rodape na primeira tentativa (regra do
+           "Dock sumiu") e ficava la, na posicao de "Dock escondida", com a
+           Dock a mostra e por baixo dela: invisivel.
+
+        Nada corrigia isso depois, porque a correcao mora no evento de a Dock
+        se mexer -- e numa area de trabalho parada esse evento nunca chega.
+        No login, o usuario ficava sem botao nenhum.
+        """
+        tinha = bool(self.plank)
         self._pendura_na_dock()
+        if not self.plank:
+            self._tentativas = getattr(self, "_tentativas", 0) + 1
+            return self._tentativas < 30      # ~2,5 min, depois desiste
+        if not tinha:
+            self._reafirma()
         return False
 
     def _mudou(self, _mon, _f, _outro, _evento):
@@ -861,17 +814,27 @@ class Botao(Gtk.Window):
         cr.line_to(0, a)
         cr.arc(r, r, r, pi, 3 * pi / 2)          # canto superior esquerdo
         cr.close_path()
-        # Com janela maximizada (Estado A ou Chromium no X) o botão fica
-        # apagado — igual às outras telas maximizadas.
-        inerte = ha_dock_recolhida()
-        opaco = 0.45 if inerte else (1.0 if self.destacado else 0.94)
+        # Ate 2026-08-15 o botao era desenhado apagado (0,45 de opacidade)
+        # com janela maximizada, porque nesse estado ele era inerte: o clique
+        # nao fazia nada. Agora ele funciona sempre, e um botao que funciona
+        # nao pode parecer desligado -- o usuario leigo le "apagado" como
+        # "nao clique aqui" e nao descobre como trazer a Dock de volta.
+        #
+        # Sobrou uma distincao mais honesta: com a Dock recolhida ele fica um
+        # pouco mais discreto, porque ai esta sozinho sobre a janela do
+        # aplicativo e nao deve competir com o conteudo.
+        recolhida = not self._dock_na_tela()
+        if self.destacado:
+            opaco = 1.0
+        else:
+            opaco = 0.80 if recolhida else 0.94
         cr.set_source_rgba(0.09, 0.13, 0.25, opaco)
         cr.fill()
 
         # O símbolo: um losango partido ao meio -- "v" invertido em cima,
         # "v" embaixo, com uma fresta entre eles. Serve para os dois
         # sentidos, então não muda quando a Dock some.
-        cr.set_source_rgba(1, 1, 1, 0.45 if inerte else 0.95)
+        cr.set_source_rgba(1, 1, 1, 0.95)
         cr.set_line_width(1.7)
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
         cr.set_line_join(cairo.LINE_JOIN_ROUND)
@@ -1037,55 +1000,177 @@ class Botao(Gtk.Window):
             janela.raise_()
 
     def _dock_na_tela(self):
-        """A Dock está aparecendo? A regra principal manda; a escolha
-        manual só vale quando não há janela maximizada (arquivo ou X)."""
-        if ha_dock_recolhida():
-            return False
-        return not self.escondida
+        """A Dock está aparecendo?
+
+        A regra automatica define o ponto de partida (maximizado = recolhida)
+        e o clique no botao inverte esse ponto de partida. Como o _reavalia()
+        zera o self.escondida a cada troca de estado, a inversao nunca
+        sobrevive ao proximo maximizar/desmaximizar.
+        """
+        automatico = not ha_dock_recolhida()
+        return (not automatico) if self.escondida else automatico
 
     # --------------------------------------------------------- eventos
     def _clique(self, _w, ev):
+        """Inverte a Dock, valha o que valer a regra automatica.
+
+        Ate 2026-08-15 o clique era ignorado com janela maximizada -- o botao
+        ficava desenhado apagado e inerte. Agora ele funciona sempre: e o
+        unico jeito de chamar a Dock de volta por cima de uma janela cheia
+        sem desmaximizar.
+
+        A escolha vale ate o proximo maximizar ou desmaximizar, quando o
+        tarsila-estado.sh reimpoe 'dodge-maximized' e o _reavalia() zera o
+        self.escondida.
+        """
         if ev.button != 1:
             return False
-        if ha_dock_recolhida():
-            # Maximizado (topbar A ou Chromium/etc. no X): nada a fazer.
-            return True
+        # Clicar decide de verdade; a revelacao por cursor era provisoria e
+        # nao deve ser desfeita quando o cursor sair do botao logo depois.
+        self.revelado = False
         self.escondida = not self.escondida
         self._aplica()
         return True
 
+    def _escreve_hide(self, alvo):
+        """Grava o hide-mode, e so quando ele muda.
+
+        A leitura antes da escrita nao e economia de disco: o Plank observa a
+        chave e se reconfigura a cada escrita, mesmo escrevendo igual.
+        """
+        if saida_de("dconf", "read", DCONF_HIDE) != alvo:
+            roda("dconf", "write", DCONF_HIDE, alvo)
+
     def _aplica(self):
-        # Botão ≡ Dock: map/unmap do Plank + posição do botão no mesmo passo.
+        """Botão ≡ Dock: estado do Plank + posição do botão no mesmo passo.
+
+        Ate 2026-08-15 isto era um xdotool windowmap/windowunmap na janela do
+        Plank. Trocou por escrever o hide-mode no dconf, e a razao e o
+        revelar-por-borda: janela DESMAPEADA nao recebe ponteiro, entao
+        esconder a Dock pelo botao a tornava inalcancavel -- encostar o cursor
+        no rodape nao trazia nada de volta. Com hide-mode a Dock continua
+        mapeada, so recolhida, e o Plank a revela sozinho pelo
+        pressure-reveal.
+
+        'none' = sempre visivel. 'autohide' = recolhida, sobe na borda.
+        O valor de REPOUSO e 'dodge-maximized', e ele nao e nosso: pertence ao
+        tarsila-estado.sh.
+
+        Por que a condicao do self.escondida importa (medido na VM em 15/08):
+        o _reavalia() chama este metodo a CADA troca de estado, nao so no
+        clique. Escrevendo sempre, a sequencia era
+            desmaximizar -> daemon poe 'dodge-maximized' -> nos poimos
+            'autohide' -> a Dock ficava escondida justamente quando a regra
+            manda ela aparecer.
+        Ou seja: so escrevemos quando ha escolha manual em vigor. Sem escolha
+        manual, devolvemos a chave ao valor de repouso e saimos do caminho.
+
+        A leitura antes da escrita nao e economia de disco: o Plank observa a
+        chave e se reconfigura a cada escrita, mesmo escrevendo igual.
+        """
         self.plank = self._acha_plank()
         visivel = self._dock_na_tela()
-        if self.plank:
-            roda("xdotool",
-                 "windowmap" if visivel else "windowunmap", self.plank)
+        self._escreve_hide(("'none'" if visivel else "'autohide'")
+                           if self.escondida else "'dodge-maximized'")
         # Passa a intenção adiante: o botão vai para onde a Dock VAI ficar,
         # sem esperar o X confirmar. Ver _posiciona().
         self._posiciona(dock_visivel=visivel)
         self.queue_draw()
 
 
-    def _entra(self, *_a):
+    @staticmethod
+    def _cruzamento_de_verdade(ev):
+        """O cursor entrou/saiu mesmo, ou foi um grab do GTK?
+
+        enter/leave-notify tambem chegam quando um grab comeca ou termina --
+        um clique no proprio botao gera esse par -- e quando o ponteiro apenas
+        passa para uma janela filha. Tratar esses casos como "o cursor saiu"
+        faria o _sai() escrever 'autohide' com o cursor parado em cima do
+        botao, escondendo a Dock que o hover acabou de chamar.
+        """
+        try:
+            if ev.mode != Gdk.CrossingMode.NORMAL:
+                return False
+            return ev.detail != Gdk.NotifyType.INFERIOR
+        except Exception:
+            return True     # sem os campos, melhor tratar como cruzamento
+
+    def _entra(self, _w=None, ev=None):
+        """Passar o cursor no botao chama a Dock de volta.
+
+        E o gesto do Debian -- encostar o cursor no rodape e a barra sobe --
+        aterrissado no unico alvo que sempre esta la: o botao, que justamente
+        desce e encosta na borda de baixo quando a Dock se recolhe.
+
+        Nao passa pelo self.escondida de proposito. Aquilo e a escolha manual,
+        que dura ate o proximo maximizar/desmaximizar; isto aqui e provisorio
+        e morre quando o cursor sai (ver _sai). Sao coisas diferentes e mistura
+        -las faria um roçar de mouse valer como decisao do usuario.
+        """
         self.destacado = True
         self.queue_draw()
+        if ev is not None and not self._cruzamento_de_verdade(ev):
+            return False
+        if not self._dock_na_tela():
+            self.revelado = True
+            self._escreve_hide("'none'")
+            # NAO reposicionar aqui, de proposito. Subir o botao para o lugar
+            # de "Dock a mostra" (y=955) o tira de baixo do cursor que acabou
+            # de chega -- medido na VM: o ponteiro caia sobre a Dock recem
+            # -aberta e o balao do icone Terminal aparecia no lugar do botao.
+            # Quem viesse clicar no botao clicaria no Terminal, e o proprio
+            # leave disparado pela fuga cancelava a revelacao.
+            # Parado, o botao continua clicavel e apenas repousa na margem de
+            # baixo da Dock, abaixo da fileira de icones. Ele so assume a
+            # posicao de cima quando a revelacao vira decisao (clique) ou
+            # quando o estado da tela muda.
         return False
 
-    def _sai(self, *_a):
+    def _sai(self, _w=None, ev=None):
+        """Sai do botao: devolve a decisao ao Plank, sem esconder na mao.
+
+        A tentacao seria reimpor aqui o valor de repouso, mas com janela
+        maximizada esse valor e 'dodge-maximized', que recolhe a Dock na hora
+        -- e o cursor que desce do botao PARA a Dock a veria fugir no meio do
+        caminho. Com 'autohide' quem decide e o Plank pela posicao do ponteiro:
+        em cima da Dock, ela fica; longe, ela recolhe.
+
+        O valor de repouso volta sozinho no proximo maximizar/desmaximizar,
+        reimposto pelo tarsila-estado.sh.
+        """
         self.destacado = False
         self.queue_draw()
+        if ev is not None and not self._cruzamento_de_verdade(ev):
+            return False
+        if self.revelado:
+            self.revelado = False
+            self._escreve_hide("'autohide'")
         return False
 
     # ---------------------------------------------------------- vigia
     def _reavalia(self):
         maximizada, ident = estado_da_tela()
-        self.memoria.acompanhar(maximizada, ident)
 
-        max_arq = ha_maximizada()
-        if max_arq != self.max_arquivo_antes:
-            self.max_arquivo_antes = max_arq
-            self.fundo.aplicar(max_arq)
+        # O Gio.FileMonitor entrega TRES notificacoes por escrita do arquivo
+        # de estado (medido na VM em 15/08: CHANGED, CHANGES_DONE_HINT e o
+        # CREATED do mv atomico do tarsila-estado.sh). Sem esta guarda todo o
+        # trabalho abaixo rodava tres vezes por maximizar -- e cada volta tem
+        # um xdotool no _acha_plank e um dconf read no _aplica.
+        #
+        # Comparar o conteudo, e nao contar eventos: quando o estado nao mudou
+        # nao ha nada a reavaliar, seja qual for o motivo da notificacao. O
+        # clique no botao nao passa por aqui, entao a escolha manual nao corre
+        # risco de ser descartada por este atalho.
+        assinatura = (maximizada, ident)
+        if assinatura == getattr(self, "_assinatura", None):
+            return
+        self._assinatura = assinatura
+
+        # Maximizar/desmaximizar reimpoe a regra e apaga tanto a escolha
+        # manual quanto a revelacao provisoria do cursor.
+        self.revelado = False
+
+        self.memoria.acompanhar(maximizada, ident)
 
         dock_agora = ha_dock_recolhida()
         if dock_agora != self.max_antes:
@@ -1096,9 +1181,6 @@ class Botao(Gtk.Window):
 
         if not self._dock_na_tela():
             self._acima_da_dock()
-
-        if max_arq:
-            self.fundo.abaixar()
 
     def _revela(self):
         self._posiciona(dock_visivel=self._dock_na_tela())
@@ -1186,15 +1268,14 @@ class Botao(Gtk.Window):
         try:
             self._posiciona(dock_visivel=self._dock_na_tela())
             self._acima_da_dock()
-            # A cor também: em Estado A o botão é desenhado apagado e inerte.
+            # A cor também: com a Dock recolhida o botão fica mais discreto.
             self.queue_draw()
         except Exception:
             pass
         return False
 
 def main():
-    fundo = Fundo()
-    botao = Botao(fundo)
+    botao = Botao()
     # Vetor de abertura: criado e realizado agora, escondido, para que
     # mostra-lo depois custe milissegundos em vez de ~1,1 s (o tempo de subir
     # um GTK novo nesta box). Nao pode derrubar o resto se falhar.
@@ -1202,10 +1283,6 @@ def main():
         botao.vetor = Vetor()
     except Exception:
         pass          # segue com o _VetorNulo da classe: nao desenha, nao quebra
-    # Fundo segue só o arquivo; botão/Dock já olham o X no __init__/_aplica.
-    agora_arq = ha_maximizada()
-    fundo.aplicar(agora_arq)
-    botao.max_arquivo_antes = agora_arq
     botao.max_antes = ha_dock_recolhida()
     botao.escondida = False
     botao._aplica()

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Calendário
+Comment=Ver o calendário e a data
+Icon=x-office-calendar
+Exec=/usr/local/bin/tarsila-barra-menu calendario
+Terminal=false
+StartupNotify=false
+NoDisplay=true
+Categories=System;
+X-Tarsila-Indicador=true

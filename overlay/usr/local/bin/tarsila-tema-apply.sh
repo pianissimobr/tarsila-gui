@@ -64,5 +64,11 @@ dconf write /net/launchpad/plank/docks/dock1/theme "'$(dock_do_tema "$TEMA")'" 2
 printf '%s\n' "$TEMA" > "$TARSILA_CFG/tema"
 printf '%s\n' "$WP"   > "$TARSILA_CFG/tema-wallpaper"
 
-# 9>&- : nao deixa o polybar herdar a tranca (ver comentario acima).
-/usr/local/bin/tarsila-ob-bar.sh 9>&-
+# A barra de cima nao existe mais: o que estava nela virou icone da Dock, e
+# a Dock recarrega o tema sozinha ao ver a chave "theme" mudar no dconf (o
+# write acontece mais acima). Nao ha nada a relancar aqui.
+#
+# Saiu junto o "9>&-" que blindava esta chamada. Ele existia porque o
+# tarsila-ob-bar.sh subia o polybar, e o polybar -- processo de vida longa --
+# HERDAVA o fd 9 desta tranca e a segurava enquanto vivesse: a primeira troca
+# de tema funcionava e todas as seguintes penduravam nos 10 s do flock.

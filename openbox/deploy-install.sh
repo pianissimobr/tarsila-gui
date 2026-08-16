@@ -9,7 +9,7 @@ U="${1:-alan}"; H="$(getent passwd "$U" | cut -d: -f6)"
 echo "==> deps"
 export DEBIAN_FRONTEND=noninteractive
 apt-get install -y --no-install-recommends \
-  openbox polybar dunst xsettingsd picom feh \
+  openbox dunst xsettingsd picom feh \
   inotify-tools fonts-font-awesome fonts-noto-core pavucontrol yad wmctrl xdotool x11-utils
 
 # OBRIGATÓRIO para o glamor: 10-modeset-panfrost.conf usa AccelMethod "glamor",
@@ -33,10 +33,10 @@ cp -f "$SRC/usr/share/fonts/nerd/"*.ttf /usr/share/fonts/nerd/ 2>/dev/null || tr
 fc-cache -f >/dev/null 2>&1 || true
 
 echo "==> config do usuário $U"
-for d in openbox polybar xsettingsd dunst mpv; do
+for d in openbox xsettingsd dunst mpv; do
   mkdir -p "$H/.config/$d"; cp -a "$SRC/home/$d/." "$H/.config/$d/"
 done
-chmod 755 "$H/.config/openbox/autostart" "$H/.config/polybar/"*.sh
+chmod 755 "$H/.config/openbox/autostart"
 mkdir -p "$H/.config/tarsila"; [ -f "$H/.config/tarsila/tema" ] || echo padrao > "$H/.config/tarsila/tema"
 # ~/.xsession força a sessão Openbox em qualquer login (o greeter sem
 # accountsservice ignora .dmrc/user-session e cai no XFCE — ver README)

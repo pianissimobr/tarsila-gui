@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=Tarsila (Openbox)
-Comment=Interface leve da Tarsila (Openbox + polybar)
+Comment=Interface leve da Tarsila (Openbox)
 Exec=/usr/local/bin/tarsila-ob-session
 TryExec=/usr/local/bin/tarsila-ob-session
 Type=Application

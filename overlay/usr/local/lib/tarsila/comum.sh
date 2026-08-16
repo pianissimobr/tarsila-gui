@@ -71,10 +71,17 @@ dock_do_tema() {
 # -- o modo e negociado com a TV no boot e varia por aparelho (720p, 768,
 # 1080p, 4K) --, entao tudo que depende de tamanho de tela se recalcula no
 # login. 768 e o desenho base, usado quando o xrandr nao responde.
+# O xrandr NAO esta instalado nesta imagem (conferido na box: so existe o
+# xdpyinfo). Enquanto so o xrandr era consultado, esta funcao caia sempre no
+# 768 do fallback -- por sorte o valor certo na TV de referencia, e errado em
+# qualquer TV 1080p ou 4K. Como o tamanho do icone da Dock e hoje a unica
+# coisa que se adapta a resolucao, o erro deixou de ser cosmetico.
 altura_tela() {
     local h=""
     h=$(xrandr --query 2>/dev/null \
         | sed -n 's/.* connected \(primary \)\?[0-9]\+x\([0-9]\+\)+.*/\2/p' | head -1)
+    [ -n "$h" ] || h=$(xdpyinfo 2>/dev/null \
+        | sed -n 's/^ *dimensions: *[0-9]\+x\([0-9]\+\) pixels.*/\1/p' | head -1)
     printf '%s\n' "${h:-768}"
 }
 

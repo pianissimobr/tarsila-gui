@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Desligar
+Comment=Desligar, reiniciar ou sair
+Icon=system-shutdown
+Exec=/usr/local/bin/tarsila-ob-power.sh
+Terminal=false
+StartupNotify=false
+NoDisplay=true
+Categories=System;
+X-Tarsila-Indicador=true

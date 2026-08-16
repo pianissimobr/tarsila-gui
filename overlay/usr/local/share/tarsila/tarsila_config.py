@@ -172,6 +172,18 @@ def foto_para_png(caminho):
     return dados, ""
 
 
+def xfconf_get(channel, prop, default=None):
+    ok, out, _ = run_ok(["xfconf-query", "-c", channel, "-p", prop])
+    return out if ok else default
+
+
+def xfconf_set(channel, prop, value, vtype="string", create=False):
+    argv = ["xfconf-query", "-c", channel, "-p", prop, "-s", str(value)]
+    if create:
+        argv += ["-n", "-t", vtype]
+    return run_ok(argv)[0]
+
+
 def load_state():
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     if STATE_FILE.exists():
@@ -378,17 +390,6 @@ def entrada_set(nome, valor):
     subprocess.run(["/usr/local/bin/tarsila-entrada-apply.sh"],
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return True
-
-
-def reiniciar_barra():
-    """Faz a barra de cima recarregar.
-
-    Antes isto chamava "xfce4-panel -r". O pacote esta instalado, mas quem
-    desenha a barra deste sistema e o polybar -- entao a chamada morria com
-    "org.xfce.Panel was not provided by any .service files" e o usuario levava
-    um dialogo de erro na cara toda vez que mexia na hora ou no fuso.
-    O polybar recarrega ao receber SIGUSR1."""
-    run_bg(["pkill", "-USR1", "-x", "polybar"])
 
 
 # Uma cidade por faixa horária, não os 485 fusos que o sistema conhece --
@@ -676,15 +677,21 @@ def _geometria_de(classe):
 
 
 def espaco_vertical_livre():
-    """Quanto ha entre a barra de cima e a Dock, agora.
+    """Quanto ha entre o topo da tela e a Dock, agora.
 
-    Tudo relativo: se a barra crescer (ela muda de altura conforme a resolucao)
-    ou a Dock mudar de tamanho, a janela acompanha sozinha."""
-    barra = _geometria_de("polybar")
+    Ate 15/08 o topo era a borda de baixo da polybar. Sem ela, esta funcao
+    pedia a geometria de um processo que nao existe mais, recebia None e
+    devolvia None -- e os dois usuarios dela caem num "return False" mudo.
+    O efeito nao era erro: a janela dos Ajustes simplesmente parava de se
+    dimensionar e de encostar na Dock, calada, como se aquilo fosse o normal.
+
+    Agora o topo e o topo da tela mesmo, que e para onde a janela maximizada
+    tambem passou a ir. O resto continua relativo: se a Dock mudar de tamanho,
+    a janela acompanha sozinha."""
     dock = _geometria_de("plank")
-    if not barra or not dock:
+    if not dock:
         return None
-    topo = barra[0] + barra[1]        # onde a barra termina
+    topo = 0                          # nao ha mais nada reservado no alto
     # A Dock VISIVEL nao comeca no topo da janela do Plank: os primeiros
     # DESCE_ATE pixels dela sao area transparente acima dos icones. E por isso
     # que a Lixeira e a tela de Aplicativos terminam ali e nao antes -- usamos
@@ -1304,6 +1311,7 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
 
         card, lb = make_card("Cores e texto")
         box.pack_start(card, False, False, 0)
+        current_theme = xfconf_get("xsettings", "/Net/ThemeName", "Xfce")
         dark_switch = Gtk.Switch()
         tema_atual = xsettings_get("Net/ThemeName", TEMA_CLARO)
         dark_switch.set_active(tema_atual == TEMA_ESCURO)
@@ -2504,10 +2512,9 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
             self._ntp_switch.set_active(False)
             self._ntp_switch.set_state(False)
         if ok:
-            # A barra de cima não percebe um salto abrupto de hora sozinha:
-            # só recalcula no próprio ciclo. Recarregá-la mostra a hora nova
-            # na hora, em vez de só quando o usuário reparar.
-            reiniciar_barra()
+            # Nao ha barra de cima para recarregar desde 16/08. O relogio agora
+            # e um icone da Dock, que le a hora ao ser aberto -- entao ele ja
+            # mostra a hora nova sem ninguem avisar.
             self._info_dialog("Hora ajustada", "A data e a hora foram atualizadas.")
         else:
             self._info_dialog("Não foi possível ajustar", "O comando falhou.")
@@ -2691,9 +2698,7 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         logo em seguida, e as duas coisas na ordem errada se atrapalham."""
         ok, _out, _err = run_ok(["sudo", "-n", "timedatectl", "set-timezone", zona],
                                 timeout=30)
-        if ok:
-            reiniciar_barra()
-        else:
+        if not ok:
             self._info_dialog("Não foi possível trocar o fuso",
                               "O comando falhou. O fuso continua como estava.")
         return ok
@@ -2713,11 +2718,7 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
 
     def _after_timezone_change(self, combo, ok):
         combo.set_sensitive(True)
-        if ok:
-            # Mesma razão do ajuste manual de hora: o relógio da barra não
-            # recalcula o deslocamento sozinho quando o fuso muda.
-            reiniciar_barra()
-        else:
+        if not ok:
             self._info_dialog("Não foi possível trocar o fuso", "O comando falhou.")
         return False
 
@@ -2768,12 +2769,13 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
         # ~/.config/xsettingsd/xsettingsd.conf, ~/.config/openbox/rc.xml e
         # ~/.config/tarsila/.
 
-        card, lb = make_card("Painel e Dock")
+        # "Dock", nao "Painel e Dock": o painel superior deixou de existir em
+        # 16/08. Junto com ele saiu o botao "Reiniciar painel superior", que a
+        # partir dali mandava um SIGUSR1 para um processo inexistente -- ou
+        # seja, virava exatamente o que esta tela passou meses corrigindo: um
+        # botao que o usuario aperta e que nao faz nada, sem dizer por que.
+        card, lb = make_card("Dock")
         box.pack_start(card, False, False, 0)
-        restart_panel_btn = Gtk.Button(label="Reiniciar")
-        restart_panel_btn.connect("clicked", lambda *_: reiniciar_barra())
-        add_row(lb, "view-refresh", "Reiniciar painel superior", "",
-                restart_panel_btn)
         restart_dock_btn = Gtk.Button(label="Reiniciar")
         restart_dock_btn.connect("clicked", lambda *_: (
             subprocess.run(["pkill", "-u", os.environ.get("USER", ""), "plank"]),

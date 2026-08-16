@@ -53,7 +53,7 @@ TOLERANCIA = 10       # px para considerar que uma janela "esta" numa vaga
 # Classes que nao entram no sistema de vagas: as tres telas Tarsila que ja
 # nascem em posicao propria combinada, e o Chromium, que nasce maximizado.
 FORA_DO_SISTEMA = ("tarsila-config", "tarsila-lixeira", "tarsila-appfinder",
-                   "chromium", "chromium-browser", "plank", "polybar",
+                   "chromium", "chromium-browser", "plank",
                    "tarsila-tela-estados", "yad", "tarsila-barra-menu")
 
 

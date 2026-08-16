@@ -39,7 +39,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 # Núcleo gráfico mínimo + ferramentas da interface
 apt-get install -y --no-install-recommends \
-  xorg openbox polybar dunst xsettingsd picom feh scrot \
+  xorg openbox dunst xsettingsd picom feh scrot \
   plank devilspie2 yad lightdm lightdm-gtk-greeter \
   papirus-icon-theme thunar gvfs gvfs-daemons \
   python3-gi gir1.2-gtk-3.0 python3-gi-cairo \

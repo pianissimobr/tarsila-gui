@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sessão Tarsila leve (Openbox + polybar). COEXISTE com o XFCE: é uma
+# Sessão Tarsila leve (Openbox). COEXISTE com o XFCE: é uma
 # entrada de sessão separada no lightdm, escolhível sem afetar a sessão
 # XFCE existente. Só define o ambiente e entrega o controle ao
 # openbox-session, que roda ~/.config/openbox/autostart (onde os

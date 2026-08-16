@@ -16,9 +16,9 @@ EXT=$(xprop -id "$W" _NET_FRAME_EXTENTS | grep -oE "[0-9]+, [0-9]+, [0-9]+, [0-9
 MT=$(echo "$EXT" | awk -F", " "{print \$3}"); MB=$(echo "$EXT" | awk -F", " "{print \$4}")
 : "${MT:=0}"; : "${MB:=0}"
 QY=$((Y - MT)); QH=$((HEIGHT + MT + MB))
-BARRA=$(xdotool search --class polybar | head -1)
-eval "$(xdotool getwindowgeometry --shell "$BARRA" | sed 's/^/B/')"
-FIM_BARRA=$((BY + BHEIGHT))
+# O teto util era o fim da barra de cima. Sem barra, e o topo da tela: a
+# janela maximizada vai ate y=0 e leva a propria barra de titulo junto.
+FIM_BARRA=0
 DOCK=$(for w in $(xdotool search --class plank); do
          eval "$(xdotool getwindowgeometry --shell "$w")"
          [ "${WIDTH:-0}" -gt 1000 ] && echo "$Y"; done | head -1)
@@ -26,7 +26,7 @@ DOCK=$(for w in $(xdotool search --class plank); do
 case "${1:-}" in
   "")      echo "  janela : conteudo y=$Y altura=$HEIGHT"
            echo "  moldura: de $QY ate $((QY+QH))"
-           echo "  barra termina em $FIM_BARRA | Dock comeca em $DOCK"
+           echo "  topo da tela em $FIM_BARRA | Dock comeca em $DOCK"
            echo "  vao livre: $((DOCK - FIM_BARRA)) px" ;;
   alt)     xdotool windowsize "$W" "$WIDTH" $((HEIGHT + ${2:-0}))
            echo "  altura -> $((HEIGHT + ${2:-0}))" ;;
@@ -41,7 +41,7 @@ case "${1:-}" in
                xdotool windowmove "$W" "$X" $((Y - SOBRA))
                sleep 0.3
            done
-           echo "  topo da moldura encostado em $FIM_BARRA" ;;
+           echo "  topo da moldura encostado em $FIM_BARRA (topo da tela)" ;;
   *)       xdotool windowmove "$W" "$X" $((Y + $1))
            echo "  movida $1 px" ;;
 esac
