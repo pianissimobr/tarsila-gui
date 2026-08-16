@@ -68,7 +68,26 @@ elif [ -n "${GITHUB_TOKEN:-}" ]; then
     echo "    $repo..."
     rm -rf "$tmp"
     if git clone --depth 1 "$GH_BASE/$repo.git" "$tmp" 2>/dev/null; then
-      ( cd "$tmp" && ./build-deb.sh && apt-get install -y ./*_all.deb )
+      # O "find" em vez de "./*_all.deb" não é preciosismo: o build da Store
+      # larga o pacote em dist/, e o glob procurava só na raiz do repositório.
+      # Sem casar nada, o bash entregava a string literal "./*_all.deb" para o
+      # apt-get, que errava -- ou seja, a Loja nunca chegou a ser instalada.
+      #
+      # E é preciso instalar TODOS os .deb do repositório de uma vez: o
+      # tarsila-app-management gera dois (tarsila-motor e a interface, que
+      # depende dele), e o apt só resolve a dependência entre arquivos locais
+      # se os dois forem passados na mesma chamada.
+      if ( cd "$tmp" && ./build-deb.sh ); then
+        mapfile -t debs < <(find "$tmp" -name '*_all.deb' -type f | sort)
+        if [ "${#debs[@]}" -gt 0 ]; then
+          apt-get install -y "${debs[@]}" \
+            || echo "      ERRO: apt recusou os pacotes de $repo"
+        else
+          echo "      ERRO: $repo não gerou nenhum .deb"
+        fi
+      else
+        echo "      ERRO: build-deb.sh de $repo falhou"
+      fi
     else
       echo "      ERRO: clone falhou — verifique o token ou a internet"
     fi

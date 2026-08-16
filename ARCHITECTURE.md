@@ -59,7 +59,12 @@ gera um `.deb` que funciona sozinho.
 | `tarsila-email` | `tarsila-email` | 2.1.0 | Cliente Gmail nativo em GTK3 |
 | `tarsila-agenda` | **`agenda-tarsila`** | 4.0.0 | Google Agenda nativo em GTK3 |
 | `tarsila-chromium` | `tarsila-chromium` | 2.0.0 | Chromium com flags e extensões |
-| `tarsila-app-management` | `tarsila-app-management` | 1.1.0 | Instalador/desinstalador gráfico |
+| `tarsila-app-management` | `tarsila-motor` | 1.0.0 | Criar e remover atalhos curados |
+| `tarsila-app-management` | `tarsila-app-management` | 2.0.0 | A interface: AppFinder e instalador |
+
+**Seis repositórios, sete pacotes.** O `tarsila-app-management` gera dois: o
+motor e a interface. É a única exceção, e existe por um motivo concreto — ver
+"O motor" abaixo.
 
 Todos os `.deb` são **`Architecture: all`**. Isso é correto e não é preguiça:
 são Python e shell puros, sem nada compilado. O mesmo arquivo instala em
@@ -149,11 +154,42 @@ recursos, e não quebrar.
 | `app-management` | `tarsila-pkg` (da Store) | Remoção passa pelo `apt-get`, pedindo a senha |
 | `app-management` | `plank` | Não mexe em ícone de Dock |
 | `app-management` | `dconf` | Não reordena a Dock |
-| Store | `tarsila-atalho-criar` | Instala a própria cópia *headless* (ver abaixo) |
+| Store | `tarsila-motor` | Não se instala: é `Depends`, não detecção |
 | `tarsila-gui` | os cinco `.deb` | Desktop sobe sem os apps |
 
 Isso está declarado como `Suggests`, não `Depends`, de propósito: `Depends`
 puxaria o `tarsila-gui` inteiro para quem só quer o gerenciador de aplicativos.
+
+### O motor
+
+Um atalho curado tem uma vida: nasce quando um pacote é instalado e morre
+quando o usuário desinstala o app. As duas pontas são **uma coisa só**, porque
+todo atalho que o `tarsila-atalho-criar` gera embute a própria remoção:
+
+```ini
+[Desktop Action desinstalar]
+Name=Desinstalar
+Exec=/usr/local/bin/tarsila-app-uninstall.sh <atalho>
+```
+
+Entregar o criador sem o removedor faria cada atalho nascer com um item de
+menu morto. Por isso os dois andam juntos, no pacote **`tarsila-motor`**, junto
+com o `tarsila-pedir-senha`, que o removedor chama para pacotes fora do
+catálogo.
+
+O motor é pacote separado porque **a Store precisa dele e não precisa da
+interface**. Até 16/08/2026 a Store resolvia isso carregando em `motor/` uma
+cópia própria dos arquivos, instalada pelo `postinst` quando o
+`app-management` estava ausente. O `postinst` era guardado, então nunca houve
+sobrescrita silenciosa — mas as duas cópias envelheceram separado e
+divergiram: a correção que fez a desinstalação pedir a senha entrou numa e não
+na outra. Agora há uma fonte só.
+
+Consequência prática: `tarsila-motor` e `tarsila-store` precisam ser
+instalados **na mesma chamada** do apt enquanto forem arquivos locais, porque
+o apt não resolve dependência para um `.deb` que não está em repositório
+nenhum. O `install.sh` faz isso. Publicando num repositório APT, deixa de ser
+uma preocupação.
 
 ### A pasta de atalhos curados
 
@@ -202,28 +238,6 @@ caixa gráfica (`tarsila-pedir-senha`), e apps do catálogo saem sem senha pelo
 `tarsila-pkg`, que valida antes de agir.
 
 ## Problemas conhecidos
-
-### Duplicação entre a Store e o `app-management`
-
-A Store carrega em `motor/` uma cópia de dois arquivos do `app-management`:
-
-| Arquivo | Situação |
-|---|---|
-| `tarsila-atalho-criar` | **Idêntico** nos dois repositórios |
-| `tarsila-app-uninstall.sh` | **Divergiu**: Store 70 linhas, app-mgmt 90 |
-
-O `postinst` da Store é guardado — só instala o motor se
-`command -v tarsila-atalho-criar` falhar — então **não há sobrescrita
-silenciosa**, e é um desenho deliberado: a Store precisa criar atalhos mesmo
-sem a interface gráfica do `app-management`.
-
-O custo é que os dois envelhecem separado. **Já aconteceu:** a correção de
-16/08, que fez a desinstalação pedir a senha em vez de falhar calada com
-`sudo -n`, entrou no `app-management` e **não** na cópia da Store. Num sistema
-com a Store e sem o `app-management`, o bug continua.
-
-Saídas possíveis: a Store declarar `Depends: tarsila-app-management`; ou o
-motor virar um sexto pacote (`tarsila-motor`) do qual os dois dependem.
 
 ### A Store tem layout próprio
 
