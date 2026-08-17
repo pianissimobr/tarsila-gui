@@ -5,9 +5,12 @@
 -- inteligente do gerenciador. O antigo encaixe em "slots"/cascata
 -- foi removido em 2026-07-19 - NAO reintroduzir posicionamento forcado.
 
-local SYSTEM_CLASSES = { Xfdesktop = true, ["Xfce4-panel"] = true,
-                         Plank = true,
-                         ["Tarsila-tela-estados"] = true }
+-- A mobilia do sistema, que nao e janela de aplicativo e nao deve receber
+-- regra nenhuma. Ate 17/08/2026 esta lista era Xfdesktop, Xfce4-panel, Plank e
+-- Tarsila-tela-estados: os quatro ja tinham sido removidos do sistema, e as
+-- duas janelas vivas nao estavam aqui. A guarda nao guardava mais nada.
+local SYSTEM_CLASSES = { ["Tarsila-dock"] = true,
+                         ["Tarsila-barra"] = true }
 if SYSTEM_CLASSES[get_window_class()] then
   return
 end

@@ -12,10 +12,12 @@
 #
 #   $XDG_RUNTIME_DIR/tarsila-topbar-state.txt   ->  MAX=0|1 / ID=<janela>
 #
-# Consumidores (o formato e o mesmo de sempre, ninguem precisou mudar):
-#   - tarsila-tela-estados  (classe Botao: onde o botao fica e o que ele faz)
-#   - tarsila-monitor.sh    (som das transicoes)
-#   - ~/.config/devilspie2/floating.lua
+# Consumidores:
+#   - tarsila-dock          (esconde a Dock quando MAX=1)
+#   - tarsila-monitor.sh    (estado 1/2/3)
+#
+# O terceiro era o tarsila-tela-estados, removido em 17/08/2026 junto com o
+# vetor de abertura. O floating.lua tambem lia este arquivo e parou de ler.
 #
 # O QUE ELE DECIDE
 #

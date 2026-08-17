@@ -105,8 +105,10 @@ while true; do
     # protegido por um arquivo-sentinela que o autostart cria. Na sessao
     # Openbox a sentinela sempre existe, entao o laco nunca chegou a rodar --
     # era codigo morto guardado por uma guarda que nunca falhava. Nao ha mais
-    # painel do XFCE nem bolinhas a acordar: quem le este contador e o
-    # tarsila-tela-estados, por inotify.
+    # painel do XFCE nem bolinhas a acordar. Quem lia este contador era o
+    # tarsila-tela-estados, removido em 17/08/2026 junto com o vetor: hoje
+    # NINGUEM le este arquivo. Ele continua sendo gravado enquanto nao se
+    # decide se algo volta a precisar dele -- ver docs/DIAGNOSTICO-BIN.md.
     prev_n="$n"
   fi
 

@@ -57,7 +57,7 @@ LISTA="${TARSILA_LISTA:-}"
 [ -n "$LISTA" ] || LISTA="/usr/share/tarsila/aquecer.txt"
 PERFIL_BASE="/tmp/tarsila-aquecimento-$$"
 REGISTRO="${TARSILA_LOG:-${HOME:-/var/tmp}/.local/share/tarsila/aquecimento.log}"
-TELA="${TARSILA_TELA:-:78}"          # :77 e do tarsila-aprender-janelas
+TELA="${TARSILA_TELA:-:78}"          # o :77 era do tarsila-aprender-janelas
 
 FOLGA_MINIMA=55         # % da memoria total que precisa estar disponivel
 TETO_POR_APP=45         # segundos; se passar disso, desiste daquele e segue
@@ -158,8 +158,8 @@ while read -r prog resto; do
     # SIGKILL de proposito, e nao um fechamento educado: o AbiWord e o
     # Gnumeric GRAVAM a geometria da janela ao sair, e a geometria desta tela
     # invisivel nao e a da TV -- deixa-los salvar faria o aplicativo nascer
-    # torto na proxima abertura de verdade. E a mesma razao do
-    # tarsila-aprender-janelas.
+    # torto na proxima abertura de verdade. Era a mesma razao do
+    # tarsila-aprender-janelas, removido em 17/08/2026.
     pkill -9 -P "$pid" 2>/dev/null
     kill -9 "$pid" 2>/dev/null
     [ -n "$perfil" ] && pkill -9 -f "$perfil" 2>/dev/null

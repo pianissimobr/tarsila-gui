@@ -135,7 +135,6 @@ chmod 755 /usr/local/bin/tarsila-* /usr/local/sbin/tarsila-oobe-init /usr/local/
 if [ -d "$REPO_DIR/openbox/deploy/usr" ]; then
   cp -a "$REPO_DIR/openbox/deploy/usr/." /usr/
   chmod +x /usr/local/bin/tarsila-ob-* 2>/dev/null || true
-  chmod +x /usr/local/bin/tarsila-tela-estados 2>/dev/null || true
 fi
 if [ -d "$REPO_DIR/openbox/deploy/etc" ]; then
   cp -a "$REPO_DIR/openbox/deploy/etc/." /etc/

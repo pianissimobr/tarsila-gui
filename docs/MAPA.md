@@ -53,23 +53,42 @@ Cada arquivo em `/etc/sudoers.d/` autoriza um caminho específico e fixo, sem co
 ### Ciclo de abertura:
 
 1. **Ampulheta + bloqueio de cliques** — `XGrabPointer` com cursor de espera sobre todas as janelas. Impede clique duplo acidental. O X libera automaticamente se o processo morrer.
-2. **Escolha de vaga** — importa `tarsila_vaga.py` e pergunta em qual dos 7 slots a janela vai nascer, baseado no tamanho do cache de nascimento.
-3. **Regra no Openbox** (a partir da 2ª abertura) — `tarsila_openbox.py` escreve `<application class="..." ><position force="yes">` no `rc.xml` e manda `openbox --reconfigure`. A janela **nasce no lugar**, sem salto.
-4. **Vetor de abertura** — Se o app demorar mais de 0,7s para pintar, `tarsila_vetor.py` escreve `pid x y w h` em `$XDG_RUNTIME_DIR/tarsila-vetor.txt`. O daemon `tarsila-tela-estados` lê e desenha um retângulo animado no lugar exato.
-5. **Espera pintar** — `XDamage` monitora a janela nova. Quando o conteúdo é desenhado (`DamageReportNonEmpty`), o vetor é apagado.
-6. **Aprendizado** — Mede a moldura real da janela (`xdotool getwindowgeometry` + `_NET_FRAME_EXTENTS`) e a classe (`WM_CLASS`). Grava em `~/.config/tarsila/nascimento.txt` para a próxima abertura ter tamanho e classe corretos.
-7. **Limpeza** — Remove a regra do Openbox e solta o cursor.
+2. **Espera pela janela** — lê `_NET_CLIENT_LIST` direto do servidor (ctypes, sem subprocesso) e dorme num `select()` na conexão do X até a lista mudar. Teto de 8 s.
+3. **Solta o ponteiro.** Fim.
+
+Quem decide **onde** a janela nasce é o Openbox, pela política `Smart` + `center` que já estava no `rc.xml`.
 
 ---
 
-## 5. Sistema de Vagas e Vetor
+## 5. O que existia aqui, e foi removido em 17/08/2026
 
-| Script | Descrição |
+Entre o passo 1 e o passo 3 havia um sistema inteiro. Saiu por decisão do dono
+do projeto: pesava mais do que entregava.
+
+| Removido | O que fazia |
 |---|---|
-| `tarsila_vaga.py` (`usr/local/lib/tarsila/`) | **7 slots de posicionamento.** Define onde cada janela nasce: 1 (canto superior esquerdo), 2 (superior direito), 3 (inferior esquerdo, acima da Dock), 4 (inferior direito), 5 (centro), 6 e 7 (centro com deslocamento em escada). A ocupação é lida do registro (`~/.config/tarsila/vagas.txt`) e conferida contra as janelas vivas. Classes do sistema (`tarsila-config`, `plank`, `polybar`, `chromium`) ficam fora do sistema de vagas. |
-| `tarsila_vetor.py` (`usr/local/lib/tarsila/`) | **Animação de abertura.** Acende/apaça o desenho overlay e observa o XDamage. O cache de tamanhos (`nascimento.txt`) guarda largura, altura e classe **medidos** da última abertura real (não o mínimo declarado). Só apps da grade curada ganham desenho. |
-| `tarsila_openbox.py` (`usr/local/lib/tarsila/`) | **Regras de posição no Openbox.** Escreve e remove blocos `<application>` com `<position force="yes">` entre marcadores no `rc.xml`. Proteções: trava de arquivo (duas aberturas simultâneas não colidem), validação XML antes de gravar, troca atômica (`os.replace`), cópia original intocada (`rc.xml.tarsila-original`). |
-| `tarsila-tela-estados` (daemon) | Processo residente que monitora `$XDG_RUNTIME_DIR/tarsila-vetor.txt` e desenha o retângulo de abertura com Cairo/Xlib na posição exata. Cada entrada tem PID dono — só o processo que escreveu pode apagar. |
+| `tarsila_vaga.py` (14 KB) | 7 slots de posicionamento; escolhia em qual deles a janela ia nascer |
+| `tarsila_vetor.py` (30 KB) | Retângulo animado na vaga, se o app demorasse mais de 0,7 s; cache de tamanhos medidos; observador XDamage |
+| `tarsila_openbox.py` (9 KB) | Reescrevia o `rc.xml` com `<position force="yes">` e disparava `openbox --reconfigure` **a cada abertura** |
+| `tarsila-tela-estados` (1293 linhas) | Processo GTK residente cuja única função viva era pintar esse retângulo |
+| `tarsila-aprender-janelas` (329 linhas) | Abria cada app numa tela invisível para medir como ele nasce e alimentar o cache |
+
+O `openbox --reconfigure` era o custo dominante: faz o gerenciador reler o
+`rc.xml` inteiro e reaplicar as regras a **todas** as janelas, no exato instante
+em que a máquina está ocupada abrindo o aplicativo. O sistema gastava
+processamento para escolher onde a janela nasce e, quando escolhia devagar
+demais, precisava de um desenho para tapar a espera que ele mesmo causava.
+
+Medido na box, abrindo a Calculadora pelo caminho real:
+
+| | antes | depois |
+|---|---|---|
+| até a janela na tela | 3823 ms | 2885 ms |
+| forks do sistema na abertura | 91 | 83 |
+| ampulheta presa (medida direta) | — | 1369 ms |
+
+129 KB de código a menos, um processo residente a menos. Os dados aprendidos
+(`~/.config/tarsila/nascimento.txt` e `tamanhos.txt`) saíram junto.
 
 ---
 

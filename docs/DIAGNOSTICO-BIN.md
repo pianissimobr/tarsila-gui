@@ -61,7 +61,15 @@ O mais instrutivo: **o comentário logo acima descreve esse mesmo bug**, na vers
 `xfce4-panel` e deixando o Plank — que morreu no dia seguinte. A condição certa não é o
 nome de um processo, é a janela existir: `xdotool search --class tarsila-dock`.
 
-### 2. O vetor de abertura não tem mais quem o desenhe
+### 2. O vetor de abertura não tem mais quem o desenhe — RESOLVIDO, POR CORTE
+
+> **17/08/2026, decisão do dono do projeto: cortar.** O vetor, o sistema de
+> vagas, a regra de posição no `rc.xml` e o aprendizado saíram inteiros —
+> `tarsila_vaga.py`, `tarsila_vetor.py`, `tarsila_openbox.py`,
+> `tarsila-tela-estados` e `tarsila-aprender-janelas`, 129 KB de código e um
+> processo residente. Quem posiciona a janela agora é o Openbox, pela política
+> `Smart` + `center` que já estava no `rc.xml`. Detalhes e medições em
+> `docs/MAPA.md` §5. O texto abaixo é o diagnóstico que levou a essa decisão.
 
 `tarsila_vetor.acende()` escreve a vaga em `$XDG_RUNTIME_DIR/tarsila-vetor.txt` e, nas
 palavras do próprio arquivo, *"quem desenha é o tarsila-tela-estados"*.
@@ -195,7 +203,7 @@ mesmo bloco que já saiu do `tarsila-dock-item.sh` e do `tarsila-dock-manager`.
 
 | Script | Situação |
 |---|---|
-| `tarsila-tela-estados` (1293 linhas) | Ninguém sobe. Ver defeito 2 — vai junto com o vetor. |
+| ~~`tarsila-tela-estados`~~ (1293 linhas) | Ninguém subia. **Removido em 17/08**, junto com o vetor. |
 | `tarsila-ajusta-janela` (47) | Ferramenta manual de acerto de encaixe. Mede o topo da Dock com `xdotool search --class plank`, então imprime vão vazio. |
 | `tarsila-machine-id-check` (9) | Não é chamado por nada — nem unit, nem OOBE. E a lógica não faz o que o comentário diz: só age se `/etc/machine-id` estiver **vazio**, enquanto imagem clonada tem id **duplicado e não vazio**. Nunca protegeu de nada. |
 | `tarsila-perfil`, `tarsila-wifi`, `tarsila-net-set` | **Não são órfãos** — a primeira varredura errou. São chamados pelo painel de Ajustes (`/usr/local/share/tarsila/tarsila_config.py`) via `sudo -n`, pasta que não estava na lista de busca. |
@@ -250,7 +258,7 @@ Legenda: **✓** vivo e correto · **~** vivo com trecho morto · **✗** quebra
 | `tarsila-descanso` | Modo de espera: vídeo em loop com a hora | `descanso-vigia` | ✓ |
 | `tarsila-ob-picom.sh` | Sobe o picom em xrender (GLX congela esta GPU) | autostart | ✓ |
 | `tarsila-boot-cursor.sh` | Cursor de espera enquanto a sessão sobe | autostart | ✗ |
-| `tarsila-tela-estados` | Botão, fundo e vetor da era polybar | — | ○ |
+| ~~`tarsila-tela-estados`~~ | Botão, fundo e vetor da era polybar | — | **removido 17/08** |
 
 ### Aparência e ajustes
 
@@ -284,12 +292,12 @@ Legenda: **✓** vivo e correto · **~** vivo com trecho morto · **✗** quebra
 
 | Script | O que é | Chamado por | |
 |---|---|---|---|
-| `tarsila-abrindo` | Ampulheta de verdade: cursor de espera e cliques bloqueados | os `.desktop` curados | ✓ |
+| `tarsila-abrindo` | Ampulheta: cursor de espera e cliques bloqueados. Nada mais, desde 17/08 | os `.desktop` curados | ✓ |
 | `tarsila-uma-janela` | Garante uma janela só por aplicativo (`flock`) | os `.desktop` curados | ✓ |
-| `tarsila-vaga.py` | Wrapper de `tarsila_vaga` (a lógica está em `lib/`) | libs | ✓ |
+| ~~`tarsila-vaga.py`~~ | Wrapper de `tarsila_vaga` | — | **removido 17/08** |
 | `tarsila-travar-janela` | Trava tamanho e tira o maximizar | `tarsila-calculadora` | ✓ |
 | `tarsila-ajusta-janela` | Ferramenta manual de encaixe (uso do desenvolvedor) | — | ○ |
-| `tarsila-aprender-janelas` | Aprende, em tela invisível, como cada app nasce | `tarsila-aquecer` | ✓ |
+| ~~`tarsila-aprender-janelas`~~ | Aprendia, em tela invisível, como cada app nascia | — | **removido 17/08** |
 
 ### Aplicativos
 
@@ -319,12 +327,14 @@ Legenda: **✓** vivo e correto · **~** vivo com trecho morto · **✗** quebra
 
 ## Ordem sugerida
 
-Do que o usuário sente para o que só incomoda quem mantém:
+Do que o usuário sente para o que só incomoda quem mantém. Os dois primeiros
+foram feitos em 17/08/2026, no mesmo dia deste diagnóstico.
 
-1. **`tarsila-boot-cursor.sh`** — 32 s de ampulheta em todo boot. Uma linha.
-2. **O vetor** — decidir se volta (subir o `tela-estados` só para isso, ou portar o
-   desenho para dentro do `tarsila-dock`) ou se sai de vez, com a `lib` limpa junto.
-   São 1293 linhas paradas esperando essa decisão.
+1. ~~**`tarsila-boot-cursor.sh`**~~ — **feito.** Passou a esperar a janela
+   (`--class tarsila-dock`) em vez do processo. Medido: 35 s → 2 s.
+2. ~~**O vetor**~~ — **feito, por corte.** Ver a nota no defeito 2. Junto foram
+   embora o sistema de vagas, o `openbox --reconfigure` por abertura e o
+   `tarsila-aprender-janelas`.
 3. **`tarsila-pos-dock`** (e a cópia no appfinder) — trocar `plank` por `tarsila-dock`.
    Com a janela certa, a captura de tela e o PIL provavelmente ficam dispensáveis: a Dock
    nova tem largura própria e não pinta só o meio.

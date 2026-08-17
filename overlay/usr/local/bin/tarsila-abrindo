@@ -20,67 +20,136 @@ conexao. Se este processo morrer, travar ou for morto, a maquina volta ao
 normal sozinha. Alem disso ha um tempo maximo curto, e o grab e solto assim
 que a janela do aplicativo aparece.
 
+O QUE SAIU DAQUI EM 17/08/2026 -- e por que
+
+Ate hoje este script fazia muito mais do que a ampulheta. Em toda abertura de
+todo aplicativo ele:
+
+  * escolhia uma "vaga" na grade (tarsila_vaga.py, 14 KB);
+  * desenhava um retangulo animado na vaga escolhida, se o app demorasse mais
+    de 0,7 s (tarsila_vetor.py, 30 KB, desenhado pelo tarsila-tela-estados,
+    1293 linhas, um processo GTK residente);
+  * REESCREVIA O rc.xml e disparava um `openbox --reconfigure` para forcar a
+    janela a nascer na vaga (tarsila_openbox.py);
+  * media a janela recem-nascida e gravava o aprendizado em disco.
+
+Medido nesta box, abrindo a Calculadora pelo caminho real: 3,8 s ate a janela e
+91 forks do sistema. Um `openbox --reconfigure` faz o gerenciador reler o
+rc.xml inteiro e reaplicar as regras a todas as janelas -- num Amlogic isso
+compete com o proprio aplicativo que se esta tentando abrir. O sistema gastava
+processamento para escolher onde a janela nasce e, quando escolhia devagar
+demais, precisava de um desenho para tapar a espera que ele mesmo causava.
+
+A decisao (17/08/2026, do dono do projeto): cortar os dois. Quem posiciona a
+janela agora e o proprio Openbox, pela politica `Smart` + `center` que ja
+estava no rc.xml e nunca era usada. Nao ha vaga, nao ha desenho, nao ha
+reconfigure, nao ha aprendizado -- e nao ha o processo residente que existia
+so para pintar o retangulo.
+
+Ficou o que resolve o problema de verdade: a ampulheta e o bloqueio de cliques.
+
 Uso:  tarsila-abrindo <comando> [argumentos...]
 """
 
 import ctypes
 import os
+import select
 import subprocess
 import sys
-import threading
 import time
-
-# Quanto esperar antes de acender o desenho. Se a janela chegar antes disto,
-# ele nunca aparece.
-#
-# Medido na TV, do disparo ate a janela existir: galculator 443 ms, mousepad
-# 424, xarchiver 425, gnumeric 543, thunar 595 -- e qpdfview 4702. Ou seja, a
-# esmagadora maioria abre em menos de 600 ms, e para esses o desenho era puro
-# ruido: piscava e sumia. Acima de 700 ms fica so quem realmente demora, que
-# e exatamente o caso em que a tela parada parece travada.
-#
-# Nada de retorno se perde nesse meio tempo: a ampulheta e o bloqueio de
-# cliques valem desde o primeiro instante.
-LIMIAR_VETOR = 0.7
 
 # Tempo maximo com os cliques bloqueados. Curto de proposito: se o aplicativo
 # nao abriu ate aqui, e melhor devolver o controle ao usuario do que insistir.
-#
-# Baixado de 20 s para 8 s em 2026-08-02, quando o vetor entrou: agora este
-# tempo tambem e o teto do desenho na tela. Se o XDamage falhar em algum
-# aplicativo, o pior caso e o vetor ficar 8 s e sair -- em vez de 20 s com o
-# ponteiro preso, que era um risco real de a TV parecer travada.
 LIMITE = 8.0
 # Depois que o processo termina sem abrir janela, ainda esperamos um pouco: o
 # lancador pode ser um script que sai e deixa o programa de verdade subindo.
 FOLGA_APOS_SAIR = 2.0
 XC_WATCH = 150            # a ampulheta do conjunto de cursores do X
-BIBLIOTECA = "/usr/local/lib/tarsila"   # onde vive o tarsila_vetor.py
+
+PropertyChangeMask = 1 << 22
+PropertyNotify = 28
+AnyPropertyType = 0
 
 
-def antes_ids(conjunto):
-    """Ids em numero, para comparar com o que vem nos eventos do X.
+class X:
+    """O bastante de Xlib para esperar por janela nova sem forkar nada.
 
-    janelas() devolve textos como "0x2400007"; o MapNotify traz inteiros.
+    Antes esta espera era um laco que rodava `xprop -root` a cada 0,25 s --
+    ate 32 subprocessos por abertura, no exato momento em que a maquina esta
+    mais ocupada. Aqui a lista de janelas e lida direto do servidor, e o
+    processo dorme num select() ate o X avisar que ela mudou.
     """
-    saida = set()
-    for p in conjunto:
+
+    def __init__(self):
+        self.lib = ctypes.CDLL("libX11.so.6")
+        self.lib.XOpenDisplay.restype = ctypes.c_void_p
+        self.dpy = self.lib.XOpenDisplay(None)
+        if not self.dpy:
+            raise OSError("sem display")
+        self.lib.XDefaultRootWindow.restype = ctypes.c_ulong
+        self.lib.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+        self.raiz = self.lib.XDefaultRootWindow(self.dpy)
+        self.lib.XInternAtom.restype = ctypes.c_ulong
+        self.lib.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p,
+                                         ctypes.c_int]
+        self.lista = self.lib.XInternAtom(self.dpy, b"_NET_CLIENT_LIST", False)
+        self.lib.XConnectionNumber.argtypes = [ctypes.c_void_p]
+        self.fd = self.lib.XConnectionNumber(self.dpy)
+
+    def janelas(self):
+        """Conjunto de ids em _NET_CLIENT_LIST, lido direto do servidor."""
+        tipo = ctypes.c_ulong()
+        formato = ctypes.c_int()
+        n = ctypes.c_ulong()
+        resto = ctypes.c_ulong()
+        dados = ctypes.POINTER(ctypes.c_ulong)()
+        self.lib.XGetWindowProperty.argtypes = [
+            ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_long,
+            ctypes.c_long, ctypes.c_int, ctypes.c_ulong,
+            ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_ulong),
+            ctypes.POINTER(ctypes.POINTER(ctypes.c_ulong))]
+        rc = self.lib.XGetWindowProperty(
+            self.dpy, self.raiz, self.lista, 0, 4096, False, AnyPropertyType,
+            ctypes.byref(tipo), ctypes.byref(formato), ctypes.byref(n),
+            ctypes.byref(resto), ctypes.byref(dados))
+        if rc != 0 or not dados:
+            return set()
         try:
-            saida.add(int(p, 16))
-        except ValueError:
+            return {dados[i] for i in range(n.value)}
+        finally:
+            self.lib.XFree(dados)
+
+    def escuta_raiz(self):
+        self.lib.XSelectInput(self.dpy, ctypes.c_ulong(self.raiz),
+                              ctypes.c_long(PropertyChangeMask))
+        self.lib.XFlush(self.dpy)
+
+    def espera_mudanca(self, prazo):
+        """Dorme ate o X mandar algo, ou ate o prazo. True se veio evento.
+
+        Os eventos sao consumidos aqui mesmo: sem isso a fila enche e o
+        select() para de acordar, porque o que ele vigia e o SOCKET, e o que
+        ja chegou dele nao volta a chegar.
+        """
+        if prazo <= 0:
+            return False
+        try:
+            pronto, _, _ = select.select([self.fd], [], [], prazo)
+        except OSError:
+            return False
+        if not pronto:
+            return False
+        evento = ctypes.create_string_buffer(256)   # XEvent cabe folgado
+        while self.lib.XPending(self.dpy) > 0:
+            self.lib.XNextEvent(self.dpy, evento)
+        return True
+
+    def fecha(self):
+        try:
+            self.lib.XCloseDisplay(self.dpy)
+        except Exception:
             pass
-    return saida
-
-
-def janelas():
-    """Janelas que o gerenciador esta administrando agora."""
-    try:
-        saida = subprocess.run(["xprop", "-root", "_NET_CLIENT_LIST"],
-                               capture_output=True, text=True, timeout=3).stdout
-    except Exception:
-        return set()
-    _, _, lista = saida.partition("#")
-    return {p.strip() for p in lista.split(",") if p.strip()}
 
 
 def main():
@@ -89,216 +158,59 @@ def main():
     cmd = sys.argv[1:]
 
     try:
-        x11 = ctypes.CDLL("libX11.so.6")
-    except OSError:
-        os.execvp(cmd[0], cmd)          # sem X11: so executa, sem ampulheta
+        x = X()
+    except Exception:
+        os.execvp(cmd[0], cmd)          # sem X: so executa, sem ampulheta
 
-    x11.XOpenDisplay.restype = ctypes.c_void_p
-    dpy = x11.XOpenDisplay(None)
-    if not dpy:
-        os.execvp(cmd[0], cmd)
-
-    x11.XDefaultRootWindow.restype = ctypes.c_ulong
-    x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
-    raiz = x11.XDefaultRootWindow(dpy)
-
+    x11 = x.lib
     x11.XCreateFontCursor.restype = ctypes.c_ulong
     x11.XCreateFontCursor.argtypes = [ctypes.c_void_p, ctypes.c_uint]
-    cursor = x11.XCreateFontCursor(dpy, XC_WATCH)
+    cursor = x11.XCreateFontCursor(x.dpy, XC_WATCH)
 
     x11.XGrabPointer.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int,
                                  ctypes.c_uint, ctypes.c_int, ctypes.c_int,
                                  ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong]
+
+    antes = x.janelas()
+    x.escuta_raiz()
+
     # owner_events=False -> TODO clique vai para a nossa janela e morre ali.
     # ButtonPress|ButtonRelease|PointerMotion, os dois modos Async para nao
     # congelar o servidor caso algo de errado.
-    antes = janelas()
-
-    # --- vetor de abertura -------------------------------------------------
-    # Reserva a vaga e acende o desenho ANTES de disparar o aplicativo: o
-    # objetivo e justamente cobrir os ~2,5 s em que nao existe janela nenhuma.
-    # Tudo entre try/except: este script abre TODOS os aplicativos do sistema,
-    # e o vetor nunca pode ser motivo para um programa nao abrir.
-    vetor = None
-    vaga = None
-    chave = "desconhecido"
-    conhecido = None
-    ob = None
-    trava_ob = None
-    try:
-        # O modulo mora em /usr/local/lib/tarsila (nao em /usr/local/bin, que
-        # nao esta no sys.path). Nome com underscore para ser importavel.
-        if BIBLIOTECA not in sys.path:
-            sys.path.insert(0, BIBLIOTECA)
-        import tarsila_vetor as tv
-        vetor = tv
-        chave = tv.chave_do_app(cmd)
-        # A grade curada decide quem tem desenho. Ver tem_vetor().
-        conhecido = tv.nascimento_conhecido(chave) if tv.tem_vetor(chave) else None
-        # 'antes' ja e a lista de janelas vivas: serve de graca para
-        # saber quais vagas estao tomadas, sem varrer a tela.
-        vaga = tv.reserva_vaga(chave, antes)
-        # Aplicativo que o sistema ainda nao viu NAO ganha desenho.
-        #
-        # Sem conhecer o app nao sabemos nem o tamanho com que ele nasce nem
-        # a classe dele -- ou seja, o desenho sairia num tamanho inventado e,
-        # sem classe, nao ha regra no Openbox: a janela ainda nasceria no
-        # lugar do gerenciador e seria movida depois. O usuario veria um
-        # retangulo de um tamanho, a janela chegar de outro, e ainda pular.
-        # Prometer errado e pior que nao prometer.
-        #
-        # A ampulheta e o bloqueio de cliques continuam: o retorno de "estou
-        # abrindo" nao se perde, so o desenho da forma. E isto vale uma unica
-        # vez por aplicativo -- ao fim desta abertura ele fica conhecido.
-        #
-        # O acender em si nao acontece aqui: fica armado para daqui a
-        # LIMIAR_VETOR, e e cancelado se a janela chegar antes. Ver abaixo.
-    except Exception:
-        vetor = None
-
-    # --- posicao NO NASCIMENTO: a regra do Openbox --------------------------
-    # A vaga vira regra do proprio Openbox, e a janela nasce no lugar em vez de
-    # ser movida depois -- era esse movimento que o usuario via como salto.
-    # So vale a partir da SEGUNDA abertura de cada aplicativo: a regra casa por
-    # WM_CLASS, e a classe so e conhecida depois de termos visto uma janela.
-    #
-    # ENTRA ANTES DO DISPARO, e nao depois. Cheguei a mover isto para depois,
-    # para tirar ~170 ms do caminho critico, apostando que nenhum aplicativo
-    # mapearia a janela antes de a regra valer. A Agenda desmentiu: ela nasceu
-    # em +213+181 enquanto o desenho ja estava na vaga 25,49 -- exatamente a
-    # divergencia entre desenho e janela que se queria eliminar. Correcao vale
-    # mais que 170 ms, ainda mais agora que a escolha da vaga caiu de 1770 ms
-    # para ~10 ms e sobra folga no orcamento.
-    if vaga and conhecido and conhecido[2]:
-        try:
-            import tarsila_openbox as tob
-            ob = tob
-            trava_ob = tob.prepara(conhecido[2], vaga[0], vaga[1])
-        except Exception:
-            ob = None
-            trava_ob = None
-
-    pegou = x11.XGrabPointer(dpy, raiz, False, 4 | 8 | 64, 1, 1, 0, cursor, 0)
-    x11.XFlush(dpy)
+    pegou = x11.XGrabPointer(x.dpy, ctypes.c_ulong(x.raiz), False, 4 | 8 | 64,
+                             1, 1, 0, ctypes.c_ulong(cursor), 0)
+    x11.XFlush(x.dpy)
 
     try:
         proc = subprocess.Popen(cmd)
     except FileNotFoundError:
         if pegou == 0:
-            x11.XUngrabPointer(dpy, 0)
-            x11.XFlush(dpy)
+            x11.XUngrabPointer(x.dpy, 0)
+            x11.XFlush(x.dpy)
+        x.fecha()
         sys.exit("comando nao encontrado: " + cmd[0])
-
-    # --- o desenho corre JUNTO com a abertura, e perde para ela ------------
-    # Antes o vetor era aceso antes de disparar o aplicativo, entao aparecia
-    # SEMPRE -- inclusive nas aberturas de meio segundo, onde ele so piscava.
-    # Agora as duas coisas comecam juntas: o aplicativo sobe e o desenho fica
-    # armado. Quem chegar primeiro ganha. Se a janela aparecer antes de
-    # LIMIAR_VETOR, o desenho e cancelado e nunca chega a existir.
-    estado = {"aceso": False, "achou": False}
-    tranca = threading.Lock()
-
-    def _acende_se_demorar():
-        with tranca:
-            if estado["achou"]:
-                return
-            vetor.acende(vaga)
-            estado["aceso"] = True
-
-    def _janela_chegou():
-        """A janela venceu a corrida: nao acende mais."""
-        with tranca:
-            estado["achou"] = True
-
-    relogio = None
-    if vetor and vaga and conhecido:
-        relogio = threading.Timer(LIMIAR_VETOR, _acende_se_demorar)
-        relogio.daemon = True     # nunca segura a saida do processo
-        relogio.start()
 
     inicio = time.time()
     saiu_em = None
-    obs = None
     try:
-        # Caminho novo: espera por EVENTO do X ate o conteudo ser pintado.
-        # Isto substitui o laco antigo, que rodava um "xprop -root" a cada
-        # 0,25 s -- uns 10 subprocessos por abertura.
-        if vetor:
-            try:
-                obs = vetor.Observador()
-            except Exception:
-                obs = None
-
-        if obs is not None and obs.ok:
-            # Se a regra do Openbox pegou, a janela JA nasceu na vaga e mexer
-            # nela agora seria um movimento a toa -- e um movimento a toa e
-            # exatamente o salto que estamos tirando. So posiciona quem nao
-            # teve regra (primeira abertura do app, ou duas janelas juntas).
-            def _poe_na_vaga(wid_novo):
-                # Este e o instante em que a janela passa a existir: e aqui
-                # que ela vence a corrida contra o desenho.
-                _janela_chegou()
-                if vetor and vaga and trava_ob is None:
-                    vetor.aplica_vaga(wid_novo, vaga)
-
-            wid = obs.espera_pintar(LIMITE, antes_ids(antes), _poe_na_vaga)
-
-            # Aprende como esta janela nasceu de verdade: moldura e classe.
-            # E o que faz o desenho da PROXIMA abertura ter o tamanho certo e
-            # a regra do Openbox ter em quem casar.
-            # Anota que esta vaga passou a ser desta janela. E o que faz a
-            # proxima abertura saber o que esta ocupado sem varrer nada.
-            if wid and vaga and len(vaga) >= 5:
-                try:
-                    import tarsila_vaga as _tvg
-                    _tvg.registra(vaga[4], wid)
-                except Exception:
-                    pass
-
-            if wid and vetor:
-                try:
-                    m = vetor.medida_de_nascimento(wid)
-                    if m:
-                        vetor.guarda_nascimento(chave, m[0], m[1], m[2])
-                except Exception:
-                    pass
-        else:
-            # Sem X ou sem XDamage: mantem o comportamento antigo.
-            while time.time() - inicio < LIMITE:
-                time.sleep(0.25)
-                if janelas() - antes:
-                    _janela_chegou()
+        while True:
+            falta = LIMITE - (time.time() - inicio)
+            if falta <= 0:
+                break
+            # Meio segundo de teto no select(): o processo pode ter morrido
+            # sem abrir janela nenhuma, e isso nao gera evento do X.
+            x.espera_mudanca(min(falta, 0.5))
+            if x.janelas() - antes:
+                break
+            if proc.poll() is not None:
+                saiu_em = saiu_em or time.time()
+                if time.time() - saiu_em >= FOLGA_APOS_SAIR:
                     break
-                if proc.poll() is not None:
-                    saiu_em = saiu_em or time.time()
-                    if time.time() - saiu_em >= FOLGA_APOS_SAIR:
-                        break
     finally:
-        # Desarma o desenho antes de qualquer coisa: se a saida acontecer
-        # perto do limiar, um relogio ainda vivo poderia acender um vetor
-        # justo depois de apagarmos.
-        _janela_chegou()
-        if relogio is not None:
-            relogio.cancel()
-
-        # A regra sai SEMPRE, inclusive se a janela nunca apareceu: com
-        # force="yes" ela valeria para toda janela daquela classe, para
-        # sempre, e nao so para a abertura que a pediu.
-        if ob is not None and trava_ob is not None:
-            try:
-                ob.limpa(trava_ob)
-            except Exception:
-                pass
-        # So apaga o que chegou a acender. Escrever no arquivo a toa acordaria
-        # o tela-estados por nada, em toda abertura de todo aplicativo.
-        if vetor and estado["aceso"]:
-            vetor.apaga()
-        if obs is not None:
-            obs.fecha()
         if pegou == 0:
-            x11.XUngrabPointer(dpy, 0)
-            x11.XFlush(dpy)
-        x11.XCloseDisplay(dpy)
+            x11.XUngrabPointer(x.dpy, 0)
+            x11.XFlush(x.dpy)
+        x.fecha()
 
 
 if __name__ == "__main__":
