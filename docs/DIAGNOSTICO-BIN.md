@@ -29,12 +29,12 @@ Duas armadilhas do próprio método, para quem repetir:
 
 | | |
 |---|---|
-| Scripts em `/usr/local/bin` | 54 (+ `yt-dlp`) |
+| Scripts em `/usr/local/bin` | 54 no levantamento; **49 depois dos cortes de 17/08** |
 | Vivos e corretos | 38 |
 | Vivos com trecho morto dentro | 6 |
 | **Quebrados** (rodam, mas o que fazem não acontece) | **4** |
 | **Órfãos** (ninguém chama) | **4** |
-| Duplicatas byte a byte | 2 pares |
+| Apelidos por symlink, sem uso | 2 |
 
 Citam Plank ou polybar: **17 arquivos**. Em 9 é só comentário histórico — e comentário
 histórico aqui é patrimônio, não sujeira: explica por que o código tem a forma que tem.
@@ -216,12 +216,21 @@ mesmo bloco que já saiu do `tarsila-dock-item.sh` e do `tarsila-dock-manager`.
 | `tarsila-machine-id-check` (9) | Não é chamado por nada — nem unit, nem OOBE. E a lógica não faz o que o comentário diz: só age se `/etc/machine-id` estiver **vazio**, enquanto imagem clonada tem id **duplicado e não vazio**. Nunca protegeu de nada. |
 | `tarsila-perfil`, `tarsila-wifi`, `tarsila-net-set` | **Não são órfãos** — a primeira varredura errou. São chamados pelo painel de Ajustes (`/usr/local/share/tarsila/tarsila_config.py`) via `sudo -n`, pasta que não estava na lista de busca. |
 
-### 10. Duplicatas byte a byte
+### 10. Dois apelidos `-ob-` sem uso — e uma correção deste documento
 
-`tarsila-tema-apply.sh` ≡ `tarsila-ob-tema-apply.sh` e
-`tarsila-wallpaper-apply.sh` ≡ `tarsila-ob-wallpaper-apply.sh` (`diff` vazio). As versões
-`-ob-` não são chamadas por ninguém: as únicas ocorrências do nome estão nos comentários
-das gêmeas. Herança do tempo em que XFCE e Openbox coexistiam.
+`tarsila-ob-tema-apply.sh` e `tarsila-ob-wallpaper-apply.sh` **são symlinks** para
+`tarsila-tema-apply.sh` e `tarsila-wallpaper-apply.sh`. Herança do tempo em que XFCE e
+Openbox coexistiam e cada sessão chamava a sua versão. Hoje ninguém os chama: as únicas
+ocorrências dos nomes estão nos comentários dos próprios alvos.
+
+Um symlink não custa nada, então não há pressa; se forem removidos, remover também do
+`openbox/deploy/usr/local/bin/`, onde estão versionados como symlinks absolutos
+(apontam para `/usr/local/bin/...`, que só resolve na máquina instalada).
+
+> **Correção.** A primeira versão deste documento dizia "duplicatas byte a byte, 2 pares".
+> Errado: `diff` e `md5sum` **seguem o symlink**, então compararam o arquivo com ele
+> mesmo e responderam "idênticos". Do jeito que estava escrito, alguém apagaria a
+> "cópia" e quebraria o apelido. Para ver o que é link, `ls -l` — não `diff`.
 
 ### 11. Duas listas de classes envelhecidas — sem dano observado
 
@@ -256,7 +265,7 @@ Legenda: **✓** vivo e correto · **~** vivo com trecho morto · **✗** quebra
 | `tarsila-dock` | A Dock (GTK+Cairo). Observa a pasta de lançadores e o estado da tela | autostart | ✓ |
 | `tarsila-barra` | Barra de indicadores do topo (GTK), sempre por cima | autostart | ✓ |
 | `tarsila-barra-menu` | Os quatro popups: som, rede, calendário, sistema | `tarsila-barra` | ✓ |
-| `tarsila-estado.sh` | Fonte de verdade de "há janela maximizada?", por `xprop -spy` | autostart | ~ |
+| `tarsila-estado.sh` | Fonte de verdade de "há janela maximizada?" e dos títulos amigáveis, por `xprop -spy` | autostart | ✓ |
 | ~~`tarsila-monitor.sh`~~ | Daemon de varredura a cada 2 s | — | **removido 17/08** |
 | `tarsila-limpar.sh` | A varinha: fecha tudo, poupando `DOCK`/`DESKTOP` | `tarsila-barra` | ✓ |
 | `tarsila-ob-power.sh` | Menu Desligar/Reiniciar/Sair (yad) | `tarsila-barra` | ✓ |
