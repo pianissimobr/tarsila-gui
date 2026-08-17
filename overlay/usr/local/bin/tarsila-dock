@@ -121,6 +121,9 @@ BORDA_BASE = 0.19       # e na base
 
 RT = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
 ESTADO = os.path.join(RT, "tarsila-topbar-state.txt")
+# Onde a Dock esta pintada: "x y larg alt". Escrito a cada reposicionamento e
+# lido pelo tarsila-pos-dock. Ver _publica_retangulo().
+GEOM = os.path.join(RT, "tarsila-dock-geom")
 LANCADORES = os.path.expanduser("~/.config/plank/dock1/launchers")
 
 CSS = b"""
@@ -476,6 +479,27 @@ class Dock(Gtk.Window):
              else self.alt_tela - self.botao_a)
         self.move(0, y)
         self._recorta_entrada()
+        self._publica_retangulo(y)
+
+    def _publica_retangulo(self, y_janela):
+        """Onde a Dock está PINTADA, para quem precisa nascer encostado nela.
+
+        A janela ocupa a largura inteira da tela e pinta só o pedaço do meio,
+        então a geometria dela não serve a quem pergunta "onde termina a Dock?".
+        Quem sabe a resposta é este processo, que acabou de calcular o retângulo.
+
+        Antes do 17/08/2026 o tarsila-pos-dock descobria isso por conta própria,
+        e do jeito mais caro possível: tirava uma CAPTURA DE TELA da janela do
+        Plank (`import -window`) e varria os pixels com PIL procurando onde a
+        pintura terminava. Publicar quatro números custa nada e é exato.
+        """
+        try:
+            with open(GEOM + ".tmp", "w") as f:
+                f.write("%d %d %d %d\n" % (self.dock_x, y_janela + self.botao_a,
+                                           self.larg_dock, self.altura))
+            os.replace(GEOM + ".tmp", GEOM)
+        except OSError:
+            pass
 
     def _recorta_entrada(self):
         """Só o corpo, o botão e a faixa de borda recebem evento; o resto é buraco.

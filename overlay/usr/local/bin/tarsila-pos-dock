@@ -9,25 +9,47 @@ para esse calculo ficar num lugar so, em vez de copiado em cada programa.
 Nada aqui e coordenada fixa: a Dock e medida agora. Se ela andar, as janelas
 acompanham.
 
-O Plank ocupa a largura inteira da tela mas so pinta o pedaco do meio, entao a
-geometria da janela dele nao serve -- medimos ate onde ela esta PINTADA.
-So no eixo horizontal, porem: a captura vem composta com o papel de parede,
-que tem gradiente, e no vertical a comparacao acusaria "pintado" onde ha so
-fundo. Para o Y basta o topo da janela do Plank, que e exato.
+A janela da Dock ocupa a largura inteira da tela e pinta so o pedaco do meio,
+entao a geometria dela nao responde "onde termina a Dock?". Quem sabe e a
+propria Dock, que publica o retangulo pintado em
+$XDG_RUNTIME_DIR/tarsila-dock-geom ("x y larg alt") a cada reposicionamento.
+
+COMO ERA ATE 17/08/2026, e por que mudou
+
+Este arquivo procurava a janela pela classe "plank" e, quando achava, tirava
+uma CAPTURA DE TELA dela (`import -window`) e varria os pixels com PIL para
+achar onde a pintura terminava. Duas coisas estavam erradas:
+
+  1. o Plank saiu em 16/08. A busca voltava vazia, esta funcao devolvia None
+     SEMPRE, e quem chama -- a Lixeira e os menus da barra -- caia no plano B,
+     abrindo no lugar aproximado. O trabalho caro nunca chegava a rodar; o
+     barato, achar a janela, era o que falhava;
+  2. mesmo funcionando, fotografar a tela e comparar pixel a pixel para
+     descobrir um numero que outro processo ja tem na memoria e caro neste
+     aparelho -- e ainda arrastava PIL e ImageMagick para o caminho de abrir
+     uma janela.
 
 Uso:  tarsila-pos-dock <largura> <altura> [toolkit]
       toolkit: "gtk" (padrao) ou "yad" -- muda so a compensacao da moldura.
 Saida: "X Y" ja compensado, pronto para move()/--geometry.
 """
 
+import os
 import subprocess
 import sys
-import tempfile
 
-# Quanto o pe da janela desce dentro da faixa do Plank. Ali ainda e area
-# transparente acima dos icones, entao a janela encosta sem cobrir nada. Valor
-# derivado medindo a posicao que o usuario escolheu na mao.
-DESCE_ATE = 29
+GEOM = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"),
+                    "tarsila-dock-geom")
+
+# Quanto o pe da janela desce DENTRO da Dock. Era 29 ate 17/08/2026, e nao por
+# estetica: o Y vinha do topo da janela do Plank, que era mais alta que o
+# desenho e tinha uma faixa transparente em cima. Os 29 px cancelavam essa
+# faixa, e a janela encostava na pintura sem cobrir icone nenhum.
+#
+# Agora o Y publicado pela Dock JA E o topo do que esta pintado, entao descer
+# qualquer coisa seria cobrir os icones. Compensacao de moldura continua sendo
+# feita, essa sim, logo abaixo.
+DESCE_ATE = 0
 
 # O gerenciador acrescenta a decoracao ao que se pede, e o quanto depende de
 # quem pede. Medido nesta box, e nao e o mesmo numero para todos:
@@ -40,37 +62,25 @@ COMPENSA = {"gtk": (8, 39), "gtk-app": (8, 30), "yad": (9, 66)}
 
 
 def dock():
-    """(x do fim da Dock, y do topo da janela do Plank) ou None."""
+    """(x do fim da Dock, y do topo da Dock) ou None se ela nao estiver de pe.
+
+    O arquivo pode estar velho: ele sobrevive ao processo que o escreveu. Por
+    isso confirmamos que a janela existe antes de acreditar nele -- uma chamada
+    ao xdotool, contra a captura de tela inteira que havia aqui antes.
+    """
     try:
-        ids = subprocess.run(["xdotool", "search", "--class", "plank"],
-                             capture_output=True, text=True, timeout=5).stdout.split()
+        with open(GEOM) as f:
+            x, y, larg, _alt = (int(v) for v in f.read().split()[:4])
+    except (OSError, ValueError):
+        return None
+    try:
+        vivo = subprocess.run(["xdotool", "search", "--class", "tarsila-dock"],
+                              capture_output=True, text=True, timeout=5).stdout.strip()
     except Exception:
         return None
-    for wid in ids:
-        try:
-            saida = subprocess.run(
-                ["xdotool", "getwindowgeometry", "--shell", wid],
-                capture_output=True, text=True, timeout=5).stdout
-            d = dict(l.split("=", 1) for l in saida.splitlines() if "=" in l)
-            if int(d.get("WIDTH", 0)) <= 1000:
-                continue          # janela auxiliar do Plank, nao a barra
-            px, py = int(d["X"]), int(d["Y"])
-            with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
-                subprocess.run(["import", "-window", wid, tmp.name],
-                               timeout=10, stderr=subprocess.DEVNULL)
-                from PIL import Image
-                im = Image.open(tmp.name).convert("RGB")
-                w, h = im.size
-                p = im.load()
-                canto = p[2, 2]
-                meio = h // 2
-                xs = [x for x in range(w)
-                      if sum(abs(a - b) for a, b in zip(p[x, meio], canto)) > 30]
-            if xs:
-                return px + xs[-1], py
-        except Exception:
-            continue
-    return None
+    if not vivo:
+        return None
+    return x + larg, y
 
 
 def main():

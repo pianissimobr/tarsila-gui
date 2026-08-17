@@ -1,14 +1,11 @@
 #!/bin/bash
-# Autostart: reaplica ordem/tema/comportamento do dock (Plank) via dconf
-# ANTES do Plank abrir (ver autostart/plank.desktop, que roda este script e
-# so entao da "exec plank"). Necessario porque o Plank pode reinicializar
-# as proprias preferencias com os padroes de fabrica em certos cenarios de
-# primeira execucao, sobrescrevendo o que foi gravado por fora durante o
-# provisionamento (mesma classe de problema ja visto com o wallpaper -
-# ver tarsila-wallpaper-apply.sh). Reforcar aqui, a cada login, torna a
-# ordem correta independente disso acontecer de novo.
+# Autostart: grava a ORDEM da Dock, e so isso.
+#
+# Roda a cada login, logo antes da Dock subir. O nome e a heranca sao do tempo
+# do Plank -- ele reinicializava as proprias preferencias em certos cenarios de
+# primeira execucao, e este script existia para reimpor tudo por fora. Do "tudo"
+# sobrou uma chave; ver o bloco no fim do arquivo.
 set -euo pipefail
-. /usr/local/lib/tarsila/comum.sh
 
 LAUNCHERS_DIR="$HOME/.config/plank/dock1/launchers"
 [ -d "$LAUNCHERS_DIR" ] || exit 0
@@ -59,27 +56,24 @@ done
 items="[${items%, }]"
 
 dconf write /net/launchpad/plank/docks/dock1/dock-items "$items"
-# NAO fixar o tema aqui: este script roda a CADA login, logo antes do plank
-# subir, e gravar 'Tarsila' fixo desfazia a escolha do usuario -- a Dock voltava
-# sempre ao tema base escuro. Agora deriva do tema salvo, e assim a cor da Dock
-# sobrevive ao reinicio. Mapa igual ao do tarsila-ob-tema-apply.sh.
-# O mapa tema -> tema da Dock mora no comum.sh: era o mesmo case escrito
-# aqui e no tarsila-tema-apply.sh (05/08).
-dconf write /net/launchpad/plank/docks/dock1/theme "'$(dock_do_tema "$(tema_salvo)")'"
-dconf write /net/launchpad/plank/docks/dock1/position "'bottom'"
-# visivel com janelas flutuantes; some quando maximizado; reaparece na borda
-# inferior (pressure-reveal) e some depois que o mouse sai da regiao do dock.
-# O hide-delay era 2000: a Dock ficava 2s por cima da janela recem-maximizada
-# antes de sair. Em 0 ela sai junto com o maximizar -- a espera so atrapalhava
-# quem maximizou justamente para ganhar tela.
-dconf write /net/launchpad/plank/docks/dock1/hide-mode "'dodge-maximized'"
-dconf write /net/launchpad/plank/docks/dock1/pressure-reveal true
-dconf write /net/launchpad/plank/docks/dock1/hide-delay 0
-dconf write /net/launchpad/plank/docks/dock1/unhide-delay 0
-# Tamanho pela resolucao, nao 52 fixo. Este script roda a cada login logo
-# antes do Plank; o 52 escrito aqui desfazia o valor que o
-# tarsila-wallpaper-apply.sh calcula da altura da tela -- numa TV de 1080p
-# ou 4K o icone voltava sozinho ao tamanho pensado para 768p (05/08).
-dconf write /net/launchpad/plank/docks/dock1/icon-size "$(icone_dock)"
-dconf write /net/launchpad/plank/docks/dock1/pinned-only true
-dconf write /net/launchpad/plank/docks/dock1/lock-items true
+
+# NOVE ESCRITAS DE DCONF SAIRAM DAQUI EM 17/08/2026
+#
+# Este script gravava, alem da ordem acima: theme, position, hide-mode,
+# pressure-reveal, hide-delay, unhide-delay, icon-size, pinned-only e
+# lock-items. Todas eram preferencias do PLANK, que saiu em 16/08.
+#
+# A Dock em GTK nao le dconf. A cor esta no codigo, o tamanho do icone sai da
+# altura da tela e da quantidade de itens (metricas() no tarsila-dock), e
+# esconder-se ao maximizar ela decide sozinha, lendo tarsila-topbar-state.txt.
+# Eram nove escritas por login para ninguem.
+#
+# A UNICA que ficou e dock-items, e mesmo essa nao e lida pela Dock -- que
+# ordena pelo nome do arquivo .dockitem -- e sim pelo tarsila-dock-manager,
+# para mostrar a ordem atual na janela "Gerenciar Dock".
+#
+# CONSEQUENCIA CONHECIDA, ainda em aberto: com a escrita de `theme` fora, trocar
+# o tema no painel de Ajustes nao muda mais a cor da Dock. Ja nao mudava -- a
+# Dock nunca leu essa chave --, mas agora esta explicito. Para a cor voltar a
+# obedecer ao tema, quem tem de mudar e o tarsila-dock, lendo tema_salvo() como
+# a tarsila-barra faz. Ver docs/DIAGNOSTICO-BIN.md, defeito 5.
