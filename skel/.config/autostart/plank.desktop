@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Plank
-Exec=sh -c "/usr/local/bin/tarsila-dock-apply.sh; exec plank"
-Icon=plank
-X-GNOME-Autostart-enabled=true
-NoDisplay=true

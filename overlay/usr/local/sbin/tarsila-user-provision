@@ -63,6 +63,26 @@ if which tarsila-atalho-criar >/dev/null 2>&1; then
   tarsila-atalho-criar tarsila-email 2>/dev/null || true
 fi
 
+# IDENTIDADE UNICA DA MAQUINA
+#
+# A imagem e clonada: todo cartao gravado sai com o MESMO /etc/machine-id. Duas
+# boxes na mesma rede pedem endereco ao DHCP com o mesmo identificador (o DUID
+# do systemd e derivado dele) e podem receber o mesmo endereco; o id tambem
+# identifica a maquina no dbus e no journal.
+#
+# Este e o lugar certo: roda UMA vez por aparelho de verdade, quando o
+# assistente de primeiro boot cria a conta. Zerar o arquivo faz o systemd gerar
+# um id novo no proximo boot, e o do dbus passa a apontar para ele.
+#
+# Havia um /usr/local/bin/tarsila-machine-id-check com esta intencao. Nao era
+# chamado por nada -- nem unit, nem OOBE -- e a condicao estava ao contrario:
+# so agia se o arquivo estivesse VAZIO, que e justamente o estado ja
+# consertado. Imagem clonada tem id preenchido e repetido, e passava batido.
+# Removido em 17/08/2026.
+: > /etc/machine-id
+rm -f /var/lib/dbus/machine-id
+ln -sf /etc/machine-id /var/lib/dbus/machine-id
+
 # Sempre remove o modo OOBE, mesmo se algo acima falhou
 rm -f /var/lib/tarsila/firstboot /etc/lightdm/lightdm.conf.d/99-tarsila-oobe.conf /etc/sudoers.d/tarsila-oobe
 systemctl restart lightdm 2>/dev/null || true

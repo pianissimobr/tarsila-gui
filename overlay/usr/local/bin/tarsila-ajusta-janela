@@ -19,9 +19,13 @@ QY=$((Y - MT)); QH=$((HEIGHT + MT + MB))
 # O teto util era o fim da barra de cima. Sem barra, e o topo da tela: a
 # janela maximizada vai ate y=0 e leva a propria barra de titulo junto.
 FIM_BARRA=0
-DOCK=$(for w in $(xdotool search --class plank); do
-         eval "$(xdotool getwindowgeometry --shell "$w")"
-         [ "${WIDTH:-0}" -gt 1000 ] && echo "$Y"; done | head -1)
+# Onde a Dock comeca. Ate 17/08/2026 isto procurava a classe "plank": sem Plank
+# a variavel saia VAZIA e a conta do vao livre imprimia erro de sintaxe. A Dock
+# publica o retangulo pintado -- que nao e a janela dela, bem mais larga que o
+# desenho. E o mesmo arquivo que o tarsila-pos-dock le.
+GEOM="${XDG_RUNTIME_DIR:-/tmp}/tarsila-dock-geom"
+DOCK=$(awk '{print $2}' "$GEOM" 2>/dev/null)
+[ -n "$DOCK" ] || DOCK=$(xdotool getdisplaygeometry | awk '{print $2}')
 
 case "${1:-}" in
   "")      echo "  janela : conteudo y=$Y altura=$HEIGHT"

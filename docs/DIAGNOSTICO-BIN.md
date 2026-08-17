@@ -135,7 +135,13 @@ metades igualmente quebradas.
 A Dock nova é `--class tarsila-dock` e tem largura própria; o `topo_da_dock()` do
 `tarsila-barra-menu` já foi corrigido para isso em 17/08 e serve de modelo.
 
-### 5. Trocar o tema não muda mais a cor da Dock
+### 5. Trocar o tema não muda mais a cor da Dock — RESOLVIDO
+
+> **17/08/2026.** A Dock passou a ler `~/.config/tarsila/tema` e a repintar por
+> evento, com as **mesmas quatro paletas da barra** — as duas são a mobília do
+> sistema e agora combinam sempre. O realce de hover dos ícones saiu do branco
+> fixo (invisível no tema claro) para a cor de frente do tema. As nove escritas
+> de dconf que tentavam fazer isso pelo lado do Plank foram removidas.
 
 Três scripts escrevem nove chaves em `/net/launchpad/plank/docks/dock1/`
 (`theme`, `position`, `hide-mode`, `pressure-reveal`, `hide-delay`, `unhide-delay`,
@@ -151,7 +157,13 @@ e obedecendo, e a Dock continua azul-escura. O `tarsila-estado.sh` também escre
 `hide-mode='dodge-maximized'` a cada troca de estado, para um Plank que não existe — a
 Dock some ao maximizar por conta própria, lendo `tarsila-topbar-state.txt`.
 
-### 6. Um usuário novo cai no mundo antigo
+### 6. Um usuário novo cai no mundo antigo — RESOLVIDO
+
+> **17/08/2026.** O `install.sh` passou a escrever o modelo também em
+> `/etc/skel`, que é o que o `adduser` copia. Com uma armadilha encontrada no
+> teste: `cp -a` **mistura** em vez de substituir, e a primeira tentativa
+> entregou 30 ícones na Dock — os 15 atuais mais os 15 da versão anterior, com
+> numeração diferente. Agora apaga antes de copiar, nos dois modelos.
 
 `/etc/skel/.config/` ainda tem `polybar/` (9 scripts: `title.sh`, `dots.sh`, `net.sh`,
 `sound.sh`, `power.sh`…), `plank/`, `xfce4/`, e um `openbox/autostart` que sobe
@@ -168,7 +180,14 @@ De quebra, o `skel/` do repositório ainda leva `.config/autostart/plank.desktop
 (`sh -c "tarsila-dock-apply.sh; exec plank"`) e um `plank-dconf.ini` que o `install.sh`
 carrega no dconf.
 
-### 7. O autostart XDG inteiro é inerte
+### 7. O autostart XDG inteiro é inerte — RESOLVIDO, POR DECISÃO
+
+> **17/08/2026.** Fonte única: as seis entradas de `~/.config/autostart` saíram
+> do modelo do usuário. Cinco repetiam o que o autostart do Openbox já sobe e a
+> sexta era o Plank — uma armadilha adormecida, porque no dia em que alguém
+> instalasse o `python3-xdg` a sessão passaria a subir tudo **duas vezes**, com
+> um Plank por cima da Dock. Os applets de bandeja (rede, Bluetooth,
+> impressora) ficaram de fora de propósito: esta sessão não tem bandeja.
 
 `openbox-autostart` termina em `exec openbox-xdg-autostart`, que morre em:
 
@@ -207,7 +226,13 @@ o mesmo, mas é protegido por `command -v plank || return 0` — inerte, não pe
 Desinstalar **funciona**, porque a Dock passou a observar a pasta desde 17/08. Foi esse
 mesmo bloco que já saiu do `tarsila-dock-item.sh` e do `tarsila-dock-manager`.
 
-### 9. Órfãos
+### 9. Órfãos — RESOLVIDO
+
+> **17/08/2026.** O `tarsila-ajusta-janela` passou a medir a Dock pelo retângulo
+> que ela publica. O `tarsila-machine-id-check` foi removido, e o problema que
+> ele dizia resolver — imagem clonada com o mesmo `machine-id`, o que faz duas
+> boxes pedirem endereço ao DHCP com a mesma identidade — passou para o
+> `tarsila-user-provision`, que roda uma vez por aparelho de verdade.
 
 | Script | Situação |
 |---|---|

@@ -1,7 +1,21 @@
 #!/bin/sh
-# Autostart da sessão Tarsila-Openbox, e a fonte UNICA do que sobe: o
-# autostart XDG (~/.config/autostart e /etc/xdg/autostart) nao roda nesta box,
-# porque o openbox-xdg-autostart exige PyXDG, que nao esta instalado.
+# Autostart da sessão Tarsila-Openbox. E a fonte UNICA do que sobe, e isso e
+# uma decisao, nao um acaso.
+#
+# O openbox-autostart termina chamando o openbox-xdg-autostart, que morre com
+# "requires PyXDG to be installed" -- o python3-xdg nao esta instalado. Ou seja,
+# NADA em ~/.config/autostart nem em /etc/xdg/autostart roda nesta sessao.
+#
+# Em 17/08/2026 as entradas de ~/.config/autostart foram apagadas do modelo do
+# usuario, por serem uma armadilha adormecida: cinco das seis repetiam o que
+# esta lista ja sobe (devilspie2, polkit, boot-cursor, wallpaper) e a sexta era
+# o Plank, que nao existe mais. No dia em que alguem instalasse o python3-xdg,
+# por vontade propria ou arrastado por outro pacote, a sessao passaria a subir
+# tudo DUAS vezes -- e um Plank por cima da Dock.
+#
+# O que ficou de fora de proposito: nm-applet, blueman-applet e o applet de
+# impressora sao icones de BANDEJA, e esta sessao nao tem bandeja
+# (_NET_SYSTEM_TRAY_S0 nao existe). Subiriam invisiveis, so ocupando memoria.
 #
 # Sobe os componentes proprios (tarsila-dock, tarsila-barra, tarsila-estado,
 # devilspie2) e os substitutos leves do XFCE: xsettingsd no lugar do

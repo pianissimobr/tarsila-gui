@@ -1,6 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Tarsila Wallpaper Apply
-Exec=/usr/local/bin/tarsila-wallpaper-apply.sh
-X-GNOME-Autostart-enabled=true
-NoDisplay=true

@@ -152,12 +152,45 @@ fi
 echo "==> [4/6] Modelo de usuário (skel + openbox) e sudoers…"
 # O assistente de primeiro boot cria o usuário a partir destes modelos;
 # ficam no sistema para que o OOBE não dependa do repositório.
+# rm antes do cp, aqui tambem: numa reinstalacao por cima, o `cp -a` deixaria
+# conviver o modelo novo e o antigo (ver a nota do /etc/skel, logo abaixo).
+rm -rf /usr/share/tarsila/skel /usr/share/tarsila/openbox-home
 mkdir -p /usr/share/tarsila/skel
 cp -a "$REPO_DIR/skel/." /usr/share/tarsila/skel/
 if [ -d "$REPO_DIR/openbox/deploy/home" ]; then
   mkdir -p /usr/share/tarsila/openbox-home
   cp -a "$REPO_DIR/openbox/deploy/home/." /usr/share/tarsila/openbox-home/
 fi
+
+# /etc/skel TAMBEM, e não é redundância.
+#
+# O provisionamento do Tarsila (tarsila-user-provision, chamado pelo assistente
+# de primeiro boot) lê os dois modelos acima. Mas `adduser` — o comando que
+# qualquer um usa para criar uma segunda conta — não conhece nenhum deles:
+# copia /etc/skel, e só.
+#
+# Medido na box em 17/08/2026: /etc/skel ainda tinha .config/polybar (9
+# scripts), .config/xfce4, e um openbox/autostart que subia plank, polybar,
+# tarsila-tela-estados e um tarsila-ob-decor.sh já apagado do disco. Nenhuma
+# linha subia a Dock nem a barra. Um usuário criado à mão caía na sessão de
+# duas versões atrás — hoje, numa que nem existe mais.
+# APAGA ANTES DE COPIAR. `cp -a` MISTURA: copiar o modelo por cima do que ja
+# estava deixaria os dois. Testado na box em 17/08/2026 -- o usuario novo
+# recebia 30 icones na Dock, os 15 atuais mais os 15 da versao anterior com
+# numeracao diferente, incluindo os seis indicadores que sairam de la hoje.
+rm -rf /etc/skel/.config /etc/skel/.local
+mkdir -p /etc/skel/.config
+cp -a "$REPO_DIR/skel/." /etc/skel/
+if [ -d "$REPO_DIR/openbox/deploy/home" ]; then
+  for d in openbox dunst xsettingsd mpv; do
+    [ -d "$REPO_DIR/openbox/deploy/home/$d" ] || continue
+    rm -rf "/etc/skel/.config/$d"
+    cp -a "$REPO_DIR/openbox/deploy/home/$d" "/etc/skel/.config/$d"
+  done
+  [ -f "$REPO_DIR/openbox/deploy/home/dot-xsession" ] &&
+    cp -f "$REPO_DIR/openbox/deploy/home/dot-xsession" /etc/skel/.xsession
+fi
+
 # Modelo de sudoers por usuário (as regras usam o usuário de referência
 # "alan"; o provisionador troca pelo nome real). Concatena os tarsila-*.
 mkdir -p /usr/local/lib/tarsila

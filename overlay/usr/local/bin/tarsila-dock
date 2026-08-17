@@ -115,18 +115,58 @@ def metricas(larg_tela, alt_tela, n_itens):
     }
 
 
-FUNDO = (21 / 255, 17 / 255, 40 / 255)
-BORDA_TOPO = 0.50       # alfa do branco na borda interna, no topo
+# CORES POR TEMA -- as MESMAS da tarsila-barra, de proposito.
+#
+# A Dock e a barra sao a mobilia do sistema: quando as duas nao combinam, o
+# desktop parece montado por acidente. Sao os mesmos quatro temas, os mesmos
+# hex. Se um lado mudar, o outro tem de mudar junto.
+#
+# Ate 17/08/2026 a cor daqui era uma tupla fixa, o azul-escuro (21,17,40), e o
+# tema nao a alcancava: quem gravava a cor da Dock era o tarsila-dock-apply.sh,
+# numa chave de dconf do Plank -- que morreu em 16/08 e que esta Dock nunca leu.
+# Resultado visivel: tema "padrao" (claro), barra clara, Dock azul-escura.
+TEMAS = {                    # fundo,     frente
+    "maritimo":   ("#194350", "#f2f6f7"),
+    "escuro":     ("#101014", "#e8e8ea"),
+    "brasileiro": ("#1B472C", "#f4f7f2"),
+    "padrao":     ("#EDF1F4", "#2a2e32"),
+}
+BORDA_TOPO = 0.50       # alfa da cor de frente na borda interna, no topo
 BORDA_BASE = 0.19       # e na base
+
+
+def rgb(hexa):
+    h = hexa.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+
+
+def tema_salvo():
+    """O tema escolhido nos Ajustes. Mesma leitura que a tarsila-barra faz."""
+    try:
+        with open(os.path.join(CFG, "tema")) as f:
+            t = f.read().strip()
+        return t if t in TEMAS else "padrao"
+    except OSError:
+        return "padrao"
 
 RT = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
 ESTADO = os.path.join(RT, "tarsila-topbar-state.txt")
 # Onde a Dock esta pintada: "x y larg alt". Escrito a cada reposicionamento e
 # lido pelo tarsila-pos-dock. Ver _publica_retangulo().
 GEOM = os.path.join(RT, "tarsila-dock-geom")
+CFG = os.path.join(os.environ.get("XDG_CONFIG_HOME",
+                                  os.path.expanduser("~/.config")), "tarsila")
 LANCADORES = os.path.expanduser("~/.config/plank/dock1/launchers")
 
-CSS = b"""
+def css_do_tema(tema):
+    """O realce do hover sai da cor de FRENTE, nao de branco fixo.
+
+    Branco a 12% sobre a Dock escura e um realce discreto; sobre a Dock clara
+    do tema "padrao" e invisivel. Como a frente ja e a cor que contrasta com o
+    fundo em cada tema, ela serve para os dois.
+    """
+    r, g, b = (int(v * 255) for v in rgb(TEMAS[tema][1]))
+    return ("""
 .tarsila-icone {
     background: none;
     border: none;
@@ -136,13 +176,13 @@ CSS = b"""
     outline: none;
 }
 .tarsila-icone:hover {
-    background-color: rgba(255, 255, 255, 0.12);
+    background-color: rgba(%d, %d, %d, 0.12);
     border-radius: 6px;
 }
 .tarsila-icone:active {
-    background-color: rgba(255, 255, 255, 0.20);
+    background-color: rgba(%d, %d, %d, 0.20);
 }
-"""
+""" % (r, g, b, r, g, b)).encode()
 
 
 def caminho_curvo(cr, x, y, w, h, r):
@@ -243,10 +283,11 @@ class Dock(Gtk.Window):
 
         self.set_size_request(self.larg_tela, self.altura + self.botao_a)
 
-        prov = Gtk.CssProvider()
-        prov.load_from_data(CSS)
+        self.tema = tema_salvo()
+        self._css = Gtk.CssProvider()
+        self._css.load_from_data(css_do_tema(self.tema))
         Gtk.StyleContext.add_provider_for_screen(
-            tela, prov, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+            tela, self._css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
         self.fixo = Gtk.Fixed()
         self.add(self.fixo)
@@ -271,6 +312,27 @@ class Dock(Gtk.Window):
 
         self._recarga = 0
         self._observa_lancadores()
+        self._observa_tema()
+
+    def _observa_tema(self):
+        """Repinta quando o usuario troca o tema nos Ajustes."""
+        try:
+            f = Gio.File.new_for_path(os.path.join(CFG, "tema"))
+            self._mon_tema = f.monitor_file(Gio.FileMonitorFlags.NONE, None)
+        except GLib.Error as e:
+            print("tarsila-dock: sem monitor do tema (%s); a cor so muda no "
+                  "proximo login" % e, file=sys.stderr, flush=True)
+            return
+        self._mon_tema.connect("changed", self._tema_mudou)
+
+    def _tema_mudou(self, *_a):
+        novo = tema_salvo()
+        if novo == self.tema:
+            return
+        self.tema = novo
+        self._css.load_from_data(css_do_tema(novo))
+        self.queue_draw()
+        print("tarsila-dock: tema -> %s" % novo, file=sys.stderr, flush=True)
 
     # ------------------------------------------------- lista de lançadores
     def _observa_lancadores(self):
@@ -351,13 +413,16 @@ class Dock(Gtk.Window):
 
         y = self.botao_a
         # corpo
+        fundo, frente = (rgb(c) for c in TEMAS[self.tema])
         caminho_curvo(cr, self.dock_x, y, self.larg_dock, self.altura, self.raio)
-        cr.set_source_rgb(*FUNDO)
+        cr.set_source_rgb(*fundo)
         cr.fill()
-        # borda interna de 1px, com o gradiente medido na tela
+        # Borda interna de 1px. O gradiente foi medido na Dock escura, onde a
+        # linha e branca; com a cor de FRENTE do tema ele continua valendo no
+        # tema claro, onde a frente e escura -- branco sobre branco sumiria.
         grad = cairo.LinearGradient(0, y, 0, y + self.altura)
-        grad.add_color_stop_rgba(0, 1, 1, 1, BORDA_TOPO)
-        grad.add_color_stop_rgba(1, 1, 1, 1, BORDA_BASE)
+        grad.add_color_stop_rgba(0, *frente, BORDA_TOPO)
+        grad.add_color_stop_rgba(1, *frente, BORDA_BASE)
         caminho_curvo(cr, self.dock_x + 0.5, y + 0.5,
                       self.larg_dock - 1, self.altura - 1, self.raio)
         cr.set_source(grad)
@@ -372,11 +437,11 @@ class Dock(Gtk.Window):
         cr.line_to(bx, self.botao_a)
         cr.arc(bx + self.raio, self.raio, self.raio, 3.1416, 4.7124)
         cr.close_path()
-        cr.set_source_rgb(*FUNDO)
+        cr.set_source_rgb(*fundo)
         cr.fill()
 
         # a seta do botão: para baixo quando visível, para cima quando escondida
-        cr.set_source_rgba(1, 1, 1, 0.85)
+        cr.set_source_rgba(*frente, 0.85)
         cr.set_line_width(2)
         cx, cy = self.larg_tela / 2, self.botao_a / 2 + 1
         d = -4 if self._visivel() else 4
@@ -392,7 +457,7 @@ class Dock(Gtk.Window):
             ix = self.dock_x + self.folga + i * self.passo + self.passo / 2
             iy = y + self.altura - self.raio
             cr.arc(ix, iy, self.indicador / 2, 0, 6.2832)
-            cr.set_source_rgba(1, 1, 1, 0.9)
+            cr.set_source_rgba(*frente, 0.9)
             cr.fill()
         return False
 
