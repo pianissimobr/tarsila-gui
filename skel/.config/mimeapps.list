@@ -1,28 +1,51 @@
+# Associacoes de arquivo do Tarsila.
+#
+# REGRA: so aponte para programa que o install.sh REALMENTE instala. Ate
+# 17/08/2026 este arquivo mandava imagem para o org.xfce.ristretto e texto para
+# o org.xfce.mousepad, e nenhum dos dois estava na imagem. O resultado nao era
+# um erro visivel: o XDG caia no proximo candidato que declarasse o tipo, entao
+# PNG abria no "display" do ImageMagick (janela sem menu, leigo nao fecha) e TXT
+# abria no AbiWord (lento, e oferece salvar em .abw). Trocados por gpicview e
+# l3afpad, que sao GTK3, nao arrastam dependencia nova e pesam ~140 KB cada.
+#
+# webp: o gpicview NAO declara image/webp no .desktop dele, mas abre, porque
+# usa GdkPixbuf. Depende do pacote webp-pixbuf-loader estar instalado -- sem
+# ele, nenhum app GTK abre webp, e webp e o formato que a web entrega hoje.
+#
+# As duas secoes precisam concordar. [Default Applications] e quem decide;
+# [Added Associations] so acrescenta candidatos. Um tipo listado apenas em
+# Added cai na escolha automatica do sistema, que foi exatamente o defeito
+# acima. Ao acrescentar um tipo aqui, ponha nas duas.
+
 [Added Associations]
 text/html=tarsila-chromium.desktop;
 application/pdf=qpdfview.desktop;
-image/jpeg=org.xfce.ristretto.desktop;
-image/png=org.xfce.ristretto.desktop;
-image/gif=org.xfce.ristretto.desktop;
-image/bmp=org.xfce.ristretto.desktop;
-image/svg+xml=org.xfce.ristretto.desktop;
-image/webp=org.xfce.ristretto.desktop;
+image/jpeg=gpicview.desktop;
+image/png=gpicview.desktop;
+image/gif=gpicview.desktop;
+image/bmp=gpicview.desktop;
+image/svg+xml=gpicview.desktop;
+image/webp=gpicview.desktop;
+image/tiff=gpicview.desktop;
 video/mp4=mpv.desktop;
 video/x-matroska=mpv.desktop;
 video/webm=mpv.desktop;
 audio/mpeg=mpv.desktop;
 audio/ogg=mpv.desktop;
-text/plain=org.xfce.mousepad.desktop;
-text/x-python3=org.xfce.mousepad.desktop;
-text/markdown=org.xfce.mousepad.desktop;
+audio/flac=mpv.desktop;
+text/plain=l3afpad.desktop;
+text/x-python3=l3afpad.desktop;
+text/markdown=l3afpad.desktop;
+text/csv=org.gnumeric.gnumeric.desktop;
 application/zip=xarchiver.desktop;
 application/x-rar=xarchiver.desktop;
 application/x-7z-compressed=xarchiver.desktop;
 application/x-tar=xarchiver.desktop;
 application/x-gzip=xarchiver.desktop;
 application/x-bzip2=xarchiver.desktop;
-application/x-shellscript=org.xfce.mousepad.desktop;
-application/x-desktop=org.xfce.mousepad.desktop;
+application/x-xz=xarchiver.desktop;
+application/x-shellscript=l3afpad.desktop;
+application/x-desktop=l3afpad.desktop;
 application/vnd.openxmlformats-officedocument.wordprocessingml.document=abiword.desktop;
 application/vnd.openxmlformats-officedocument.spreadsheetml.sheet=org.gnumeric.gnumeric.desktop;
 x-scheme-handler/http=tarsila-chromium.desktop;
@@ -31,19 +54,39 @@ x-scheme-handler/mailto=tarsila-chromium.desktop;
 
 [Default Applications]
 text/html=tarsila-chromium.desktop
-image/jpeg=org.xfce.ristretto.desktop
-image/png=org.xfce.ristretto.desktop
+application/pdf=qpdfview.desktop
+image/jpeg=gpicview.desktop
+image/png=gpicview.desktop
+image/gif=gpicview.desktop
+image/bmp=gpicview.desktop
+image/svg+xml=gpicview.desktop
+image/webp=gpicview.desktop
+image/tiff=gpicview.desktop
 video/mp4=mpv.desktop
+video/x-matroska=mpv.desktop
+video/webm=mpv.desktop
 audio/mpeg=mpv.desktop
-text/plain=org.xfce.mousepad.desktop
+audio/ogg=mpv.desktop
+audio/flac=mpv.desktop
+text/plain=l3afpad.desktop
+text/x-python3=l3afpad.desktop
+text/markdown=l3afpad.desktop
+text/csv=org.gnumeric.gnumeric.desktop
 application/zip=xarchiver.desktop
-x-scheme-handler/http=tarsila-chromium.desktop
-x-scheme-handler/https=tarsila-chromium.desktop
-x-scheme-handler/mailto=tarsila-chromium.desktop
+application/x-rar=xarchiver.desktop
+application/x-7z-compressed=xarchiver.desktop
+application/x-tar=xarchiver.desktop
+application/x-gzip=xarchiver.desktop
+application/x-bzip2=xarchiver.desktop
+application/x-xz=xarchiver.desktop
+application/x-shellscript=l3afpad.desktop
+application/x-desktop=l3afpad.desktop
 application/vnd.openxmlformats-officedocument.wordprocessingml.document=abiword.desktop
 application/vnd.openxmlformats-officedocument.spreadsheetml.sheet=org.gnumeric.gnumeric.desktop
 application/vnd.oasis.opendocument.text=abiword.desktop
 application/vnd.oasis.opendocument.spreadsheet=org.gnumeric.gnumeric.desktop
 application/msword=abiword.desktop
 application/vnd.ms-excel=org.gnumeric.gnumeric.desktop
-application/pdf=qpdfview.desktop
+x-scheme-handler/http=tarsila-chromium.desktop
+x-scheme-handler/https=tarsila-chromium.desktop
+x-scheme-handler/mailto=tarsila-chromium.desktop

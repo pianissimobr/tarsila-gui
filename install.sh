@@ -40,18 +40,45 @@ apt-get update
 # Núcleo gráfico mínimo + ferramentas da interface
 apt-get install -y --no-install-recommends \
   xorg openbox dunst xsettingsd picom feh scrot \
-  plank devilspie2 yad lightdm lightdm-gtk-greeter \
+  devilspie2 yad lightdm lightdm-gtk-greeter \
   papirus-icon-theme thunar gvfs gvfs-daemons \
   python3-gi gir1.2-gtk-3.0 python3-gi-cairo \
   network-manager wmctrl xdotool x11-xserver-utils x11-utils dconf-cli \
   lxpolkit sudo curl git \
-  pavucontrol inotify-tools \
+  pavucontrol inotify-tools xclip qlipper \
+  file shared-mime-info desktop-file-utils \
   fonts-font-awesome fonts-noto-core \
   fonts-roboto fonts-open-sans fonts-lato fonts-montserrat fonts-inter
 
+# O pacote 'file' acima nao e opcional, por mais banal que pareca. O
+# /usr/bin/xdg-mime chama /usr/bin/file diretamente para descobrir o tipo de um
+# arquivo; sem ele a deteccao volta VAZIA, o xdg-open desiste do mimeapps e cai
+# no ramo do navegador. Efeito medido na box em 17/08/2026: TODO xdg-open
+# abria no Chromium -- .txt, .png, qualquer coisa -- enquanto o GIO (Thunar)
+# acertava. Duas rotas diferentes para a mesma acao, so uma quebrada, e nenhuma
+# mensagem de erro em lugar nenhum. A imagem foi montada minima e 'file', que e
+# Priority: standard no Debian, ficou de fora.
+
 # Apps de produtividade (leves, sem recommends explícito para manter enxuto)
+#
+# ATENCAO ao mexer aqui: todo programa citado em skel/.config/mimeapps.list TEM
+# de estar nesta lista. Se faltar, nao aparece erro nenhum -- o XDG cai no
+# proximo candidato que declare o tipo, e o usuario abre PNG no ImageMagick sem
+# entender por que. Foi o que aconteceu de 21/07 a 17/08/2026 com quatro tipos
+# de arquivo ao mesmo tempo. Confira com:
+#   grep -hoE '=[a-z0-9.-]+\.desktop' skel/.config/mimeapps.list | sort -u
+#
+# gpicview  visualizador de imagem (LXDE, GTK3, ~140 KB, zero dependencia nova)
+# l3afpad   editor de texto simples (GTK3, ~140 KB). O mousepad custaria 2 MB e
+#           arrastaria bibliotecas do XFCE que nao usamos mais
+# webp-pixbuf-loader  sem ele NENHUM app GTK abre .webp, que e o que a web
+#           entrega hoje. 84 KB
+# p7zip-full/unar  backends do xarchiver: sem eles ele abre a janela e falha
+#           em 7z e rar
 apt-get install -y --no-install-recommends \
-  abiword gnumeric qpdfview galculator vlc 2>&1 | tail -3 || echo "  aviso: apps opcionais com erro (segue)"
+  abiword gnumeric qpdfview galculator vlc \
+  mpv gpicview l3afpad webp-pixbuf-loader \
+  xarchiver p7zip-full unar 2>&1 | tail -3 || echo "  aviso: apps opcionais com erro (segue)"
 
 echo "==> [2/6] Instalando apps Tarsila…"
 GH_USER="${GITHUB_USER:-pianissimobr}"

@@ -78,8 +78,26 @@ devilspie2 &
 /usr/local/bin/tarsila-ob-picom.sh &
 # --- claws-mail-suite (nao editar esta secao) ---
 for a in /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 /usr/bin/lxpolkit /usr/lib/mate-polkit/polkit-mate-authentication-agent-1 /usr/lib/*/libexec/polkit-kde-authentication-agent-1; do [ -x "$a" ] && { "$a" & break; }; done
-command -v clipit >/dev/null 2>&1 && clipit &
-command -v parcellite >/dev/null 2>&1 && ! command -v clipit >/dev/null 2>&1 && parcellite &
+# Area de transferencia. SEM isto, copiar num app e fechar o app PERDE o
+# conteudo -- comportamento normal do X11 (a selecao pertence ao processo, some
+# com ele) e incompreensivel para quem nao sabe disso.
+#
+# Ate 17/08 aqui havia "command -v clipit && clipit", com parcellite de reserva.
+# Nenhum dos dois estava instalado, e o "command -v" fazia a linha sair calada:
+# o sistema passou meses sem gerenciador nenhum sem nunca acusar.
+#
+# NAO voltar para o clipit: no trixie ele virou pacote de transicao para o
+# diodon e arrasta zeitgeist + xapian, um indexador com banco de dados. Nove
+# pacotes num aparelho de 2 GB.
+#
+# Escolhido por teste, medido na box em 17/08 (copiar, matar o dono, colar):
+#   autocutsel  2 MB   NAO preservou. descartado
+#   gpaste-2   ~9 MB   grava historico mas nao reassume a selecao: o Ctrl+V
+#                      simples continua falhando. descartado
+#   qlipper    19 MB PSS  reassume de verdade. escolhido
+# O custo e real: ~19 MB de PSS numa sessao de ~173 MB. Se aparecer coisa mais
+# leve que REASSUMA a selecao, trocar -- o teste esta em docs/CHECKLIST-UX.md.
+command -v qlipper >/dev/null 2>&1 && qlipper &
 command -v tint2 >/dev/null 2>&1 && tint2 &
 # 2026-07-26: REMOVIDO o disparo automatico do assistente de e-mail.
 # Ele abria o 'configurar-claws' 4 s apos TODO login enquanto nao houvesse
