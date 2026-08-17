@@ -258,19 +258,32 @@ Painel de configuração GTK3 no estilo "System Preferences", com 7 (ou 8, com d
 
 ---
 
-## 12. Monitor da Sessão
+## 12. Monitor da Sessão — removido em 17/08/2026
 
-**Arquivo:** `usr/local/bin/tarsila-monitor.sh`
+O `tarsila-monitor.sh` era um daemon que varria as janelas a cada 2 s. Das
+quatro coisas que fazia, **três já não serviam a ninguém**:
 
-Daemon único que substitui 3 loops separados. Um ciclo a cada 2s consolida:
-
-| Responsabilidade | Descrição |
+| Responsabilidade | Destino |
 |---|---|
-| **Contagem de janelas** | Uma chamada `wmctrl -lx` por ciclo. Filtra Plank, painéis e desktop. Escreve o total em `$XDG_RUNTIME_DIR/tarsila-wincount`. Quando muda, acorda as bolinhas do Polybar via `xfce4-panel --plugin-event`. |
-| **Estado A órfão** | Detecta quando a janela maximizada sumiu (fechada pelo próprio app, sem o botão da barra). Após 2 confirmações, chama `tarsila-polybar-mode.sh compact` para restaurar barra fina + Dock. |
-| **Títulos amigáveis** | Renomeia Thunar → "Arquivos", galculator → "Calculadora", qpdfview → "Leitor de PDF" via `xdotool set_window --name`. Reaplica só quando o título está errado. |
-| **Prioridade** | `renice +10` nas janelas fora de foco. Só reaplica quando o conjunto de janelas ou o foco muda. |
-| **Sleep eficiente** | Usa `read -t` num FIFO em vez de `/bin/sleep`, evitando um fork por ciclo. |
+| **Contagem de janelas** | **Cortada.** Escrevia `$XDG_RUNTIME_DIR/tarsila-wincount`; o último leitor era o `tarsila-tela-estados`, removido no mesmo dia. Contava errado de todo jeito: pulava Plank e painéis do XFCE, que não existem, e contava a Dock e a barra — 3 janelas com a área de trabalho vazia. |
+| **Estado 1/2/3 + sons** | **Cortado.** A variável era calculada a cada ciclo e nunca usada; não havia `paplay` nem `.oga` no arquivo. O som das transições já não existia. |
+| **Prioridade (`renice +10`)** | **Cortada.** Um usuário comum não consegue *baixar* o nice de volta (EPERM, testado): tudo derivava para +10 e nunca voltava. No momento do corte, a própria Dock e a própria barra já estavam em nice 10, degradadas para sempre pelo daemon que deveria priorizar o primeiro plano. |
+| **Títulos amigáveis** | **Preservada** — mudou de casa, para o `tarsila-estado.sh`. |
+
+O título não é enfeite: o `tarsila-uma-janela` acha a janela existente **pelo
+título** (`^Calculadora$`), então perdê-lo quebraria a instância única.
+
+A mudança de casa é a parte interessante. O `tarsila-estado.sh` já acorda
+exatamente nos eventos que o monitor procurava varrendo: janela nasce, foco
+muda, título muda (esta última entrou junto, `_NET_WM_NAME` no espião da janela
+ativa). Ou seja, o trabalho já estava sendo feito — faltava só reaproveitá-lo.
+
+De quebra o título passou a funcionar no Thunar: o `case` do monitor procurava
+a classe `Thunar.Thunar`, e o `wmctrl` imprime `thunar.Thunar`. Nunca casou.
+galculator e qpdfview funcionavam; o Thunar dizia "alan - Thunar" desde sempre.
+
+**Medido:** forks em repouso caíram de **35 para 12 a cada 20 s** — o monitor
+sozinho respondia por 1,2 dos 1,75 fork/s da sessão parada.
 
 ---
 
@@ -355,8 +368,8 @@ Daemon único que substitui 3 loops separados. Um ciclo a cada 2s consolida:
 ┌─────────────────────────────────────────────────────────────┐
 │                  LOGIN → SESSÃO OPENBOX                       │
 │                                                              │
-│  LightDM → Openbox → Polybar + Plank + Picom + Devilspie2    │
-│                   → xsettingsd + Dunst + tarsila-monitor      │
+│  LightDM → Openbox → tarsila-dock + tarsila-barra + Picom     │
+│           → Devilspie2 + xsettingsd + Dunst + tarsila-estado  │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐

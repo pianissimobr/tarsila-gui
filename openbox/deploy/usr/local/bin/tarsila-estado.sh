@@ -12,30 +12,23 @@
 #
 #   $XDG_RUNTIME_DIR/tarsila-topbar-state.txt   ->  MAX=0|1 / ID=<janela>
 #
-# Consumidores:
-#   - tarsila-dock          (esconde a Dock quando MAX=1)
-#   - tarsila-monitor.sh    (estado 1/2/3)
+# Consumidor: o tarsila-dock, que se esconde quando MAX=1. Eram tres --
+# tarsila-tela-estados, tarsila-monitor.sh e o floating.lua saíram em
+# 17/08/2026.
 #
-# O terceiro era o tarsila-tela-estados, removido em 17/08/2026 junto com o
-# vetor de abertura. O floating.lua tambem lia este arquivo e parou de ler.
+# TAMBEM CUIDA DO TITULO AMIGAVEL (ver a tabela AMIGAVEL, abaixo). Nao e um
+# assunto solto: ele veio do tarsila-monitor.sh, que fazia isso varrendo as
+# janelas de 2 em 2 segundos para sempre. Os eventos que o monitor procurava
+# com essa varredura sao exatamente os que este daemon ja recebe de graca --
+# janela nasce, foco muda, titulo muda. Juntar apagou um daemon inteiro e
+# 1,2 fork/s em repouso.
 #
-# O QUE ELE DECIDE
+# O QUE SAIU DAQUI EM 17/08/2026
 #
-# A politica da Dock, em tres regras:
-#   1. maximizou    -> Dock esconde
-#   2. desmaximizou -> Dock aparece
-#   3. a sessao comeca com ela aparecendo
-#
-# Quem executa 1 e 2 e o proprio Plank, pelo hide-mode "dodge-maximized" --
-# ele enxerga janela maximizada sozinho, e com pressure-reveal a Dock ainda
-# sobe quando o cursor encosta na borda de baixo. Aqui so garantimos que o
-# modo esteja nesse valor.
-#
-# O botao da Dock e uma EXCECAO TEMPORARIA: escreve 'none' (forcar visivel)
-# ou 'autohide' (forcar escondida) por cima. Este daemon reimpoe
-# 'dodge-maximized' em toda troca de estado, o que descarta a escolha manual
-# anterior -- a regra combinada: o botao vale ate o proximo maximizar ou
-# desmaximizar.
+# Uma funcao politica_da_dock() que escrevia hide-mode='dodge-maximized' no
+# dconf do Plank a cada troca de estado. O Plank saiu em 16/08 e a Dock em GTK
+# nao le dconf: quem a esconde ao maximizar e ela mesma, lendo o arquivo de
+# estado que este script escreve. Era uma escrita a um leitor que nao existe.
 #
 # POR QUE DUAS FONTES DE EVENTO, E NAO UMA
 #
@@ -59,11 +52,10 @@ export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
 
 RT="${XDG_RUNTIME_DIR:-/tmp}"
 STATE="$RT/tarsila-topbar-state.txt"
-DCONF_HIDE=/net/launchpad/plank/docks/dock1/hide-mode
 
 # Estado anterior, so em memoria: o arquivo so e reescrito quando muda de
 # verdade. Ele e vigiado por inotify (Gio.FileMonitor) do outro lado, e
-# reescrever com o mesmo conteudo acordaria o tela-estados a toa.
+# reescrever com o mesmo conteudo acordaria a Dock a toa.
 ultimo=""
 ativa=""          # id da janela em foco, maximizada ou nao
 
@@ -72,17 +64,42 @@ maximizada() {   # <id> -> 0 se a janela esta maximizada
   xprop -id "$1" _NET_WM_STATE 2>/dev/null | grep -q '_NET_WM_STATE_MAXIMIZED_VERT'
 }
 
-# So mexe no dconf se o valor ja nao for o desejado: o Plank observa a chave
-# e se reconfigura a cada escrita, mesmo escrevendo igual.
-politica_da_dock() {
-  local atual
-  atual=$(dconf read "$DCONF_HIDE" 2>/dev/null)
-  [ "$atual" = "'dodge-maximized'" ] || \
-    dconf write "$DCONF_HIDE" "'dodge-maximized'" 2>/dev/null
+# TITULO AMIGAVEL -- veio do tarsila-monitor.sh, que foi removido em 17/08/2026.
+#
+# Alguns aplicativos poem na barra de titulo uma informacao que nao diz nada ao
+# usuario leigo: "alan - Thunar" em vez de "Arquivos", "galculator" em vez de
+# "Calculadora". Pior, eles trocam esse titulo sozinhos ao navegar, entao nao
+# basta acertar uma vez -- e o motivo de o monitor reaplicar isto.
+#
+# O nome nao e enfeite: o tarsila-uma-janela procura a janela existente pelo
+# TITULO ("^Calculadora$"), entao trocar isto quebra a instancia unica.
+#
+# Cuidado com a classe: o wmctrl imprime "thunar.Thunar", com t minusculo. O
+# case do monitor procurava "Thunar.Thunar" e por isso o Thunar NUNCA foi
+# renomeado, enquanto galculator e qpdfview eram. Corrigido aqui.
+declare -A AMIGAVEL=(
+  [thunar.Thunar]="Arquivos"
+  [galculator.Galculator]="Calculadora"
+  [qpdfview.qpdfview]="Leitor de PDF"
+)
+
+titulos_amigaveis() {
+  local id desk classe host titulo alvo
+  while read -r id desk classe host titulo; do
+    alvo="${AMIGAVEL[$classe]:-}"
+    [ -n "$alvo" ] || continue
+    [ "$titulo" = "$alvo" ] && continue
+    xdotool set_window --name "$alvo" "$id" 2>/dev/null
+  done < <(wmctrl -lx 2>/dev/null)
 }
 
 publica() {
   local id max novo
+  # O titulo vem antes do resto: se a janela acabou de nascer, o usuario ve o
+  # nome certo desde o primeiro quadro, e nao um "galculator" que vira
+  # "Calculadora" meio segundo depois.
+  titulos_amigaveis
+
   id=$(xdotool getactivewindow 2>/dev/null || true)
   [ "${id:-0}" = "0" ] && id=""
   ativa="$id"
@@ -90,15 +107,6 @@ publica() {
   novo="MAX=$max
 ID=$id"
   [ "$novo" = "$ultimo" ] && return 0
-
-  # A troca de estado e o gatilho: e aqui que a escolha manual do botao
-  # caduca. Comparar so o MAX (e nao o ID) evita reimpor a politica quando
-  # o usuario apenas troca de foco entre duas janelas flutuantes.
-  case "$ultimo" in
-    "MAX=$max"*) ;;
-    *) politica_da_dock ;;
-  esac
-
   printf '%s\n' "$novo" > "$STATE.tmp" && mv -f "$STATE.tmp" "$STATE"
   ultimo="$novo"
 }
@@ -129,6 +137,13 @@ encerra() {
   trap - EXIT INT TERM     # sem isto o kill abaixo reentra neste mesmo trap
   mata "$pid_raiz"
   mata "$pid_janela"
+  # O `exit` NAO e enfeite. Um handler de TERM que apenas retorna devolve o
+  # controle ao laco: o daemon matava os proprios vigias e SEGUIA RODANDO,
+  # cego, sem publicar nada e sem morrer. Descoberto em 17/08/2026 tentando
+  # reiniciar o daemon -- o `kill` parecia nao funcionar, e o que restava era
+  # um processo vivo que ja nao servia para nada. Como o trap foi limpo na
+  # linha de cima, este exit nao reentra aqui.
+  exit 0
 }
 trap encerra EXIT INT TERM
 
@@ -148,14 +163,14 @@ sobe_vigia_janela() {  # <id>; reaponta so quando o alvo mudou ou o vigia caiu
   pid_janela=0
   alvo="$id"
   [ -n "$id" ] || return 0
-  xprop -spy -id "$id" _NET_WM_STATE >&3 2>/dev/null &
+  # _NET_WM_NAME entra junto por causa do titulo amigavel: o Thunar troca o
+  # proprio titulo ao navegar de pasta, e isso nao mexe em nada da raiz. Sem
+  # esta propriedade aqui, o nome so seria corrigido na proxima troca de foco.
+  xprop -spy -id "$id" _NET_WM_STATE _NET_WM_NAME >&3 2>/dev/null &
   pid_janela=$!
   return 0
 }
 
-# Regra 3: a sessao comeca com a Dock a mostra. Escrito sem passar pelo
-# atalho do "so quando muda", porque no arranque nao ha estado anterior.
-politica_da_dock
 publica
 sobe_vigia_raiz
 sobe_vigia_janela "$ativa"

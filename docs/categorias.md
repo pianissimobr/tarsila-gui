@@ -74,7 +74,7 @@ Tudo que controla **como e onde** as janelas nascem, se movem e se comportam.
 | Item | Tipo | Função |
 |---|---|---|
 | `tarsila-abrindo` | Python | Lançador universal: ampulheta (`XGrabPointer`) e bloqueio de cliques até a janela aparecer. **Só isso** — a vaga, o vetor, a regra de posição no Openbox e o aprendizado foram removidos em 17/08/2026; ver `docs/MAPA.md` §5. Quem posiciona é o Openbox (`Smart` + `center`). |
-| `tarsila-monitor.sh` | Daemon | Consolida: contagem de janelas, estado "A" órfão, títulos amigáveis e `renice` — ciclo de 2s. |
+| `tarsila-estado.sh` | Daemon | **O único daemon que vigia o X.** Responde "há janela maximizada?" (para a Dock se esconder) e mantém os títulos amigáveis. Por evento, sem varredura. Absorveu o `tarsila-monitor.sh`, removido em 17/08/2026. |
 | `tarsila-ajusta-janela` | Shell | Tiling manual: arrastar para borda redimensiona para metade da tela. |
 | `tarsila-travar-janela` | Shell | Trava/desbloqueia a posição de uma janela. |
 | `tarsila-uma-janela` | Shell | Garante uma única instância de um app. |

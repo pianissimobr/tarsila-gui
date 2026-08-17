@@ -258,9 +258,9 @@ class Dock(Gtk.Window):
         self._posiciona()
         self._recorta_entrada()
 
-        # O estado vem do tarsila-estado.sh, que já é a fonte única para o
-        # floating.lua e o tarsila-monitor.sh. Monitor de arquivo é orientado
-        # a evento: não custa nada parado, e não duplica a vigília do X.
+        # O estado vem do tarsila-estado.sh, hoje o único daemon que vigia o X
+        # nesta sessão. Monitor de arquivo é orientado a evento: não custa nada
+        # parado, e não duplica a vigília que ele já faz.
         self.mon = Gio.File.new_for_path(ESTADO).monitor_file(
             Gio.FileMonitorFlags.NONE, None)
         self.mon.connect("changed", lambda *_: self._le_estado())

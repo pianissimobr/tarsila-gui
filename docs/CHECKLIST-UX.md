@@ -279,7 +279,7 @@ aplicativos, ícones da área de trabalho) é **N/A**. O que sobrevive:
 | Som em três fontes | **?** roteiro |
 | Sem crackling no PipeWire | **?** |
 | Microfone USB | **?** |
-| Sons de sistema | **OK** — decidido: existem, discretos, no `tarsila-monitor.sh` |
+| Sons de sistema | **NÃO EXISTEM** — o `tarsila-monitor.sh` anunciava sons de transição no cabeçalho, mas não havia `paplay`/`canberra` no arquivo: o estado era calculado e jogado fora. Descoberto ao remover o daemon, em 17/08/2026 |
 
 Há um sink extra, `tarsila_fone_p2`. Confirmar que ele não rouba o padrão quando
 a TV desliga.

@@ -83,7 +83,15 @@ abertura". Ele não foi preservado; foi desligado junto com a janela que o hospe
 É a perda funcional mais silenciosa do lote — nada dá erro, o efeito visual apenas não
 acontece.
 
-### 3. O contador de janelas conta a própria mobília
+### 3. O contador de janelas conta a própria mobília — RESOLVIDO, POR CORTE
+
+> **17/08/2026: o `tarsila-monitor.sh` foi removido inteiro.** Das quatro
+> coisas que fazia, três não serviam a ninguém — o contador (sem leitor desde
+> que o `tela-estados` saiu), o estado 1/2/3 (calculado e jogado fora) e o
+> `renice` (que não consegue devolver prioridade: EPERM). A quarta, o título
+> amigável, mudou de casa para o `tarsila-estado.sh`, que já acorda nos eventos
+> certos — e lá passou a funcionar também no Thunar. Forks em repouso: 35 → 12
+> a cada 20 s. Ver `docs/MAPA.md` §12.
 
 `tarsila-monitor.sh` pula as janelas do sistema por nome de classe:
 
@@ -249,7 +257,7 @@ Legenda: **✓** vivo e correto · **~** vivo com trecho morto · **✗** quebra
 | `tarsila-barra` | Barra de indicadores do topo (GTK), sempre por cima | autostart | ✓ |
 | `tarsila-barra-menu` | Os quatro popups: som, rede, calendário, sistema | `tarsila-barra` | ✓ |
 | `tarsila-estado.sh` | Fonte de verdade de "há janela maximizada?", por `xprop -spy` | autostart | ~ |
-| `tarsila-monitor.sh` | Daemon único: contagem, título amigável, renice | autostart | ✗ |
+| ~~`tarsila-monitor.sh`~~ | Daemon de varredura a cada 2 s | — | **removido 17/08** |
 | `tarsila-limpar.sh` | A varinha: fecha tudo, poupando `DOCK`/`DESKTOP` | `tarsila-barra` | ✓ |
 | `tarsila-ob-power.sh` | Menu Desligar/Reiniciar/Sair (yad) | `tarsila-barra` | ✓ |
 | `tarsila-dialogos` | Tamanho e lugar dos diálogos Abrir/Salvar do GTK3 | autostart | ✓ |
@@ -338,8 +346,7 @@ foram feitos em 17/08/2026, no mesmo dia deste diagnóstico.
 3. **`tarsila-pos-dock`** (e a cópia no appfinder) — trocar `plank` por `tarsila-dock`.
    Com a janela certa, a captura de tela e o PIL provavelmente ficam dispensáveis: a Dock
    nova tem largura própria e não pinta só o meio.
-4. **`tarsila-monitor.sh`** — filtrar por `_NET_WM_WINDOW_TYPE`, apagar o `state` órfão e
-   decidir o destino do `wincount` (hoje ninguém o lê).
+4. ~~**`tarsila-monitor.sh`**~~ — **feito, por corte.** Ver a nota no defeito 3.
 5. **A cor da Dock** — ou ela passa a ler o tema, ou o `theme` do dconf sai dos três
    scripts. Hoje a barra obedece ao tema e a Dock não.
 6. **`/etc/skel`** — trocar pelo estado atual, ou fazer o `install.sh` rodar nesta imagem.

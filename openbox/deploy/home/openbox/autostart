@@ -1,10 +1,13 @@
 #!/bin/sh
-# Autostart da sessão Tarsila-Openbox. Sobe os mesmos componentes da
-# sessão XFCE que são independentes do ambiente (Plank, devilspie2,
-# tarsila-monitor) + os substitutos leves do XFCE (xsettingsd no lugar do
-# xfsettingsd, dunst no lugar do xfce4-notifyd, feh/wallpaper-apply no lugar
-# do xfdesktop). NAO ha substituto do xfce4-panel: a barra de cima foi
-# removida e o que estava nela virou icone da Dock.
+# Autostart da sessão Tarsila-Openbox, e a fonte UNICA do que sobe: o
+# autostart XDG (~/.config/autostart e /etc/xdg/autostart) nao roda nesta box,
+# porque o openbox-xdg-autostart exige PyXDG, que nao esta instalado.
+#
+# Sobe os componentes proprios (tarsila-dock, tarsila-barra, tarsila-estado,
+# devilspie2) e os substitutos leves do XFCE: xsettingsd no lugar do
+# xfsettingsd, dunst no lugar do xfce4-notifyd, wallpaper-apply no lugar do
+# xfdesktop. Nao ha substituto do xfce4-panel: a barra de cima e a
+# tarsila-barra, em GTK.
 
 # marcador: identifica a sessao Openbox p/ os scripts compartilhados do XFCE
 # (guard robusto contra chamadas a xfce4-panel; nao depende de env)
@@ -78,12 +81,14 @@ dunst &
 
 devilspie2 &
 
-# daemon residente: contagem/sons/renice + alimenta o estado do top bar
-/usr/local/bin/tarsila-monitor.sh &
-
 # FONTE DE VERDADE DO ESTADO DA TELA (substitui o par polybar-mode.sh +
-# title.sh). Responde "ha janela maximizada?" por evento do X e reimpoe a
-# politica da Dock a cada troca. Custa zero parado.
+# title.sh). Responde "ha janela maximizada?" por evento do X, e cuida do
+# titulo amigavel das janelas. Custa zero parado.
+#
+# Absorveu o tarsila-monitor.sh, removido em 17/08/2026: aquele daemon varria
+# as janelas de 2 em 2 segundos para sempre, e das quatro coisas que fazia,
+# tres ja nao serviam a ninguem. Sozinho, respondia por 1,2 dos 1,75 fork/s
+# em repouso.
 /usr/local/bin/tarsila-estado.sh &
 
 # cursor de "carregando" até a sessão montar
