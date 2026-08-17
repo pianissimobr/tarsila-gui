@@ -7,22 +7,24 @@
 # curados fora do dock em ordem alfabetica. O botao de troca move o
 # app selecionado de uma coluna para a outra; as setas sobem/descem o
 # app dentro do dock. Nada e aplicado ao vivo (leve para a tvbox de
-# 2 GB): so o "Salvar Configuração" reescreve o dock e reinicia o
-# Plank, e fechar com mudancas pendentes pede confirmacao.
+# 2 GB): so o "Salvar Configuração" reescreve o dock, e fechar com
+# mudancas pendentes pede confirmacao.
 #
 # Ao salvar, os .dockitem sao regravados com prefixo numerico (01-,
 # 02-, ...) porque tanto o tarsila-dock-apply.sh (rodado a cada login)
 # quanto o sync do AppFinder ordenam o dock pelo nome de arquivo - o
-# prefixo e o que torna a ordem escolhida permanente. O Plank precisa
-# estar PARADO enquanto os arquivos mudam (o inotify dele apaga ou
-# reescreve dockitems mexidos ao vivo); a ordem aqui e sempre:
-# parar Plank -> gravar arquivos -> dock-apply (dconf) -> iniciar Plank.
+# prefixo e o que torna a ordem escolhida permanente.
+#
+# Ate 17/08/2026 era preciso PARAR o Plank enquanto os arquivos mudavam,
+# porque o inotify dele apagava ou reescrevia dockitem mexido ao vivo, e
+# a ordem era: parar Plank -> gravar -> dock-apply -> subir Plank. Sem o
+# Plank isso virou ritual vazio, e nada avisava a Dock nova. Hoje a
+# tarsila-dock observa a pasta e se remonta sozinha: e so gravar.
 
 import ast
 import glob
 import os
 import subprocess
-import time
 
 import gi
 gi.require_version("Gtk", "3.0")
@@ -391,10 +393,16 @@ class DockManager(Gtk.Window):
         self.destroy()
 
     def _apply(self):
-        # Plank parado antes de tocar nos arquivos (ver comentario no topo)
-        subprocess.run(["pkill", "-x", "plank"],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(0.5)
+        # Nao ha mais Plank a parar. Ate 17/08/2026 esta funcao comecava com
+        # pkill -x plank + sleep 0.5 e terminava subindo o Plank de novo,
+        # porque o inotify dele corrompia dockitem mexido ao vivo. Com o Plank
+        # fora desde 16/08 aquilo virou linha morta e ninguem avisava a Dock
+        # nova: reordenar aqui nao mudava a tela ate o proximo login.
+        #
+        # A tarsila-dock agora observa a pasta e se remonta sozinha. Ela espera
+        # ~400 ms depois do ULTIMO evento por causa exatamente do que vem
+        # abaixo: apagamos todos os dockitem e regravamos todos, o que e uma
+        # rajada de dezenas de eventos com um instante de pasta vazia no meio.
         os.makedirs(LAUNCHERS, exist_ok=True)
         for f in glob.glob(os.path.join(LAUNCHERS, "*.dockitem")):
             os.remove(f)
@@ -413,8 +421,6 @@ class DockManager(Gtk.Window):
         if os.access(DOCK_APPLY, os.X_OK):
             subprocess.run([DOCK_APPLY], stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL, timeout=15)
-        subprocess.Popen(["plank"], stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, start_new_session=True)
 
     def on_close(self, *_args):
         if not self.dirty:

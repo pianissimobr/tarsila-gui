@@ -266,6 +266,79 @@ class Dock(Gtk.Window):
         self.mon.connect("changed", lambda *_: self._le_estado())
         self._le_estado()
 
+        self._recarga = 0
+        self._observa_lancadores()
+
+    # ------------------------------------------------- lista de lançadores
+    def _observa_lancadores(self):
+        """Observa a pasta dos .dockitem e se remonta sozinha.
+
+        Com o Plank, mudar a Dock era um ritual: o dock-manager e o
+        dock-item.sh MATAVAM o Plank, gravavam os arquivos e o subiam de novo,
+        porque o inotify dele corrompia dockitem mexido ao vivo. Quando o Plank
+        saiu, o `pkill -x plank` desses scripts virou linha morta e ninguém
+        avisava mais ninguém: adicionar, tirar ou reordenar ícone não fazia
+        efeito nenhum até o próximo login.
+
+        Como a Dock agora é nossa, ela mesma escuta. Não há o que matar nem o
+        que reiniciar, e vale também para quem editar os arquivos na mão.
+        """
+        try:
+            self.mon_lanc = Gio.File.new_for_path(LANCADORES).monitor_directory(
+                Gio.FileMonitorFlags.NONE, None)
+        except GLib.Error as e:
+            print("tarsila-dock: não consegui observar %s (%s); a lista de "
+                  "ícones só vai mudar no próximo login"
+                  % (LANCADORES, e.message), file=sys.stderr)
+            return
+        self.mon_lanc.connect("changed", self._lancadores_mudaram)
+
+    def _lancadores_mudaram(self, *_a):
+        # O dock-manager apaga os N arquivos e regrava os N: é uma rajada de
+        # dezenas de eventos. Sem deixar a poeira baixar, a Dock se remontaria
+        # dezenas de vezes e chegaria a piscar VAZIA no instante entre apagar e
+        # regravar. Cada evento novo empurra o prazo para a frente.
+        if self._recarga:
+            GLib.source_remove(self._recarga)
+        self._recarga = GLib.timeout_add(400, self._recarrega)
+
+    def _recarrega(self):
+        self._recarga = 0
+        novos = le_lancadores()
+        if not novos:
+            # Ou a rajada ainda está no meio (todos apagados, nenhum regravado
+            # ainda), ou a lista ficou vazia de verdade. Nos dois casos o certo
+            # é não apagar a Dock da tela: se ficou vazia mesmo, o próximo
+            # evento traz a lista boa.
+            return False
+        if [a.get_filename() for a in novos] == \
+           [a.get_filename() for a in self.itens]:
+            return False        # mexeram nos arquivos, mas deu na mesma
+
+        self.itens = novos
+        # O tamanho do ícone DEPENDE da quantidade: acrescentar um app pode
+        # encolher todos para caber. Por isso recalcula tudo, não só as
+        # posições.
+        n = max(1, len(self.itens))
+        self.m = metricas(self.larg_tela, self.alt_tela, n)
+        for k, v in self.m.items():
+            setattr(self, k, v)
+        self.dock_x = (self.larg_tela - self.larg_dock) // 2
+        self.set_size_request(self.larg_tela, self.altura + self.botao_a)
+
+        for w in self.fixo.get_children():
+            self.fixo.remove(w)
+        self._monta_icones()
+        self.fixo.show_all()
+
+        self._posiciona()
+        self._recorta_entrada()
+        self.queue_draw()
+        print("tarsila-dock: lista mudou -> %d itens, ícone %d, dock %dx%d"
+              % (n, self.icone, self.larg_dock, self.altura),
+              file=sys.stderr, flush=True)
+        return False
+
     # ------------------------------------------------------------ desenho
     def _pinta(self, _w, cr):
         cr.set_operator(cairo.OPERATOR_SOURCE)

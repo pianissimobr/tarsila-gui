@@ -22,11 +22,17 @@ yad --question --center --fixed --title="Tirar do Dock" --width=400 \
 
 item=$(grep -l "file://$DESKTOP" "$DOCK"/*.dockitem 2>/dev/null | head -1)
 [ -n "$item" ] || exit 0
-# nunca mexer em dockitem com o Plank rodando (o inotify dele corrompe)
-pkill -x plank
-sleep 0.5
+# Ate 17/08/2026 havia aqui um ritual: pkill -x plank, apagar o arquivo,
+# dock-apply, subir o Plank de novo. Existia porque o inotify do Plank
+# corrompia dockitem mexido ao vivo.
+#
+# O Plank saiu em 16/08. O pkill virou linha morta -- nao havia mais o que
+# matar -- e, pior, ninguem avisava a Dock nova: tirar um icone nao surtia
+# efeito nenhum ate o proximo login. O `nohup plank` do fim ainda seria capaz
+# de subir um Plank intruso se o pacote voltasse a ser instalado um dia.
+#
+# Agora a tarsila-dock observa esta pasta e se remonta sozinha em ~400 ms.
+# Nada a matar, nada a reiniciar, ninguem a avisar.
 rm -f "$item"
 /usr/local/bin/tarsila-dock-apply.sh 2>/dev/null
-nohup plank >/dev/null 2>&1 &
-disown
 exit 0
