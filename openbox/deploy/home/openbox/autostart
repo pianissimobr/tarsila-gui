@@ -32,13 +32,19 @@ dunst &
 
 /usr/local/bin/tarsila-wallpaper-apply.sh &
 
-# dock (reaplica ordem/tema antes de abrir o Plank)
-( /usr/local/bin/tarsila-dock-apply.sh 2>/dev/null; exec plank ) &
-
-# Reage ao estado da tela (com/sem janela maximizada): botao de mostrar e
-# esconder a Dock e o vetor de abertura. O fundo da barra de cima saiu junto
-# com a barra. Sobe depois do plank porque precisa medir onde a Dock ficou.
-(sleep 4; /usr/local/bin/tarsila-tela-estados) &
+# Dock. O tarsila-dock-apply.sh continua rodando antes: e ele quem mantem a
+# lista de .dockitem, que e de onde a Dock le os lancadores e a ordem.
+#
+# Eram tres linhas ate 17/08/2026: o dock-apply, o "exec plank" e, quatro
+# segundos depois, o tarsila-tela-estados desenhando o botao logo acima da
+# Dock. O botao vinha atrasado de proposito -- precisava que o Plank ja
+# existisse para medir onde a moldura dele tinha ficado, e se pendurava nela
+# por Xlib cru. Toda vez que a Dock aparecia ou sumia eram duas janelas, de
+# dois processos, se reposicionando em sequencia. Isso se via.
+#
+# Agora e uma janela so: o botao e parte do mesmo desenho, move junto e nao ha
+# o que sincronizar. Ver overlay/usr/local/bin/tarsila-dock.
+( /usr/local/bin/tarsila-dock-apply.sh 2>/dev/null; exec /usr/local/bin/tarsila-dock ) &
 
 # Aquece o cache de disco do navegador enquanto a area de trabalho sobe. Sem
 # isto o Chromium leva ~18s para abrir na primeira vez do dia e ~5s nas

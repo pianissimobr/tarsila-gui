@@ -1,0 +1,452 @@
+#!/usr/bin/env python3
+"""Dock do Tarsila OS — substitui o Plank, com o botão dentro da mesma janela.
+
+POR QUE UMA JANELA SÓ
+Antes eram dois processos: o Plank desenhava a Dock e o tarsila-tela-estados
+desenhava o botão logo acima dela, se pendurando na moldura do Plank por Xlib
+cru. Toda vez que a Dock aparecia ou sumia, o botão precisava perceber e se
+reposicionar depois -- e isso se via, porque são dois processos e duas
+repinturas. Numa janela só o botão é parte do mesmo desenho: move junto, some
+junto, aparece junto, sem defasagem possível.
+
+GEOMETRIA
+A janela cobre a largura da tela e é alta o bastante para os dois:
+
+    +--------------------------------------------------+  y = tela - 125
+    |                    [ botão 46x20 ]               |  <- centralizado
+    +--------------------------------------------------+  y = tela - 105
+    |  [ícone] [ícone] [ícone] ...            105px    |
+    +--------------------------------------------------+  y = tela
+
+Esconder é mover a janela 105px para baixo: o corpo sai da tela e o botão fica
+na borda, que é exatamente o que o desenho antigo fazia.
+
+CSS E CAIRO, QUEM FAZ O QUÊ
+O corpo (retângulo de cantos arredondados) e o botão saem em Cairo, porque a
+borda interna de 1px tem gradiente vertical -- medido na tela: alfa 0,50 no
+topo e 0,19 na base -- e GTK CSS não tem ::before nem border-image com
+gradiente que dê conta disso.
+Os ícones são Gtk.Button de verdade, estilizados por CSS: assim hover, tooltip,
+foco e menu de contexto vêm prontos, em vez de reimplementados à mão.
+
+Medidas em docs/ESPEC-dock-gtk.md, tiradas por pixel de uma captura do Plank.
+"""
+import gi
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib, cairo as _c  # noqa: F401
+
+import cairo
+import os
+import subprocess
+import sys
+
+# ----------------------------------------------------------------- medidas
+# Todas em pixels de tela, para ícone de 72. Ver ESPEC-dock-gtk.md.
+# O icon-size do dconf é 72, mas NÃO é o tamanho pintado: o Plank escala para
+# 80. Medido comparando as duas docks lado a lado -- os centros das células
+# coincidiam exatamente e só a extensão diferia, 80 contra 72, igual nos 21
+# ícones. Quem mexer nisto: o número que vale é o pintado, não o do dconf.
+ICONE = 80
+ALTURA_DOCK = 105
+ALTURA_BOTAO = 20
+LARGURA_BOTAO = 46
+RAIO = 8
+PASSO = 87              # distância entre centros de células vizinhas
+FOLGA_LATERAL = 30      # da borda da dock até a primeira célula
+ICONE_TOPO = 16         # do topo da dock até o topo do ícone
+INDICADOR = 5           # bolinha de "app aberto"
+FAIXA_BORDA = 3         # altura da faixa que revela a Dock ao encostar
+
+FUNDO = (21 / 255, 17 / 255, 40 / 255)
+BORDA_TOPO = 0.50       # alfa do branco na borda interna, no topo
+BORDA_BASE = 0.19       # e na base
+
+RT = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
+ESTADO = os.path.join(RT, "tarsila-topbar-state.txt")
+LANCADORES = os.path.expanduser("~/.config/plank/dock1/launchers")
+
+CSS = b"""
+.tarsila-icone {
+    background: none;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    margin: 0;
+    outline: none;
+}
+.tarsila-icone:hover {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+}
+.tarsila-icone:active {
+    background-color: rgba(255, 255, 255, 0.20);
+}
+"""
+
+
+def caminho_curvo(cr, x, y, w, h, r):
+    """Retângulo de cantos arredondados. Cairo não tem primitiva para isto."""
+    cr.new_sub_path()
+    cr.arc(x + w - r, y + r, r, -1.5708, 0)
+    cr.arc(x + w - r, y + h - r, r, 0, 1.5708)
+    cr.arc(x + r, y + h - r, r, 1.5708, 3.1416)
+    cr.arc(x + r, y + r, r, 3.1416, 4.7124)
+    cr.close_path()
+
+
+def _cabe_em(pb, lado):
+    """Escala para caber num quadrado, PRESERVANDO a proporção.
+
+    O Gtk.IconLookupFlags.FORCE_SIZE devolve sempre quadrado, esticando arte
+    que não é. O Plank preserva a proporção: o ícone da Store, por exemplo, é
+    80 de largura por 70 de altura na dock dele. Forçando quadrado, a arte
+    entortava -- foi a maior fonte de diferença na comparação com a captura.
+    """
+    w, h = pb.get_width(), pb.get_height()
+    if w <= 0 or h <= 0 or max(w, h) == lado:
+        return pb
+    escala = lado / float(max(w, h))
+    return pb.scale_simple(max(1, int(round(w * escala))),
+                           max(1, int(round(h * escala))),
+                           GdkPixbuf.InterpType.BILINEAR)
+
+
+def le_lancadores():
+    """Os .dockitem, na ordem do nome do arquivo, resolvidos para .desktop."""
+    itens = []
+    try:
+        nomes = sorted(os.listdir(LANCADORES))
+    except OSError:
+        return itens
+    for nome in nomes:
+        if not nome.endswith(".dockitem"):
+            continue
+        kf = GLib.KeyFile()
+        try:
+            kf.load_from_file(os.path.join(LANCADORES, nome),
+                              GLib.KeyFileFlags.NONE)
+            uri = kf.get_string("PlankDockItemPreferences", "Launcher")
+        except GLib.Error:
+            continue
+        caminho = GLib.filename_from_uri(uri)[0] if uri.startswith("file://") else uri
+        app = Gio.DesktopAppInfo.new_from_filename(caminho)
+        if app is not None:
+            itens.append(app)
+    return itens
+
+
+class Dock(Gtk.Window):
+    def __init__(self):
+        super().__init__(type=Gtk.WindowType.TOPLEVEL)
+        self.set_type_hint(Gdk.WindowTypeHint.DOCK)
+        self.set_decorated(False)
+        self.set_resizable(False)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_keep_above(True)
+        self.set_accept_focus(False)
+        self.set_app_paintable(True)
+
+        visual = self.get_screen().get_rgba_visual()
+        if visual is None:
+            print("tarsila-dock: sem visual ARGB -- é preciso um compositor "
+                  "(picom). Sem ele os cantos arredondados viram quadrados.",
+                  file=sys.stderr)
+        else:
+            self.set_visual(visual)
+
+        self.itens = le_lancadores()
+        self.escondida = False      # regra automática: há janela maximizada
+        self.manual = None          # escolha do botão, esquecida a cada evento
+        self.revelado = False       # subiu porque o cursor encostou na borda
+        self.manual_antes = None    # estado a devolver quando a revelação acabar
+        self.abertos = set()        # classes com janela aberta (indicador)
+
+        tela = self.get_screen()
+        self.larg_tela = tela.get_width()
+        self.alt_tela = tela.get_height()
+
+        n = max(1, len(self.itens))
+        self.larg_dock = n * PASSO + 2 * FOLGA_LATERAL
+        self.dock_x = (self.larg_tela - self.larg_dock) // 2
+
+        self.set_size_request(self.larg_tela, ALTURA_DOCK + ALTURA_BOTAO)
+
+        prov = Gtk.CssProvider()
+        prov.load_from_data(CSS)
+        Gtk.StyleContext.add_provider_for_screen(
+            tela, prov, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+        self.fixo = Gtk.Fixed()
+        self.add(self.fixo)
+        self._monta_icones()
+
+        self.add_events(Gdk.EventMask.LEAVE_NOTIFY_MASK)
+        self.connect("leave-notify-event", self._saiu)
+        self.connect("draw", self._pinta)
+        self.connect("destroy", Gtk.main_quit)
+
+        self.show_all()
+        self._posiciona()
+        self._recorta_entrada()
+
+        # O estado vem do tarsila-estado.sh, que já é a fonte única para o
+        # floating.lua e o tarsila-monitor.sh. Monitor de arquivo é orientado
+        # a evento: não custa nada parado, e não duplica a vigília do X.
+        self.mon = Gio.File.new_for_path(ESTADO).monitor_file(
+            Gio.FileMonitorFlags.NONE, None)
+        self.mon.connect("changed", lambda *_: self._le_estado())
+        self._le_estado()
+
+    # ------------------------------------------------------------ desenho
+    def _pinta(self, _w, cr):
+        cr.set_operator(cairo.OPERATOR_SOURCE)
+        cr.set_source_rgba(0, 0, 0, 0)
+        cr.paint()
+        cr.set_operator(cairo.OPERATOR_OVER)
+
+        y = ALTURA_BOTAO
+        # corpo
+        caminho_curvo(cr, self.dock_x, y, self.larg_dock, ALTURA_DOCK, RAIO)
+        cr.set_source_rgb(*FUNDO)
+        cr.fill()
+        # borda interna de 1px, com o gradiente medido na tela
+        grad = cairo.LinearGradient(0, y, 0, y + ALTURA_DOCK)
+        grad.add_color_stop_rgba(0, 1, 1, 1, BORDA_TOPO)
+        grad.add_color_stop_rgba(1, 1, 1, 1, BORDA_BASE)
+        caminho_curvo(cr, self.dock_x + 0.5, y + 0.5,
+                      self.larg_dock - 1, ALTURA_DOCK - 1, RAIO)
+        cr.set_source(grad)
+        cr.set_line_width(1)
+        cr.stroke()
+
+        # botão: mesma cor, encostado no topo da dock, cantos só em cima
+        bx = (self.larg_tela - LARGURA_BOTAO) / 2
+        cr.new_sub_path()
+        cr.arc(bx + LARGURA_BOTAO - RAIO, RAIO, RAIO, -1.5708, 0)
+        cr.line_to(bx + LARGURA_BOTAO, ALTURA_BOTAO)
+        cr.line_to(bx, ALTURA_BOTAO)
+        cr.arc(bx + RAIO, RAIO, RAIO, 3.1416, 4.7124)
+        cr.close_path()
+        cr.set_source_rgb(*FUNDO)
+        cr.fill()
+
+        # a seta do botão: para baixo quando visível, para cima quando escondida
+        cr.set_source_rgba(1, 1, 1, 0.85)
+        cr.set_line_width(2)
+        cx, cy = self.larg_tela / 2, ALTURA_BOTAO / 2 + 1
+        d = -4 if self._visivel() else 4
+        cr.move_to(cx - 6, cy - d / 2)
+        cr.line_to(cx, cy + d / 2)
+        cr.line_to(cx + 6, cy - d / 2)
+        cr.stroke()
+
+        # indicadores de app aberto
+        for i, app in enumerate(self.itens):
+            if self._classe(app) not in self.abertos:
+                continue
+            ix = self.dock_x + FOLGA_LATERAL + i * PASSO + PASSO / 2
+            iy = y + ALTURA_DOCK - 8
+            cr.arc(ix, iy, INDICADOR / 2, 0, 6.2832)
+            cr.set_source_rgba(1, 1, 1, 0.9)
+            cr.fill()
+        return False
+
+    # ------------------------------------------------------------- ícones
+    @staticmethod
+    def _classe(app):
+        return (app.get_startup_wm_class() or app.get_id() or "").lower()
+
+    def _monta_icones(self):
+        tema = Gtk.IconTheme.get_default()
+        for i, app in enumerate(self.itens):
+            img = Gtk.Image()
+            pb = None
+            icone = app.get_icon()
+            if icone is not None:
+                try:
+                    info = tema.lookup_by_gicon(icone, ICONE, 0)
+                    pb = info.load_icon() if info else None
+                except GLib.Error:
+                    pb = None
+            if pb is None:
+                pb = tema.load_icon("application-x-executable", ICONE, 0)
+            img.set_from_pixbuf(_cabe_em(pb, ICONE))
+
+            bt = Gtk.Button()
+            bt.set_image(img)
+            bt.set_relief(Gtk.ReliefStyle.NONE)
+            bt.set_can_focus(False)
+            bt.set_size_request(ICONE, ICONE)
+            bt.set_tooltip_text(app.get_display_name())
+            bt.get_style_context().add_class("tarsila-icone")
+            bt.connect("clicked", self._abre, app)
+            bt.connect("button-press-event", self._menu, app)
+
+            x = self.dock_x + FOLGA_LATERAL + i * PASSO + (PASSO - ICONE) // 2
+            self.fixo.put(bt, x, ALTURA_BOTAO + ICONE_TOPO)
+
+        # o botão é área clicável, não widget: o desenho dele é parte do corpo
+        alvo = Gtk.EventBox()
+        alvo.set_visible_window(False)
+        alvo.set_size_request(LARGURA_BOTAO, ALTURA_BOTAO)
+        alvo.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        alvo.connect("button-press-event", self._clica_botao)
+        self.fixo.put(alvo, (self.larg_tela - LARGURA_BOTAO) // 2, 0)
+
+        # Faixa de revelar: com a Dock escondida, a janela desce e esta faixa
+        # cai exatamente na borda de baixo da tela. Encostar o cursor ali sobe
+        # a Dock -- é o pressure-reveal que o Plank fazia sozinho.
+        faixa = Gtk.EventBox()
+        faixa.set_visible_window(False)
+        faixa.set_size_request(self.larg_tela, FAIXA_BORDA)
+        faixa.add_events(Gdk.EventMask.ENTER_NOTIFY_MASK)
+        faixa.connect("enter-notify-event", self._encostou_na_borda)
+        self.fixo.put(faixa, 0, ALTURA_BOTAO - FAIXA_BORDA)
+
+    def _abre(self, _bt, app):
+        try:
+            app.launch(None, None)
+        except GLib.Error as e:
+            print("tarsila-dock: não abriu %s: %s" % (app.get_id(), e),
+                  file=sys.stderr)
+
+    def _menu(self, _bt, ev, app):
+        if ev.button != 3:
+            return False
+        acoes = app.list_actions()
+        if not acoes:
+            return False
+        m = Gtk.Menu()
+        for a in acoes:
+            mi = Gtk.MenuItem(label=app.get_action_name(a))
+            mi.connect("activate", lambda _i, ac=a: app.launch_action(ac, None))
+            m.append(mi)
+        m.show_all()
+        m.popup_at_pointer(ev)
+        return True
+
+    # ----------------------------------------------------------- posição
+    def _visivel(self):
+        return self.manual if self.manual is not None else not self.escondida
+
+    def _posiciona(self):
+        y = (self.alt_tela - ALTURA_DOCK - ALTURA_BOTAO if self._visivel()
+             else self.alt_tela - ALTURA_BOTAO)
+        self.move(0, y)
+        self._recorta_entrada()
+
+    def _recorta_entrada(self):
+        """Só o corpo, o botão e a faixa de borda recebem evento; o resto é buraco.
+
+        Sem isto a faixa transparente dos dois lados do botão engoliria cliques
+        que deveriam chegar na área de trabalho.
+
+        O recorte muda conforme o estado: escondida, o corpo está fora da tela
+        e no lugar dele entra a faixa de revelar, na borda de baixo.
+        """
+        jan = self.get_window()
+        if jan is None:
+            return
+        reg = cairo.Region(cairo.RectangleInt(
+            int((self.larg_tela - LARGURA_BOTAO) // 2), 0,
+            LARGURA_BOTAO, ALTURA_BOTAO))
+        if self._visivel():
+            reg.union(cairo.RectangleInt(
+                self.dock_x, ALTURA_BOTAO, self.larg_dock, ALTURA_DOCK))
+        else:
+            reg.union(cairo.RectangleInt(
+                0, ALTURA_BOTAO - FAIXA_BORDA, self.larg_tela, FAIXA_BORDA))
+        jan.input_shape_combine_region(reg, 0, 0)
+
+    def _encostou_na_borda(self, _w, _ev):
+        """Cursor na borda de baixo com a Dock escondida: sobe provisoriamente."""
+        if self._visivel():
+            return False
+        # Guarda o estado de antes: a revelação é empréstimo, não decisão.
+        self.manual_antes = self.manual
+        self.revelado = True
+        self.manual = True
+        self._posiciona()
+        self.queue_draw()
+        return False
+
+    def _saiu(self, _w, ev):
+        """Saiu da Dock revelada pelo cursor: esconde de novo.
+
+        Só vale para travessia de verdade, e o filtro tem que ser estreito:
+        aceitar apenas NONLINEAR, que é o cursor indo para outra janela.
+
+        Os outros detalhes NÃO são saída e precisam ser ignorados:
+
+        - INFERIOR: entrou num filho. Sem barrar, a Dock fugiria do cursor ao
+          andar de um ícone para o vizinho.
+        - VIRTUAL: o cursor ficou parado e a JANELA é que se moveu por baixo
+          dele. Acontece sempre logo depois de revelar pela borda -- a Dock
+          sobe, o X manda um leave virtual, e a Dock se escondia de volta no
+          mesmo instante. Era exatamente este o bug: revelar não durava nada.
+        """
+        try:
+            if ev.mode != Gdk.CrossingMode.NORMAL:
+                return False
+            # NONLINEAR chega na janela onde o cursor estava DIRETAMENTE.
+            # Se ele estava sobre um ícone (widget filho), quem recebe é a
+            # janela-pai, e aí o detalhe é NONLINEAR_VIRTUAL. Aceitar só o
+            # primeiro deixava a Dock revelada para sempre depois de o cursor
+            # passar por cima de qualquer ícone.
+            if ev.detail not in (Gdk.NotifyType.NONLINEAR,
+                                 Gdk.NotifyType.NONLINEAR_VIRTUAL):
+                return False
+        except AttributeError:
+            pass
+        if self.revelado:
+            self.revelado = False
+            # Devolve o estado de antes da revelação, e NÃO None. Zerando aqui,
+            # a regra automática reassumia e, sem janela maximizada, ela manda
+            # mostrar -- ou seja, encostar na borda e sair apagava o esconder
+            # manual que o usuário tinha pedido no botão.
+            self.manual = self.manual_antes
+            self.manual_antes = None
+            self._posiciona()
+            self.queue_draw()
+        return False
+
+    # ------------------------------------------------------------- estado
+    def _le_estado(self):
+        maximizada = False
+        try:
+            with open(ESTADO) as f:
+                for linha in f:
+                    if linha.startswith("MAX="):
+                        maximizada = linha.strip().split("=", 1)[1] == "1"
+        except OSError:
+            pass
+        if maximizada != self.escondida:
+            self.escondida = maximizada
+            self.manual = None       # todo evento de janela reimpõe a regra
+            self._posiciona()
+        self._atualiza_abertos()
+        self.queue_draw()
+
+    def _atualiza_abertos(self):
+        try:
+            saida = subprocess.run(["wmctrl", "-lx"], capture_output=True,
+                                   text=True, timeout=4).stdout
+        except (OSError, subprocess.SubprocessError):
+            return
+        self.abertos = {l.split()[2].split(".")[-1].lower()
+                        for l in saida.splitlines() if len(l.split()) > 2}
+
+    def _clica_botao(self, _w, _ev):
+        self.revelado = False       # escolha explícita cancela a revelação
+        self.manual_antes = None
+        self.manual = not self._visivel()
+        self._posiciona()
+        self.queue_draw()
+        return True
+
+
+if __name__ == "__main__":
+    Dock()
+    Gtk.main()
