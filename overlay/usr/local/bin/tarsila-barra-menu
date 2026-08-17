@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Menus suspensos dos indicadores da Dock: som, rede, calendario e sistema.
+"""Menus suspensos dos indicadores: som, rede, calendario e sistema.
+
+Quem chama e a tarsila-barra, no alto da tela, passando --abaixo-de. Entre
+15/08 e 17/08/2026 quem chamava eram seis icones na Dock, no intervalo em que
+nao havia barra nenhuma -- por isso o fallback ainda ancora acima da Dock.
 
 Antes, clicar no alto-falante abria o Controle de Volume inteiro, e clicar na
 rede abria o editor de conexoes -- duas janelas grandes para uma pergunta

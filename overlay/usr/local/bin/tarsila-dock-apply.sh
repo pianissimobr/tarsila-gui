@@ -13,24 +13,23 @@ set -euo pipefail
 LAUNCHERS_DIR="$HOME/.config/plank/dock1/launchers"
 [ -d "$LAUNCHERS_DIR" ] || exit 0
 
-# A ORDEM DA DOCK, EM TRES BLOCOS
+# A ORDEM DA DOCK, EM DOIS BLOCOS
 #
-#   [ aplicativos ]  [ Ver mais ]  [ indicadores ]
+#   [ aplicativos ]  [ Ver mais ]
 #
-# Os indicadores (volume, rede, calendario, sistema, limpar, energia) sao o
-# que morava no canto superior direito da barra de cima. Eles ficam na
-# extremidade direita porque e onde ja estavam -- o usuario procura status no
-# mesmo canto de antes, so que embaixo.
+# "Ver mais aplicativos" fecha a fila e e sempre o ultimo item.
 #
-# "Ver mais aplicativos" fecha o bloco de aplicativos. Ate aqui ele era o
-# ultimo item de todos; deixou de ser quando os indicadores chegaram, porque
-# ele pertence ao grupo dos aplicativos, nao ao de status.
+# Entre 15/08 e 17/08/2026 havia um terceiro bloco na extremidade direita: os
+# seis indicadores (volume, rede, calendario, sistema, limpar, energia), que
+# tinham descido para ca quando a polybar foi removida. Em 16/08 a barra de
+# cima voltou, em GTK, com os mesmos seis -- e ninguem tirou os da Dock. Ficaram
+# duplicados por um dia: seis icones ocupando a Dock, que e justamente onde
+# falta espaco, para fazer o que a barra ja faz dois centimetros acima.
 #
-# Os dois blocos fixos sao identificados pelo Launcher= (conteudo), nao pelo
-# nome do arquivo, para nao depender de numeracao nem de renomeacao.
+# O bloco fixo e identificado pelo Launcher= (conteudo), nao pelo nome do
+# arquivo, para nao depender de numeracao nem de renomeacao.
 APPS_DIR="/usr/share/tarsila/applications"
 VERMAIS_DESKTOP="$APPS_DIR/vermais-tarsila.desktop"
-INDICADORES="volume rede calendario sistema limpar energia"
 
 item_de() {   # <nome-base do .desktop> -> nome do .dockitem que aponta pra ele
   local alvo="$1" f
@@ -42,12 +41,9 @@ item_de() {   # <nome-base do .desktop> -> nome do .dockitem que aponta pra ele
   return 1
 }
 
-# Tudo que nao e Ver mais nem indicador entra no primeiro bloco, na ordem
+# Tudo que nao e o Ver mais entra no primeiro bloco, na ordem
 # alfabetica dos arquivos (que e a ordem numerica do prefixo 01-, 02-...).
 fixos=" "
-for ind in $INDICADORES; do
-  b=$(item_de "$ind-tarsila" || true); [ -n "$b" ] && fixos+="$b "
-done
 b=$(item_de "vermais-tarsila" || true); vermais_item="${b:-}"
 [ -n "$vermais_item" ] && fixos+="$vermais_item "
 
@@ -59,9 +55,6 @@ for f in "$LAUNCHERS_DIR"/*.dockitem; do
   items+="'$base', "
 done
 [ -n "$vermais_item" ] && items+="'$vermais_item', "
-for ind in $INDICADORES; do
-  b=$(item_de "$ind-tarsila" || true); [ -n "$b" ] && items+="'$b', "
-done
 [ -n "$items" ] || exit 0
 items="[${items%, }]"
 

@@ -71,9 +71,14 @@ clique → confirmação central (Cancelar/Limpar); se confirmar, fecha tudo
 (educado e depois agressivo) → mesa limpa. Libera RAM de verdade — a versão
 antiga só escondia as janelas.
 
-Hoje é um ícone da Dock (`20-limpar-tarsila.dockitem` → `limpar-tarsila.desktop`
-→ `tarsila-limpar.sh`). Como ícone de Dock ele **ganhou tooltip de hover de
-graça**, que era pendência conhecida enquanto vivia na polybar.
+Hoje é a varinha da barra de cima (`tarsila-barra` → `tarsila-limpar.sh`). Entre
+15/08 e 17/08/2026 foi ícone da Dock, no intervalo em que não havia barra
+nenhuma; voltou para cima quando a barra em GTK substituiu a polybar.
+
+**Cuidado.** O `tarsila-limpar.sh` decide o que poupar pelo
+`_NET_WM_WINDOW_TYPE` (`DOCK`/`DESKTOP`), não pelo nome da janela. A lista de
+nomes que existia antes citava três janelas já extintas e nenhuma das duas
+vivas: a varinha fechava a própria Dock e a própria barra.
 
 ## Estabilidade — leia isto
 

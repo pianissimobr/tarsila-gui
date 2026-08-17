@@ -39,34 +39,29 @@ VERMAIS_DESKTOP = os.path.join(CURATED_DIR, "vermais-tarsila.desktop")
 # aplicativo novo cai no meio deles, essa referencia se perde. Aconteceu: o OBS
 # entrou depois da Lixeira. Tudo que se instala entra ANTES deste bloco.
 #
-# Os seis ultimos sao os INDICADORES (volume, rede, calendario, sistema,
-# limpar, energia), que ate 2026-08-15 eram modulos no canto superior direito
-# da barra de cima. Eles nao sao aplicativos: nao podem ser removidos nem
-# reordenados pelo usuario, porque tirar o volume da Dock deixaria a maquina
-# sem como mexer no som.
-INDICADORES = [os.path.join(CURATED_DIR, nome) for nome in (
-    "volume-tarsila.desktop",
-    "rede-tarsila.desktop",
-    "calendario-tarsila.desktop",
-    "sistema-tarsila.desktop",
-    "limpar-tarsila.desktop",
-    "energia-tarsila.desktop",
-)]
+# Entre 15/08 e 17/08/2026 a cauda tinha mais seis: os indicadores (volume,
+# rede, calendario, sistema, limpar, energia), que desceram para a Dock quando
+# a polybar saiu e nao subiram de volta quando a barra em GTK voltou, em 16/08.
+# Ficaram um dia duplicados -- os mesmos seis na barra e na Dock. Saíram daqui,
+# e os .desktop deles foram apagados: sem isso reapareceriam nesta janela como
+# aplicativos disponiveis, ja que read_curated() nao filtra NoDisplay.
 CAUDA_FIXA = [os.path.join(CURATED_DIR, nome) for nome in (
     "terminal-tarsila.desktop",
     "files-tarsila.desktop",
     "configuracao-tarsila.desktop",
     "lixeira-tarsila.desktop",
     "vermais-tarsila.desktop",
-)] + INDICADORES
+)]
 LAUNCHERS = os.path.join(os.path.expanduser("~"), ".config/plank/dock1/launchers")
 DOCK_DCONF_KEY = "/net/launchpad/plank/docks/dock1/dock-items"
 DOCK_APPLY = "/usr/local/bin/tarsila-dock-apply.sh"
-# Quantos aplicativos o usuario pode fixar. Nao conta a CAUDA_FIXA (os
-# quatro utilitarios + "Ver mais" + os seis indicadores), que entra sempre.
-# Baixou de 19 para 13 quando os indicadores chegaram: sao 11 itens fixos
-# agora, e numa tela de 1366 px o Plank ja encolhe os icones para caber.
-DOCK_LIMIT = 13
+# Quantos aplicativos o usuario pode fixar. Nao conta a CAUDA_FIXA (os quatro
+# utilitarios + "Ver mais"), que entra sempre. Era 19; baixou para 13 quando os
+# seis indicadores ocuparam a cauda, e volta a 19 agora que eles sairam.
+# A Dock encolhe o icone sozinha ate caber na largura da tela (metricas() no
+# tarsila-dock), entao este numero e sobre o que ainda da para reconhecer num
+# icone pequeno, nao sobre o que cabe em pixel.
+DOCK_LIMIT = 19
 NATIVES_FILE = "/usr/share/tarsila/native-apps.txt"
 
 ICON_SIZE = 28
