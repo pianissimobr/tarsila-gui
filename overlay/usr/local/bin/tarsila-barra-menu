@@ -446,14 +446,15 @@ def topo_da_dock(altura_janela):
     dele encosta o menu no fim da Dock. Estes menus saem de um icone
     especifico e seguem o ponteiro na horizontal; so o Y interessa.
     """
-    ok, saida = roda("xdotool", "search", "--class", "plank")
+    ok, saida = roda("xdotool", "search", "--class", "tarsila-dock")
     if ok:
         for w in saida.split():
             _, geo = roda("xdotool", "getwindowgeometry", "--shell", w)
             d = dict(l.split("=", 1) for l in geo.splitlines() if "=" in l)
-            # As janelas auxiliares do Plank sao estreitas; a de verdade
-            # ocupa a tela inteira (mesmo criterio do tarsila-pos-dock).
-            if int(d.get("WIDTH", 0)) > 1000:
+            # A Dock em GTK e larga mas nao ocupa a tela toda (ela tem folga
+            # lateral), entao o criterio antigo de ">1000" nao serve como
+            # esta: usamos "mais da metade da tela".
+            if int(d.get("WIDTH", 0)) > 400:
                 topo = int(d.get("Y", 0))
                 if topo > 0:
                     return topo - altura_janela - 2
@@ -475,11 +476,25 @@ def main():
     ponteiro = tela.get_display().get_default_seat().get_pointer()
     _, x, _ = ponteiro.get_position()[:3]
 
-    y = topo_da_dock(altura)
-    if y is None or y < 0:
-        # Dock escondida, ainda subindo, ou medida sem sentido: encosta no
-        # rodape da tela em vez de deixar o menu no canto superior esquerdo.
-        y = max(4, altura_tela - altura - 4)
+    # Quem chamou pode dizer de onde veio. A barra de indicadores fica no TOPO
+    # da tela: um menu que brota dela tem de descer, nao aparecer no rodape a
+    # 700px de distancia do icone clicado.
+    #   tarsila-barra-menu som --abaixo-de 24
+    abaixo = None
+    if "--abaixo-de" in sys.argv:
+        try:
+            abaixo = int(sys.argv[sys.argv.index("--abaixo-de") + 1])
+        except (IndexError, ValueError):
+            abaixo = None
+
+    if abaixo is not None:
+        y = max(0, abaixo + 2)
+    else:
+        y = topo_da_dock(altura)
+        if y is None or y < 0:
+            # Dock escondida, ainda subindo, ou medida sem sentido: encosta no
+            # rodape da tela em vez de deixar o menu no canto superior esquerdo.
+            y = max(4, altura_tela - altura - 4)
 
     x = max(4, min(x - largura // 2, largura_tela - largura - 4))
     janela.move(x, y)

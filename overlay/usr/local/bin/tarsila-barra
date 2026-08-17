@@ -1,0 +1,393 @@
+#!/usr/bin/env python3
+"""Barra de indicadores do Tarsila — canto superior direito, sempre visível.
+
+Substitui a polybar, removida em 16/08/2026. Os seis itens são os mesmos que
+ela tinha em `modules-right`, na mesma ordem, e cada clique chama exatamente o
+mesmo programa de antes:
+
+    relógio   ▼ sistema   limpar   som   rede   desligar
+
+O que mudou não foi a aparência, foi o custo. A polybar descobria o estado
+perguntando de novo o tempo todo: `sound.sh` a cada 3 s e `net.sh` — que roda
+`nmcli` — a cada 5 s. Era a maior parte dos 11 forks/s que o sistema gastava
+parado, sem nada acontecendo na tela. Aqui:
+
+  * volume  -> `pactl subscribe`, um processo que dorme até o PipeWire avisar
+  * rede    -> sinal do NetworkManager pelo D-Bus, sem processo nenhum
+  * relógio -> um despertador alinhado ao minuto, não um laço de 1 s
+
+Parado, isso é zero fork por segundo.
+
+FICAR POR CIMA: é a mesma receita da Dock — WindowTypeHint.DOCK, keep_above e
+accept_focus(False). Medido na box em 17/08 com um terminal maximizado por
+baixo: o empilhamento fica thunar < terminal < dock < barra.
+
+DE PROPÓSITO NÃO RESERVA ESPAÇO (`_NET_WM_STRUT`). A janela maximizada segue
+ocupando a tela inteira e a barra passa por cima do canto direito da barra de
+título, que está vazio porque os botões da janela ficam à esquerda
+(`<titleLayout>CML</titleLayout>`). Assim não se perde pixel nenhum. Com strut
+o Openbox reserva a LARGURA INTEIRA da tela — 24 px em 1366 por causa de uma
+barra de ~250 px. Se um dia isso mudar, o aviso fica: propriedade de formato 32
+no Xlib quer array de `long` NATIVO (8 bytes em aarch64). Fazer por
+`Gdk.property_change` falha calado, sem nem aparecer no `xprop`.
+"""
+
+import os
+import signal
+import subprocess
+import sys
+import time
+
+import gi
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk, Gdk, GLib, Gio, Pango   # noqa: E402
+
+CFG = os.path.join(os.environ.get("XDG_CONFIG_HOME",
+                                  os.path.expanduser("~/.config")), "tarsila")
+
+# Cores por tema, copiadas do tarsila-ob-bar.sh que morreu com a polybar.
+# fundo, texto, separador.
+TEMAS = {
+    "maritimo":   ("#194350", "#f2f6f7", "#5a7c86"),
+    "escuro":     ("#101014", "#e8e8ea", "#55555c"),
+    "brasileiro": ("#1B472C", "#f4f7f2", "#5f8a70"),
+    "padrao":     ("#EDF1F4", "#2a2e32", "#9aa4ac"),
+}
+
+# Ícones da FontAwesome 4, os mesmos code points dos scripts antigos.
+IC_VOL    = ""   # volume-up
+IC_MUDO   = ""   # volume-off
+IC_CABO   = ""   # globe
+IC_WIFI   = ""   # wifi
+IC_SEMREDE= ""   # ban
+IC_LIMPAR = ""   # magic
+IC_POWER  = ""   # power-off
+
+RAIO = 8          # mesmo raio dos cantos da Dock
+MARGEM_DIR = 12   # mesma folga que a Dock usa nas laterais
+
+
+def tema_salvo():
+    try:
+        with open(os.path.join(CFG, "tema")) as f:
+            t = f.read().strip()
+        return t if t in TEMAS else "padrao"
+    except OSError:
+        return "padrao"
+
+
+def metricas(altura_tela):
+    """Mesmos degraus do tarsila-ob-bar.sh: altura, fonte do texto, fonte do
+    ícone. A data sempre saiu em corpo 10, em qualquer resolução."""
+    if altura_tela > 1600:
+        return 45, 14, 13
+    if altura_tela > 900:
+        return 31, 12, 11
+    return 24, 11, 10
+
+
+def roda(cmd):
+    """Dispara e esquece. start_new_session para o filho não morrer junto e
+    para não herdar o terminal desta barra."""
+    try:
+        subprocess.Popen(cmd, start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as e:
+        print("tarsila-barra: falhou %r: %s" % (cmd, e), file=sys.stderr)
+
+
+class Item(Gtk.EventBox):
+    """Um indicador clicável. EventBox sem janela própria para o fundo da barra
+    aparecer atrás; o realce do hover é do CSS."""
+
+    def __init__(self, nome, texto, acao, fonte_icone=False):
+        super().__init__()
+        self.set_visible_window(False)
+        self.acao = acao
+        self.rotulo = Gtk.Label(label=texto)
+        self.rotulo.set_name(nome)
+        ctx = self.rotulo.get_style_context()
+        ctx.add_class("item")
+        if fonte_icone:
+            ctx.add_class("icone")
+        self.add(self.rotulo)
+        self.connect("button-press-event", self._clique)
+        self.connect("enter-notify-event", self._entra)
+        self.connect("leave-notify-event", self._sai)
+        self.set_events(Gdk.EventMask.BUTTON_PRESS_MASK
+                        | Gdk.EventMask.ENTER_NOTIFY_MASK
+                        | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+
+    def _clique(self, _w, ev):
+        if ev.button == 1:
+            roda(self.acao)
+        return True
+
+    def _entra(self, *_):
+        self.rotulo.get_style_context().add_class("aceso")
+        return False
+
+    def _sai(self, *_):
+        self.rotulo.get_style_context().remove_class("aceso")
+        return False
+
+    def texto(self, t):
+        if self.rotulo.get_text() != t:
+            self.rotulo.set_text(t)
+
+
+class Barra(Gtk.Window):
+
+    def __init__(self):
+        super().__init__(type=Gtk.WindowType.TOPLEVEL)
+        self.set_type_hint(Gdk.WindowTypeHint.DOCK)
+        self.set_decorated(False)
+        self.set_resizable(False)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_keep_above(True)
+        self.set_accept_focus(False)
+        self.set_app_paintable(True)
+        self.stick()
+
+        visual = self.get_screen().get_rgba_visual()
+        if visual is None:
+            print("tarsila-barra: sem visual ARGB -- é preciso um compositor "
+                  "(picom). Sem ele os cantos arredondados viram quadrados.",
+                  file=sys.stderr)
+        else:
+            self.set_visual(visual)
+
+        mon = (self.get_display().get_primary_monitor()
+               or self.get_display().get_monitor(0))
+        g = mon.get_geometry()
+        self.larg_tela, self.alt_tela = g.width, g.height
+        self.altura, self.corpo, self.corpo_icone = metricas(self.alt_tela)
+
+        self.tema = tema_salvo()
+        self._monta()
+        self._estilo()
+
+        self.connect("destroy", Gtk.main_quit)
+        self.show_all()
+        self._posiciona()
+
+        self._relogio()
+        self._ouve_volume()
+        self._ouve_rede()
+        self._ouve_tema()
+
+    # ---------------------------------------------------------------- layout
+
+    def _monta(self):
+        caixa = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        caixa.set_name("barra")
+        caixa.set_margin_start(10)
+        caixa.set_margin_end(10)
+        # A altura TEM de vir daqui, do tamanho natural do conteudo. Com
+        # set_resizable(False) o GTK ignora resize() e usa o natural: pedir 24
+        # e receber 14 foi o que aconteceu em 17/08, porque so o texto media a
+        # caixa. O set_size_request faz o natural ser o valor que queremos.
+        caixa.set_size_request(-1, self.altura)
+        self.add(caixa)
+
+        self.itens = {}
+        # "--abaixo-de <y>" diz ao menu para descer da barra. Sem isso ele cai
+        # no comportamento de quem e chamado pela Dock e abre encostado no
+        # RODAPE -- a 700 px do icone que o usuario clicou.
+        def menu(modo):
+            return ["/usr/local/bin/tarsila-barra-menu", modo,
+                    "--abaixo-de", str(self.altura)]
+
+        ordem = [
+            ("data",    "--:--",    menu("calendario"),                     False),
+            ("sistema", "▼",   menu("sistema"),                        False),
+            ("limpar",  IC_LIMPAR,  ["/usr/local/bin/tarsila-limpar.sh"],    True),
+            ("som",     IC_VOL,     menu("som"),                            True),
+            ("rede",    IC_SEMREDE, menu("rede"),                           True),
+            ("power",   IC_POWER,   ["/usr/local/bin/tarsila-ob-power.sh"],  True),
+        ]
+        for i, (nome, texto, acao, ic) in enumerate(ordem):
+            if i:
+                sep = Gtk.Label(label="")
+                sep.get_style_context().add_class("sep")
+                caixa.pack_start(sep, False, False, 0)
+            it = Item(nome, texto, acao, ic)
+            caixa.pack_start(it, False, False, 0)
+            self.itens[nome] = it
+
+    def _estilo(self):
+        fundo, frente, dim = TEMAS[self.tema]
+        css = ("""
+        window { background-color: transparent; }
+        #barra {
+          background-color: %(fundo)s;
+          border-radius: 0 0 %(raio)dpx %(raio)dpx;
+        }
+        .item {
+          color: %(frente)s;
+          font-family: Inter, "DejaVu Sans", sans-serif;
+          font-size: %(corpo)dpx;
+          padding: 0 9px;
+        }
+        .item.icone {
+          font-family: FontAwesome;
+          font-size: %(icone)dpx;
+        }
+        .item.aceso { color: %(frente)s; opacity: 0.65; }
+        .sep {
+          color: %(dim)s;
+          font-size: %(corpo)dpx;
+          padding: 0 1px;
+        }
+        """ % {"fundo": fundo, "frente": frente, "dim": dim, "raio": RAIO,
+               "corpo": self.corpo, "icone": self.corpo_icone}).encode()
+
+        if not hasattr(self, "_prov"):
+            self._prov = Gtk.CssProvider()
+            Gtk.StyleContext.add_provider_for_screen(
+                self.get_screen(), self._prov,
+                Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        self._prov.load_from_data(css)
+
+    def _posiciona(self):
+        larg = self.get_preferred_width()[1]
+        self.resize(larg, self.altura)
+        self.move(self.larg_tela - larg - MARGEM_DIR, 0)
+        return False
+
+    # ----------------------------------------------------------- indicadores
+
+    def _relogio(self):
+        """Alinhado ao minuto: acorda uma vez por minuto, no segundo zero, e
+        não sessenta vezes para descobrir que nada mudou."""
+        agora = time.localtime()
+        self.itens["data"].texto(time.strftime("%H:%M  %d de %B", agora))
+        self._posiciona()
+        GLib.timeout_add_seconds(60 - agora.tm_sec or 60, self._relogio)
+        return False
+
+    # -- volume ------------------------------------------------------------
+
+    def _le_volume(self):
+        """Uma pergunta pontual, só quando o PipeWire avisa que algo mudou."""
+        try:
+            out = subprocess.run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"],
+                                 capture_output=True, text=True, timeout=3).stdout
+        except (OSError, subprocess.SubprocessError):
+            out = ""
+        if out:
+            mudo = "MUTED" in out
+        else:
+            try:
+                m = subprocess.run(["pactl", "get-sink-mute", "@DEFAULT_SINK@"],
+                                   capture_output=True, text=True, timeout=3).stdout
+                mudo = "yes" in m
+            except (OSError, subprocess.SubprocessError):
+                mudo = False
+        self.itens["som"].texto(IC_MUDO if mudo else IC_VOL)
+        self._posiciona()
+
+    def _ouve_volume(self):
+        """`pactl subscribe` fica bloqueado esperando o servidor falar. Custa um
+        processo adormecido, contra um fork a cada 3 s do jeito antigo."""
+        self._le_volume()
+        try:
+            self._sub = Gio.Subprocess.new(
+                ["pactl", "subscribe"], Gio.SubprocessFlags.STDOUT_PIPE)
+        except GLib.Error as e:
+            print("tarsila-barra: sem 'pactl subscribe' (%s); o volume vai "
+                  "atualizar só a cada 10 s" % e.message, file=sys.stderr)
+            GLib.timeout_add_seconds(10, lambda: (self._le_volume(), True)[1])
+            return
+        fluxo = Gio.DataInputStream.new(self._sub.get_stdout_pipe())
+        self._linha_volume(fluxo)
+
+    def _linha_volume(self, fluxo):
+        def pronto(f, res):
+            try:
+                linha, _ = f.read_line_finish_utf8(res)
+            except GLib.Error:
+                return
+            if linha is None:
+                return
+            if "sink" in linha or "server" in linha:
+                self._le_volume()
+            self._linha_volume(f)
+        fluxo.read_line_async(GLib.PRIORITY_DEFAULT, None, pronto)
+
+    # -- rede --------------------------------------------------------------
+
+    def _ouve_rede(self):
+        """NetworkManager pelo D-Bus. Zero processo: o sinal chega sozinho.
+        O jeito antigo rodava `nmcli` a cada 5 s, que é um fork a cada 5 s."""
+        try:
+            self._bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        except GLib.Error as e:
+            print("tarsila-barra: sem D-Bus de sistema (%s); a rede vai "
+                  "atualizar só a cada 15 s" % e.message, file=sys.stderr)
+            GLib.timeout_add_seconds(15, lambda: (self._le_rede(), True)[1])
+            self._le_rede()
+            return
+        self._bus.signal_subscribe(
+            "org.freedesktop.NetworkManager",
+            "org.freedesktop.DBus.Properties", "PropertiesChanged",
+            "/org/freedesktop/NetworkManager", None,
+            Gio.DBusSignalFlags.NONE,
+            lambda *_a: self._le_rede(), )
+        self._le_rede()
+
+    def _le_rede(self):
+        """PrimaryConnectionType diz direto qual é o meio ativo: '802-3-ethernet',
+        '802-11-wireless' ou vazio quando não há nenhum."""
+        tipo = ""
+        try:
+            r = self._bus.call_sync(
+                "org.freedesktop.NetworkManager",
+                "/org/freedesktop/NetworkManager",
+                "org.freedesktop.DBus.Properties", "Get",
+                GLib.Variant("(ss)", ("org.freedesktop.NetworkManager",
+                                      "PrimaryConnectionType")),
+                GLib.VariantType("(v)"), Gio.DBusCallFlags.NONE, 3000, None)
+            tipo = r.unpack()[0]
+        except (GLib.Error, AttributeError, IndexError):
+            pass
+
+        if "wireless" in tipo:
+            ic = IC_WIFI
+        elif "ethernet" in tipo:
+            ic = IC_CABO
+        else:
+            ic = IC_SEMREDE
+        self.itens["rede"].texto(ic)
+        self._posiciona()
+
+    # -- tema --------------------------------------------------------------
+
+    def _ouve_tema(self):
+        """Trocar de tema já reescreve ~/.config/tarsila/tema. Em vez de exigir
+        que o tema-apply saiba desta barra, a barra observa o arquivo."""
+        try:
+            f = Gio.File.new_for_path(os.path.join(CFG, "tema"))
+            self._mon = f.monitor_file(Gio.FileMonitorFlags.NONE, None)
+            self._mon.connect("changed", self._tema_mudou)
+        except GLib.Error:
+            pass
+
+    def _tema_mudou(self, *_a):
+        novo = tema_salvo()
+        if novo != self.tema:
+            self.tema = novo
+            self._estilo()
+            self._posiciona()
+
+
+def main():
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    Barra()
+    print("tarsila-barra: pronta", file=sys.stderr)
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    main()

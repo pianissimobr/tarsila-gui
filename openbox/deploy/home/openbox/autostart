@@ -46,6 +46,21 @@ dunst &
 # o que sincronizar. Ver overlay/usr/local/bin/tarsila-dock.
 ( /usr/local/bin/tarsila-dock-apply.sh 2>/dev/null; exec /usr/local/bin/tarsila-dock ) &
 
+# Barra de indicadores, canto superior direito: relogio, sistema, limpar, som,
+# rede, desligar. Sao os mesmos seis da polybar, na mesma ordem, chamando os
+# mesmos programas -- o que mudou foi o custo de descobrir o estado.
+#
+# A polybar perguntava o tempo todo: sound.sh a cada 3s e net.sh, que roda
+# nmcli, a cada 5s. Era o grosso dos 11 forks/s do sistema PARADO. A barra em
+# GTK escuta: volume pelo `pactl subscribe` (um processo dormindo) e rede por
+# sinal do NetworkManager no D-Bus (zero processo).
+#
+# Ela NAO reserva espaco de tela (_NET_WM_STRUT). Fica por cima da janela
+# maximizada, no canto direito da barra de titulo, que esta vazio porque os
+# botoes da janela ficam a esquerda (titleLayout CML). Com strut o Openbox
+# reservaria a largura INTEIRA da tela por causa de uma barra de ~290px.
+/usr/local/bin/tarsila-barra &
+
 # Aquece o cache de disco do navegador enquanto a area de trabalho sobe. Sem
 # isto o Chromium leva ~18s para abrir na primeira vez do dia e ~5s nas
 # seguintes -- medido. O programa espera a area de trabalho terminar de subir,
