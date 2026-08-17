@@ -42,21 +42,78 @@ import subprocess
 import sys
 
 # ----------------------------------------------------------------- medidas
-# Todas em pixels de tela, para ícone de 72. Ver ESPEC-dock-gtk.md.
-# O icon-size do dconf é 72, mas NÃO é o tamanho pintado: o Plank escala para
-# 80. Medido comparando as duas docks lado a lado -- os centros das células
-# coincidiam exatamente e só a extensão diferia, 80 contra 72, igual nos 21
-# ícones. Quem mexer nisto: o número que vale é o pintado, não o do dconf.
-ICONE = 80
-ALTURA_DOCK = 105
-ALTURA_BOTAO = 20
-LARGURA_BOTAO = 46
-RAIO = 8
-PASSO = 87              # distância entre centros de células vizinhas
-FOLGA_LATERAL = 30      # da borda da dock até a primeira célula
-ICONE_TOPO = 16         # do topo da dock até o topo do ícone
-INDICADOR = 5           # bolinha de "app aberto"
-FAIXA_BORDA = 3         # altura da faixa que revela a Dock ao encostar
+# Nada aqui e absoluto: tudo sai do tamanho do icone, e o icone sai da altura
+# da tela. A TV box negocia o modo com a TV no boot e varia por aparelho
+# (720p, 768, 1080p, 4K), entao medida fixa em pixel so serve para a tela em
+# que foi medida.
+#
+# As proporcoes abaixo foram tiradas de uma captura do Plank em 1920x1080 com
+# icone pintado de 80: dividindo cada medida por 80 chega-se nestes fatores.
+# Em 1080p eles reproduzem os numeros originais exatos. Ver ESPEC-dock-gtk.md.
+R_PASSO   = 87 / 80      # distancia entre centros de celulas vizinhas
+R_ALTURA  = 105 / 80     # altura do corpo da Dock
+R_FOLGA   = 30 / 80      # da borda da Dock ate a primeira celula
+R_TOPO    = 16 / 80      # do topo da Dock ate o topo do icone
+R_RAIO    = 8 / 80       # arredondamento dos cantos
+R_BOTAO_A = 20 / 80      # altura do botao
+R_BOTAO_L = 46 / 80      # largura do botao
+R_INDIC   = 5 / 80       # bolinha de "app aberto"
+
+FAIXA_BORDA = 3          # altura da faixa que revela a Dock: 3px em qualquer tela
+
+# Margem que a Dock nunca invade, de cada lado. Sem ela a Dock encostaria nas
+# bordas da tela em 768p -- foi o que o Plank fazia, e ficava sufocado.
+MARGEM_TELA = 12
+
+
+def icone_base(altura_tela):
+    """Tamanho PINTADO do icone, para a altura de tela.
+
+    Espelha o icone_dock() do comum.sh, que devolve 104/72/52 -- mas aqueles
+    sao valores de dconf, e o Plank pintava 80 quando o dconf dizia 72. O
+    fator 10/9 converte de um para o outro, para a Dock nova sair do mesmo
+    tamanho aparente que a antiga.
+    """
+    if altura_tela > 1600:
+        dconf = 104
+    elif altura_tela > 900:
+        dconf = 72
+    else:
+        dconf = 52
+    return int(round(dconf * 10 / 9))
+
+
+def metricas(larg_tela, alt_tela, n_itens):
+    """Todas as medidas da Dock, derivadas da tela e da quantidade de icones.
+
+    Encolhe o icone ate a Dock caber na largura da tela. Isso importa: com 21
+    icones em 1366px de largura, o tamanho que a altura da tela pediria da uma
+    Dock mais larga que a propria tela. O Plank resolvia comprimindo por conta
+    propria; aqui a compressao e explicita.
+    """
+    icone = icone_base(alt_tela)
+    disponivel = larg_tela - 2 * MARGEM_TELA
+    while icone > 16:
+        passo = max(1, int(round(icone * R_PASSO)))
+        folga = int(round(icone * R_FOLGA))
+        if n_itens * passo + 2 * folga <= disponivel:
+            break
+        icone -= 1
+    passo = max(1, int(round(icone * R_PASSO)))
+    folga = int(round(icone * R_FOLGA))
+    return {
+        "icone":     icone,
+        "passo":     passo,
+        "folga":     folga,
+        "altura":    int(round(icone * R_ALTURA)),
+        "topo":      int(round(icone * R_TOPO)),
+        "raio":      max(2, int(round(icone * R_RAIO))),
+        "botao_a":   max(8, int(round(icone * R_BOTAO_A))),
+        "botao_l":   max(20, int(round(icone * R_BOTAO_L))),
+        "indicador": max(3, int(round(icone * R_INDIC))),
+        "larg_dock": n_itens * passo + 2 * folga,
+    }
+
 
 FUNDO = (21 / 255, 17 / 255, 40 / 255)
 BORDA_TOPO = 0.50       # alfa do branco na borda interna, no topo
@@ -164,14 +221,24 @@ class Dock(Gtk.Window):
         self.abertos = set()        # classes com janela aberta (indicador)
 
         tela = self.get_screen()
-        self.larg_tela = tela.get_width()
-        self.alt_tela = tela.get_height()
+        # Gdk.Monitor e nao Gdk.Screen.get_width(): o do Screen esta depreciado
+        # e, em multiplos monitores, devolve a area somada de todos.
+        disp = Gdk.Display.get_default()
+        mon = disp.get_primary_monitor() or disp.get_monitor(0)
+        geo = mon.get_geometry()
+        self.larg_tela, self.alt_tela = geo.width, geo.height
 
         n = max(1, len(self.itens))
-        self.larg_dock = n * PASSO + 2 * FOLGA_LATERAL
+        self.m = metricas(self.larg_tela, self.alt_tela, n)
+        for k, v in self.m.items():
+            setattr(self, k, v)
         self.dock_x = (self.larg_tela - self.larg_dock) // 2
+        print("tarsila-dock: tela %dx%d, %d itens -> icone %d, passo %d, "
+              "dock %dx%d" % (self.larg_tela, self.alt_tela, n, self.icone,
+                              self.passo, self.larg_dock, self.altura),
+              file=sys.stderr, flush=True)
 
-        self.set_size_request(self.larg_tela, ALTURA_DOCK + ALTURA_BOTAO)
+        self.set_size_request(self.larg_tela, self.altura + self.botao_a)
 
         prov = Gtk.CssProvider()
         prov.load_from_data(CSS)
@@ -206,28 +273,28 @@ class Dock(Gtk.Window):
         cr.paint()
         cr.set_operator(cairo.OPERATOR_OVER)
 
-        y = ALTURA_BOTAO
+        y = self.botao_a
         # corpo
-        caminho_curvo(cr, self.dock_x, y, self.larg_dock, ALTURA_DOCK, RAIO)
+        caminho_curvo(cr, self.dock_x, y, self.larg_dock, self.altura, self.raio)
         cr.set_source_rgb(*FUNDO)
         cr.fill()
         # borda interna de 1px, com o gradiente medido na tela
-        grad = cairo.LinearGradient(0, y, 0, y + ALTURA_DOCK)
+        grad = cairo.LinearGradient(0, y, 0, y + self.altura)
         grad.add_color_stop_rgba(0, 1, 1, 1, BORDA_TOPO)
         grad.add_color_stop_rgba(1, 1, 1, 1, BORDA_BASE)
         caminho_curvo(cr, self.dock_x + 0.5, y + 0.5,
-                      self.larg_dock - 1, ALTURA_DOCK - 1, RAIO)
+                      self.larg_dock - 1, self.altura - 1, self.raio)
         cr.set_source(grad)
         cr.set_line_width(1)
         cr.stroke()
 
         # botão: mesma cor, encostado no topo da dock, cantos só em cima
-        bx = (self.larg_tela - LARGURA_BOTAO) / 2
+        bx = (self.larg_tela - self.botao_l) / 2
         cr.new_sub_path()
-        cr.arc(bx + LARGURA_BOTAO - RAIO, RAIO, RAIO, -1.5708, 0)
-        cr.line_to(bx + LARGURA_BOTAO, ALTURA_BOTAO)
-        cr.line_to(bx, ALTURA_BOTAO)
-        cr.arc(bx + RAIO, RAIO, RAIO, 3.1416, 4.7124)
+        cr.arc(bx + self.botao_l - self.raio, self.raio, self.raio, -1.5708, 0)
+        cr.line_to(bx + self.botao_l, self.botao_a)
+        cr.line_to(bx, self.botao_a)
+        cr.arc(bx + self.raio, self.raio, self.raio, 3.1416, 4.7124)
         cr.close_path()
         cr.set_source_rgb(*FUNDO)
         cr.fill()
@@ -235,7 +302,7 @@ class Dock(Gtk.Window):
         # a seta do botão: para baixo quando visível, para cima quando escondida
         cr.set_source_rgba(1, 1, 1, 0.85)
         cr.set_line_width(2)
-        cx, cy = self.larg_tela / 2, ALTURA_BOTAO / 2 + 1
+        cx, cy = self.larg_tela / 2, self.botao_a / 2 + 1
         d = -4 if self._visivel() else 4
         cr.move_to(cx - 6, cy - d / 2)
         cr.line_to(cx, cy + d / 2)
@@ -246,9 +313,9 @@ class Dock(Gtk.Window):
         for i, app in enumerate(self.itens):
             if self._classe(app) not in self.abertos:
                 continue
-            ix = self.dock_x + FOLGA_LATERAL + i * PASSO + PASSO / 2
-            iy = y + ALTURA_DOCK - 8
-            cr.arc(ix, iy, INDICADOR / 2, 0, 6.2832)
+            ix = self.dock_x + self.folga + i * self.passo + self.passo / 2
+            iy = y + self.altura - self.raio
+            cr.arc(ix, iy, self.indicador / 2, 0, 6.2832)
             cr.set_source_rgba(1, 1, 1, 0.9)
             cr.fill()
         return False
@@ -266,34 +333,34 @@ class Dock(Gtk.Window):
             icone = app.get_icon()
             if icone is not None:
                 try:
-                    info = tema.lookup_by_gicon(icone, ICONE, 0)
+                    info = tema.lookup_by_gicon(icone, self.icone, 0)
                     pb = info.load_icon() if info else None
                 except GLib.Error:
                     pb = None
             if pb is None:
-                pb = tema.load_icon("application-x-executable", ICONE, 0)
-            img.set_from_pixbuf(_cabe_em(pb, ICONE))
+                pb = tema.load_icon("application-x-executable", self.icone, 0)
+            img.set_from_pixbuf(_cabe_em(pb, self.icone))
 
             bt = Gtk.Button()
             bt.set_image(img)
             bt.set_relief(Gtk.ReliefStyle.NONE)
             bt.set_can_focus(False)
-            bt.set_size_request(ICONE, ICONE)
+            bt.set_size_request(self.icone, self.icone)
             bt.set_tooltip_text(app.get_display_name())
             bt.get_style_context().add_class("tarsila-icone")
             bt.connect("clicked", self._abre, app)
             bt.connect("button-press-event", self._menu, app)
 
-            x = self.dock_x + FOLGA_LATERAL + i * PASSO + (PASSO - ICONE) // 2
-            self.fixo.put(bt, x, ALTURA_BOTAO + ICONE_TOPO)
+            x = self.dock_x + self.folga + i * self.passo + (self.passo - self.icone) // 2
+            self.fixo.put(bt, x, self.botao_a + self.topo)
 
         # o botão é área clicável, não widget: o desenho dele é parte do corpo
         alvo = Gtk.EventBox()
         alvo.set_visible_window(False)
-        alvo.set_size_request(LARGURA_BOTAO, ALTURA_BOTAO)
+        alvo.set_size_request(self.botao_l, self.botao_a)
         alvo.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
         alvo.connect("button-press-event", self._clica_botao)
-        self.fixo.put(alvo, (self.larg_tela - LARGURA_BOTAO) // 2, 0)
+        self.fixo.put(alvo, (self.larg_tela - self.botao_l) // 2, 0)
 
         # Faixa de revelar: com a Dock escondida, a janela desce e esta faixa
         # cai exatamente na borda de baixo da tela. Encostar o cursor ali sobe
@@ -303,7 +370,7 @@ class Dock(Gtk.Window):
         faixa.set_size_request(self.larg_tela, FAIXA_BORDA)
         faixa.add_events(Gdk.EventMask.ENTER_NOTIFY_MASK)
         faixa.connect("enter-notify-event", self._encostou_na_borda)
-        self.fixo.put(faixa, 0, ALTURA_BOTAO - FAIXA_BORDA)
+        self.fixo.put(faixa, 0, self.botao_a - FAIXA_BORDA)
 
     def _abre(self, _bt, app):
         try:
@@ -332,8 +399,8 @@ class Dock(Gtk.Window):
         return self.manual if self.manual is not None else not self.escondida
 
     def _posiciona(self):
-        y = (self.alt_tela - ALTURA_DOCK - ALTURA_BOTAO if self._visivel()
-             else self.alt_tela - ALTURA_BOTAO)
+        y = (self.alt_tela - self.altura - self.botao_a if self._visivel()
+             else self.alt_tela - self.botao_a)
         self.move(0, y)
         self._recorta_entrada()
 
@@ -350,14 +417,14 @@ class Dock(Gtk.Window):
         if jan is None:
             return
         reg = cairo.Region(cairo.RectangleInt(
-            int((self.larg_tela - LARGURA_BOTAO) // 2), 0,
-            LARGURA_BOTAO, ALTURA_BOTAO))
+            int((self.larg_tela - self.botao_l) // 2), 0,
+            self.botao_l, self.botao_a))
         if self._visivel():
             reg.union(cairo.RectangleInt(
-                self.dock_x, ALTURA_BOTAO, self.larg_dock, ALTURA_DOCK))
+                self.dock_x, self.botao_a, self.larg_dock, self.altura))
         else:
             reg.union(cairo.RectangleInt(
-                0, ALTURA_BOTAO - FAIXA_BORDA, self.larg_tela, FAIXA_BORDA))
+                0, self.botao_a - FAIXA_BORDA, self.larg_tela, FAIXA_BORDA))
         jan.input_shape_combine_region(reg, 0, 0)
 
     def _encostou_na_borda(self, _w, _ev):
