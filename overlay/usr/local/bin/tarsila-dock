@@ -115,21 +115,22 @@ def metricas(larg_tela, alt_tela, n_itens):
     }
 
 
-# CORES POR TEMA -- as MESMAS da tarsila-barra, de proposito.
+# CORES POR TEMA -- para maritimo/escuro/brasileiro, as MESMAS da
+# tarsila-barra, de proposito (Dock e barra sao a mobilia do sistema; nos
+# outros tres temas, combinar evita o desktop parecer montado por acidente).
 #
-# A Dock e a barra sao a mobilia do sistema: quando as duas nao combinam, o
-# desktop parece montado por acidente. Sao os mesmos quatro temas, os mesmos
-# hex. Se um lado mudar, o outro tem de mudar junto.
-#
-# Ate 17/08/2026 a cor daqui era uma tupla fixa, o azul-escuro (21,17,40), e o
-# tema nao a alcancava: quem gravava a cor da Dock era o tarsila-dock-apply.sh,
-# numa chave de dconf do Plank -- que morreu em 16/08 e que esta Dock nunca leu.
-# Resultado visivel: tema "padrao" (claro), barra clara, Dock azul-escura.
+# O tema "padrao" e a excecao, de proposito: SO a Dock e o azul-escuro
+# (21,17,40) medido no Plank original (docs/ESPEC-dock-gtk.md); a barra
+# continua clara. Ate 17/08/2026 a cor da Dock era essa mesma tupla fixa,
+# independente de tema, gravada pelo tarsila-dock-apply.sh numa chave de
+# dconf do Plank -- que morreu em 16/08 e que esta Dock nunca leu. O reset
+# para a leitura de TEMAS deixou "padrao" temporariamente claro nos dois; aqui
+# a Dock volta a ser escura porque e assim que o tema "padrao" sempre foi.
 TEMAS = {                    # fundo,     frente
     "maritimo":   ("#194350", "#f2f6f7"),
     "escuro":     ("#101014", "#e8e8ea"),
     "brasileiro": ("#1B472C", "#f4f7f2"),
-    "padrao":     ("#EDF1F4", "#2a2e32"),
+    "padrao":     ("#150F28", "#e8e8ea"),
 }
 BORDA_TOPO = 0.50       # alfa da cor de frente na borda interna, no topo
 BORDA_BASE = 0.19       # e na base
@@ -262,6 +263,7 @@ class Dock(Gtk.Window):
         self.revelado = False       # subiu porque o cursor encostou na borda
         self.manual_antes = None    # estado a devolver quando a revelação acabar
         self.abertos = set()        # classes com janela aberta (indicador)
+        self.clique_pendente = {}   # classe -> id do timeout do clique simples
 
         tela = self.get_screen()
         # Gdk.Monitor e nao Gdk.Screen.get_width(): o do Screen esta depreciado
@@ -489,8 +491,7 @@ class Dock(Gtk.Window):
             bt.set_size_request(self.icone, self.icone)
             bt.set_tooltip_text(app.get_display_name())
             bt.get_style_context().add_class("tarsila-icone")
-            bt.connect("clicked", self._abre, app)
-            bt.connect("button-press-event", self._menu, app)
+            bt.connect("button-press-event", self._clicou_icone, app)
 
             x = self.dock_x + self.folga + i * self.passo + (self.passo - self.icone) // 2
             self.fixo.put(bt, x, self.botao_a + self.topo)
@@ -513,27 +514,80 @@ class Dock(Gtk.Window):
         faixa.connect("enter-notify-event", self._encostou_na_borda)
         self.fixo.put(faixa, 0, self.botao_a - FAIXA_BORDA)
 
-    def _abre(self, _bt, app):
+    def _lanca(self, app):
+        """Sempre abre UMA janela nova, sem checar se ja tem outra aberta."""
         try:
             app.launch(None, None)
         except GLib.Error as e:
             print("tarsila-dock: não abriu %s: %s" % (app.get_id(), e),
                   file=sys.stderr)
 
-    def _menu(self, _bt, ev, app):
-        if ev.button != 3:
+    def _clicou_icone(self, _bt, ev, app):
+        """Distingue clique simples de duplo clique.
+
+        Gtk.Button nao ajuda aqui: o sinal "clicked" dispara uma vez por
+        press+release, entao um duplo clique disparava DUAS chamadas de
+        app.launch() -- o mesmo bug do app-management (dois cliques rapidos,
+        duas janelas). A tecnica padrao e adiar a acao do clique simples pelo
+        tempo de duplo clique do sistema e cancelar esse adiamento se o
+        segundo clique chegar antes: so entao sabemos, de verdade, que foi um
+        clique so.
+
+        Resultado do clique SIMPLES: se o app ja tem janela aberta, traz ela
+        para frente (wmctrl -xa) em vez de abrir outra. Sem janela, abre uma.
+
+        Resultado do DUPLO clique: sempre abre mais uma janela, uma unica vez
+        -- por isso cancela o simples pendente em vez de deixar as duas acoes
+        acontecerem.
+        """
+        if ev.button == 3:
+            self._menu(ev, app)
+            return True
+        if ev.button != 1:
             return False
-        acoes = app.list_actions()
-        if not acoes:
-            return False
+
+        classe = self._classe(app)
+        if ev.type == Gdk.EventType._2BUTTON_PRESS:
+            pendente = self.clique_pendente.pop(classe, None)
+            if pendente:
+                GLib.source_remove(pendente)
+            self._lanca(app)
+            return True
+        if ev.type == Gdk.EventType.BUTTON_PRESS:
+            antigo = self.clique_pendente.pop(classe, None)
+            if antigo:
+                GLib.source_remove(antigo)
+            atraso = Gtk.Settings.get_default().get_property(
+                "gtk-double-click-time")
+            self.clique_pendente[classe] = GLib.timeout_add(
+                atraso, self._clique_simples, classe, app)
+            return True
+        return False
+
+    def _clique_simples(self, classe, app):
+        self.clique_pendente.pop(classe, None)
+        self._atualiza_abertos()
+        if classe and classe in self.abertos:
+            subprocess.run(["wmctrl", "-xa", classe])
+        else:
+            self._lanca(app)
+        return False     # GLib.timeout_add: nao repetir
+
+    def _menu(self, ev, app):
         m = Gtk.Menu()
-        for a in acoes:
-            mi = Gtk.MenuItem(label=app.get_action_name(a))
-            mi.connect("activate", lambda _i, ac=a: app.launch_action(ac, None))
-            m.append(mi)
+        mi_nova = Gtk.MenuItem(label="Abrir nova janela")
+        mi_nova.connect("activate", lambda _i: self._lanca(app))
+        m.append(mi_nova)
+        acoes = app.list_actions()
+        if acoes:
+            m.append(Gtk.SeparatorMenuItem())
+            for a in acoes:
+                mi = Gtk.MenuItem(label=app.get_action_name(a))
+                mi.connect("activate",
+                           lambda _i, ac=a: app.launch_action(ac, None))
+                m.append(mi)
         m.show_all()
         m.popup_at_pointer(ev)
-        return True
 
     # ----------------------------------------------------------- posição
     def _visivel(self):
