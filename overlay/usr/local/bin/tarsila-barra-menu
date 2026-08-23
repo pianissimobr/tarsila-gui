@@ -196,6 +196,144 @@ def estado_da_rede():
     return titulo, escolhido[3], ip
 
 
+# ---------------------------------------------------- dispositivos plugados
+# Mesma classificacao do tarsila-dispositivos (o daemon que avisa quando algo
+# e conectado): aqui e so uma foto do que o udev ja sabe agora, lendo o banco
+# inteiro de uma vez em vez de escutar o fluxo de eventos.
+TIPOS_DISPOSITIVO = {
+    "webcam":     ("camera-web",                "Webcam"),
+    "impressora": ("printer",                   "Impressora"),
+    "microfone":  ("audio-input-microphone",    "Microfone"),
+    "midi":       ("audio-midi",                "Instrumento MIDI"),
+    "pendrive":   ("drive-removable-media-usb", "Pendrive"),
+    "disco":      ("drive-harddisk",            "HD externo"),
+    "cartao":     ("media-flash",               "Cartão de memória"),
+    "usb":        ("usb",                       "Dispositivo USB"),
+}
+
+
+def _classificar_dispositivo(sub, prop):
+    # /devices/virtual e infraestrutura do kernel sem aparelho nenhum atras
+    # -- zram, o sequenciador/timer do ALSA etc. Nunca e algo que alguem
+    # plugou.
+    if (prop.get("DEVPATH") or "").startswith("/devices/virtual/"):
+        return None
+    if sub == "video4linux":
+        return "webcam"
+    if sub == "sound":
+        # SOUND_FORM_FACTOR=internal e o cartao de som embutido na placa --
+        # toda TV box tem um, e sem este filtro ele aparecia na lista como
+        # "Microfone" mesmo sem nenhum microfone plugado (achado em
+        # 23/08/2026, junto com o mesmo problema no eMMC abaixo).
+        if prop.get("SOUND_FORM_FACTOR") == "internal":
+            return None
+        if "midi" in (prop.get("ID_ID", "") + prop.get("DEVPATH", "")).lower():
+            return "midi"
+        return "microfone"
+    if sub in ("block", "mmc"):
+        # MMC_TYPE=MMC e o eMMC interno (o disco de sistema) e MMC_TYPE=SDIO
+        # e o Wi-Fi embutido nesta placa -- os dois usam o mesmo barramento
+        # do cartao SD sem serem cartao nenhum. So MMC_TYPE=SD, exato, e
+        # cartao removivel de verdade; "sub == 'mmc'" sozinho pegava os
+        # tres juntos (o disco de sistema E o Wi-Fi apareciam como "Cartão
+        # de memória" em toda TV box).
+        if prop.get("MMC_TYPE") == "SD":
+            return "cartao"
+        if prop.get("ID_DRIVE_FLASH_SD"):
+            return "cartao"
+        if prop.get("ID_DRIVE_THUMB") or prop.get("ID_USB_DRIVER") == "usb-storage":
+            rot = prop.get("ID_ATA_ROTATION_RATE_RPM")
+            return "disco" if (rot and rot != "0") else "pendrive"
+        # Sem nenhum sinal de USB/flash real (zram, o proprio eMMC, loop,
+        # dm-*...) nao e um aparelho que alguem plugou -- era daqui que
+        # vinha o "Pendrive" fantasma (o zram, RAM comprimida de swap).
+        return None
+    if sub == "usb":
+        classe = prop.get("ID_USB_CLASS_FROM_DATABASE", "").lower()
+        if "printer" in classe:
+            return "impressora"
+    return None
+
+
+def _raiz_do_aparelho(caminho):
+    pedacos = caminho.rstrip("/").split("/")
+    if pedacos and ":" in pedacos[-1]:
+        pedacos.pop()
+        return "/".join(pedacos)
+    # Placa de som: controlC0, pcmC0D0p etc. são sub-nós do MESMO cartão
+    # (.../sound/card0/pcmC0D0p) -- corta em "cardN", senão cada um vira um
+    # "aparelho" à parte e nenhum carrega o SOUND_FORM_FACTOR do pai.
+    for i, p in enumerate(pedacos):
+        if re.fullmatch(r"card\d+", p):
+            return "/".join(pedacos[:i + 1])
+    return "/".join(pedacos)
+
+
+def _nome_do_aparelho(prop):
+    for chave in ("ID_MODEL_FROM_DATABASE", "ID_MODEL_ENC", "ID_MODEL",
+                  "ID_NAME", "ID_SERIAL"):
+        v = (prop.get(chave) or "").strip()
+        if v:
+            v = v.replace("\\x20", " ").replace("_", " ").strip()
+            if v:
+                return v
+    return ""
+
+
+def dispositivos_conectados():
+    """[(ícone, nome p/ mostrar)] dos aparelhos plugáveis ligados agora,
+    numa ordem estável (a de TIPOS_DISPOSITIVO) e sem repetir o mesmo
+    aparelho físico (a mesma raiz de dispositivo aparece uma vez por
+    interface -- usb, som, bloco --, aqui conta só uma)."""
+    try:
+        saida = subprocess.run(
+            ["udevadm", "info", "--export-db"],
+            capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+
+    # Um aparelho físico pode aparecer em vários blocos "P:" (uma placa de
+    # som tem um para o cartão e um para cada pcm/control dela). Primeiro
+    # junta TODAS as propriedades de cada raiz -- só depois classifica --
+    # senão um bloco filho sem SOUND_FORM_FACTOR próprio (só o cartão pai
+    # tem) passava pelo filtro do embutido.
+    por_raiz = {}   # raiz -> (subsistema, propriedades combinadas)
+    caminho, sub, prop = None, None, {}
+
+    def fecha():
+        if not (caminho and sub):
+            return
+        raiz = _raiz_do_aparelho(caminho)
+        sub_atual, props_atual = por_raiz.get(raiz, (None, {}))
+        props_atual = dict(props_atual)
+        props_atual.update(prop)
+        por_raiz[raiz] = (sub_atual or sub, props_atual)
+
+    for linha in saida.splitlines():
+        if linha.startswith("P: "):
+            fecha()
+            caminho, sub, prop = linha[3:], None, {}
+        elif linha.startswith("E: SUBSYSTEM="):
+            sub = linha.split("=", 1)[1]
+        elif linha.startswith("E: "):
+            k, _, v = linha[3:].partition("=")
+            prop[k] = v
+    fecha()
+
+    por_tipo = {}
+    for sub, prop in por_raiz.values():
+        tipo = _classificar_dispositivo(sub, prop)
+        if tipo:
+            por_tipo.setdefault(tipo, set()).add(_nome_do_aparelho(prop))
+
+    resultado = []
+    for tipo in TIPOS_DISPOSITIVO:
+        icone, rotulo = TIPOS_DISPOSITIVO[tipo]
+        for nome in sorted(por_tipo.get(tipo, ())):
+            resultado.append((icone, nome or rotulo))
+    return resultado
+
+
 # -------------------------------------------------------------- janela
 class Popup(Gtk.Window):
     def __init__(self, modo):
@@ -228,6 +366,8 @@ class Popup(Gtk.Window):
             self._monta_calendario(caixa)
         elif modo == "sistema":
             self._monta_sistema(caixa)
+        elif modo == "dispositivos":
+            self._monta_dispositivos(caixa)
         else:
             self._monta_rede(caixa)
 
@@ -420,6 +560,34 @@ class Popup(Gtk.Window):
                         '</span></small>')
         nota.set_margin_top(8)
         caixa.pack_start(nota, False, False, 0)
+
+    # ---- dispositivos
+    def _monta_dispositivos(self, caixa):
+        """Lista os aparelhos plugáveis conectados agora (webcam, impressora,
+        pendrive etc.) -- foto do udev ao abrir, igual ao "sistema"."""
+        titulo = Gtk.Label(xalign=0)
+        titulo.set_markup("<b>Dispositivos conectados</b>")
+        caixa.pack_start(titulo, False, False, 0)
+
+        aparelhos = dispositivos_conectados()
+        if not aparelhos:
+            vazio = Gtk.Label(xalign=0)
+            vazio.set_markup('<small><span alpha="70%">Nenhum dispositivo '
+                             'disponível</span></small>')
+            vazio.set_margin_top(6)
+            caixa.pack_start(vazio, False, False, 0)
+            return
+
+        grade = Gtk.Grid()
+        grade.set_column_spacing(10)
+        grade.set_row_spacing(6)
+        grade.set_margin_top(6)
+        for i, (icone, nome) in enumerate(aparelhos):
+            img = Gtk.Image.new_from_icon_name(icone, Gtk.IconSize.LARGE_TOOLBAR)
+            rot = Gtk.Label(xalign=0, label=nome)
+            grade.attach(img, 0, i, 1, 1)
+            grade.attach(rot, 1, i, 1, 1)
+        caixa.pack_start(grade, False, False, 0)
 
     def _monta_rede(self, caixa):
         titulo, nome, ip = estado_da_rede()

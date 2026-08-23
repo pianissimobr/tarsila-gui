@@ -62,6 +62,12 @@ IC_WIFI   = ""   # wifi
 IC_SEMREDE= ""   # ban
 IC_LIMPAR = ""   # magic
 IC_POWER  = ""   # power-off
+# "▼" não dizia nada sobre o que o clique mostra (CPU/memória/disco). Um
+# medidor é o ícone certo para "estado do sistema". 21/08/2026.
+IC_SISTEMA = "\uf0e4"   # tachometer
+# Webcam, impressora, pendrive etc. -- o mesmo conceito de "aparelho
+# plugado" que o tarsila-dispositivos anuncia ao conectar.
+IC_DISPOSITIVOS = "\uf287"   # usb
 
 RAIO = 8          # mesmo raio dos cantos da Dock
 MARGEM_DIR = 12   # mesma folga que a Dock usa nas laterais
@@ -77,13 +83,13 @@ def tema_salvo():
 
 
 def metricas(altura_tela):
-    """Mesmos degraus do tarsila-ob-bar.sh: altura, fonte do texto, fonte do
-    ícone. A data sempre saiu em corpo 10, em qualquer resolução."""
+    """Degraus do tarsila-ob-bar.sh original, +20% em 21/08/2026 a pedido:
+    altura, fonte do texto, fonte do ícone."""
     if altura_tela > 1600:
-        return 45, 14, 13
+        return 54, 17, 16
     if altura_tela > 900:
-        return 31, 12, 11
-    return 24, 11, 10
+        return 37, 14, 13
+    return 29, 13, 12
 
 
 def roda(cmd):
@@ -201,7 +207,8 @@ class Barra(Gtk.Window):
 
         ordem = [
             ("data",    "--:--",    menu("calendario"),                     False),
-            ("sistema", "▼",   menu("sistema"),                        False),
+            ("sistema", IC_SISTEMA, menu("sistema"),                        True),
+            ("dispositivos", IC_DISPOSITIVOS, menu("dispositivos"),          True),
             ("limpar",  IC_LIMPAR,  ["/usr/local/bin/tarsila-limpar.sh"],    True),
             ("som",     IC_VOL,     menu("som"),                            True),
             ("rede",    IC_SEMREDE, menu("rede"),                           True),
@@ -261,11 +268,47 @@ class Barra(Gtk.Window):
     def _relogio(self):
         """Alinhado ao minuto: acorda uma vez por minuto, no segundo zero, e
         não sessenta vezes para descobrir que nada mudou."""
-        agora = time.localtime()
-        self.itens["data"].texto(time.strftime("%H:%M  %d de %B", agora))
-        self._posiciona()
-        GLib.timeout_add_seconds(60 - agora.tm_sec or 60, self._relogio)
+        self._atualiza_relogio()
+        GLib.timeout_add_seconds(60 - time.localtime().tm_sec or 60, self._relogio)
         return False
+
+    def _atualiza_relogio(self):
+        """Sem RTC de hardware, a TV box sempre acorda com a hora da última
+        vez que esteve ligada, e só corrige quando o systemd-timesyncd
+        conseguir falar com um servidor NTP -- medido em 21/08, isso levou
+        quase uma hora numa rede que demorou a responder. Enquanto o
+        `timedatectl` não confirmar a sincronização, mostra um aviso em vez
+        de uma hora que pode estar errada."""
+        if self._hora_sincronizada():
+            texto = time.strftime("%H:%M  %d de %B", time.localtime())
+        else:
+            texto = "sincronizando..."
+        self.itens["data"].texto(texto)
+        self._posiciona()
+
+    def _hora_sincronizada(self):
+        """Uma pergunta pontual ao timedate1, reaproveitando o barramento de
+        sistema. Se o D-Bus falhar por algum motivo alheio, assume
+        sincronizado -- o aviso é para o caso conhecido (sem RTC), não para
+        travar a barra se outra coisa der errado."""
+        if not hasattr(self, "_bus_hora"):
+            try:
+                self._bus_hora = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+            except GLib.Error:
+                self._bus_hora = None
+        if self._bus_hora is None:
+            return True
+        try:
+            r = self._bus_hora.call_sync(
+                "org.freedesktop.timedate1",
+                "/org/freedesktop/timedate1",
+                "org.freedesktop.DBus.Properties", "Get",
+                GLib.Variant("(ss)", ("org.freedesktop.timedate1",
+                                      "NTPSynchronized")),
+                GLib.VariantType("(v)"), Gio.DBusCallFlags.NONE, 3000, None)
+            return bool(r.unpack()[0])
+        except (GLib.Error, AttributeError, IndexError):
+            return True
 
     # -- volume ------------------------------------------------------------
 

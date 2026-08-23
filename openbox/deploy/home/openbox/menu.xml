@@ -1,19 +1,31 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <openbox_menu xmlns="http://openbox.org/3.4/menu">
+  <!-- Menu do clique direito na área de trabalho (context "Desktop" no
+       rc.xml). Ficou parado sem uso de 2025 até 21/08/2026, quando o clique
+       direito era desligado de propósito. Os cinco itens abaixo são os
+       únicos que existem; nada daqui duplica Ajustes/E-mail/Sair, que já
+       estão na Dock (itens 11 a 13) e no botão de energia da barra. -->
   <menu id="root-menu" label="Tarsila">
-    <item label="Ver mais aplicativos">
+    <item label="Abrir um aplicativo"
+          icon="/usr/share/icons/Papirus/48x48/apps/applications-all.svg">
       <action name="Execute"><command>/usr/local/bin/tarsila-appfinder-yad.sh</command></action>
     </item>
-    <item label="Ajustes">
-      <action name="Execute"><command>tarsila-config</command></action>
+    <item label="Abrir terminal"
+          icon="/usr/share/icons/Papirus/48x48/apps/org.xfce.terminal.svg">
+      <action name="Execute"><command>/usr/local/bin/tarsila-abrindo xfce4-terminal</command></action>
+    </item>
+    <item label="Abrir Arquivos"
+          icon="/usr/share/icons/Papirus/48x48/apps/org.xfce.thunar.svg">
+      <action name="Execute"><command>/usr/local/bin/tarsila-abrindo thunar</command></action>
     </item>
     <separator/>
-    <item label="Tarsila Email">
-      <action name="Execute"><command>tarsila-email</command></action>
+    <item label="Limpar área de trabalho"
+          icon="/usr/share/icons/Papirus/24x24/actions/edit-clear-all.svg">
+      <action name="Execute"><command>/usr/local/bin/tarsila-limpar.sh</command></action>
     </item>
-    <separator/>
-    <item label="Sair">
-      <action name="Exit"><prompt>yes</prompt></action>
+    <item label="Ver tarefas do sistema"
+          icon="/usr/share/icons/Papirus/48x48/apps/utilities-system-monitor.svg">
+      <action name="Execute"><command>xfce4-terminal --title="Tarefas do sistema" -e htop</command></action>
     </item>
   </menu>
 </openbox_menu>

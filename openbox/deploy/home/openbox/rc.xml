@@ -186,7 +186,9 @@
       <mousebind button="Left" action="Drag"><action name="Resize"/></mousebind>
     </context>
     <context name="Desktop">
-      <!-- Clique direito na área de trabalho desabilitado (Tarsila) -->
+      <!-- Reabilitado em 21/08/2026: cinco atalhos fixos (root-menu, em
+           menu.xml): app, terminal, arquivos, limpar mesa, tarefas. -->
+      <mousebind button="Right" action="Press"><action name="ShowMenu"><menu>root-menu</menu></action></mousebind>
     </context>
   </mouse>
   <menu>
@@ -195,11 +197,6 @@
     <submenuShowDelay>100</submenuShowDelay>
   </menu>
   <applications>
-    <application class="Plank">
-      <decor>no</decor>
-      <focus>no</focus>
-      <layer>dock</layer>
-    </application>
     <!-- Redes sociais (Facebook/Instagram/X) abrem em janela tamanho de
          celular; centralizamos p/ não nascerem desproporcionais. O WhatsApp
          (tarsila-rede-whatsapp) é desktop e também fica centralizado. -->

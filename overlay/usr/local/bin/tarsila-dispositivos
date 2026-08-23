@@ -122,20 +122,41 @@ def classificar(sub, prop):
     Perguntar ao subsistema e mais confiavel do que adivinhar pela classe USB
     declarada: aparelhos baratos mentem na descricao, mas quem acaba
     carregando o driver nao mente."""
+    # /devices/virtual e infraestrutura do kernel sem aparelho nenhum atras
+    # -- zram, o sequenciador/timer do ALSA etc. Nunca e algo que alguem
+    # plugou.
+    if (prop.get("DEVPATH") or "").startswith("/devices/virtual/"):
+        return None
     if sub == "video4linux":
         return "webcam"
     if sub == "sound":
+        # SOUND_FORM_FACTOR=internal e o cartao de som embutido na placa --
+        # toda TV box tem um. Sem este filtro, ele se anuncia como
+        # "Microfone conectado" sem ninguem ter plugado nada (achado em
+        # 23/08/2026, testando a versao deste classificador no menu de
+        # dispositivos da barra).
+        if prop.get("SOUND_FORM_FACTOR") == "internal":
+            return None
         if "midi" in (prop.get("ID_ID", "") + prop.get("DEVPATH", "")).lower():
             return "midi"
         return "microfone"
     if sub in ("block", "mmc"):
-        if prop.get("ID_DRIVE_FLASH_SD") or sub == "mmc":
+        # MMC_TYPE=MMC e o eMMC interno (o disco de sistema) e MMC_TYPE=SDIO
+        # e o Wi-Fi embutido nesta placa -- os dois usam o mesmo barramento
+        # do cartao SD sem serem cartao nenhum. So MMC_TYPE=SD, exato, e
+        # cartao removivel de verdade; "sub == 'mmc'" sozinho pegava os
+        # tres juntos.
+        if prop.get("MMC_TYPE") == "SD":
+            return "cartao"
+        if prop.get("ID_DRIVE_FLASH_SD"):
             return "cartao"
         if prop.get("ID_DRIVE_THUMB") or prop.get("ID_USB_DRIVER") == "usb-storage":
             # Disco grande com motor girando costuma se anunciar como rotacional
             rot = prop.get("ID_ATA_ROTATION_RATE_RPM")
             return "disco" if (rot and rot != "0") else "pendrive"
-        return "pendrive"
+        # Sem nenhum sinal de USB/flash real (zram, o proprio eMMC, loop,
+        # dm-*...) nao e um aparelho que alguem plugou.
+        return None
     if sub == "usb":
         classe = prop.get("ID_USB_CLASS_FROM_DATABASE", "").lower()
         if "printer" in classe:
