@@ -57,10 +57,28 @@ window.active.button.hover.image.color: #000000
 window.active.button.pressed.image.color: #000000
 window.active.button.disabled.image.color: #c9ced2
 
-# fechar: vermelho suave no hover
-window.active.button.close.hover.bg: flat solid
-window.active.button.close.hover.bg.color: #e5534b
-window.active.button.close.hover.image.color: #ffffff
+# fechar e maximizar: bolinha cheia (close.xbm/max.xbm, ao lado deste
+# arquivo, 12x12 -- subiu de 10x10 em 23/08/2026 a pedido), cor de
+# referencia do macOS (#FF605C / #00CA4E), escurecendo ~28% no hover.
+# Sem preencher o fundo.
+#
+# O desenho original (circulo com o X/setas recortados por dentro, pedido
+# junto) nao sobrevive: o botao de verdade tem so uns 10-12px, e nesse
+# tamanho o recorte vira ruido em vez de forma -- testado ao vivo em 12, 16,
+# 20 e 24px antes de desistir dele. A bolinha cheia e o que sobra legivel.
+window.active.button.close.unpressed.image.color: #FF605C
+window.active.button.close.hover.bg: parentrelative
+window.active.button.close.hover.image.color: #B74542
+
+window.active.button.max.unpressed.image.color: #00CA4E
+window.active.button.max.hover.bg: parentrelative
+window.active.button.max.hover.image.color: #009138
+
+# janela ja maximizada: o botao vira "restaurar" e o Openbox troca para o
+# estado ".toggled", que sem isto cai na cor cinza padrao dos outros botoes.
+window.active.button.max.toggled.unpressed.image.color: #00CA4E
+window.active.button.max.toggled.hover.bg: parentrelative
+window.active.button.max.toggled.hover.image.color: #009138
 
 # --- menus ---
 menu.border.width: 1
