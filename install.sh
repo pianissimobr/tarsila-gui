@@ -2,7 +2,7 @@
 #
 # Tarsila — instalador da camada gráfica (BETA)
 #
-# Instala a interface Tarsila (XFCE + Plank + top bar + Loja) sobre um
+# Instala a interface Tarsila (Openbox + Dock/Barra em GTK + Loja) sobre um
 # Debian 13 (trixie) já instalado. Pensado para ARM64 (tvbox/SBC), mas os
 # scripts são independentes de arquitetura.
 #

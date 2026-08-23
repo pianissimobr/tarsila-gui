@@ -17,8 +17,8 @@ de RAM — então é leve por obrigação.
 
 | Componente | O que faz |
 |---|---|
-| **Dock (Plank)** | Apps essenciais fixos, ordem gerenciável pelo próprio usuário |
-| **Top bar** | Título da janela + botões fechar/restaurar, 3 workspaces em bolinhas, som/rede/sair/relógio |
+| **Dock** | GTK própria (`tarsila-dock`, substituiu o Plank em 17/08/2026); apps essenciais fixos, ordem gerenciável pelo próprio usuário |
+| **Top bar** | GTK própria (`tarsila-barra`, substituiu a polybar em 16/08/2026); título da janela + botões fechar/restaurar, 3 workspaces em bolinhas, som/rede/sair/relógio |
 | **Ver Mais** | Grade de todos os apps (yad) com Executar / Desinstalar / Gerenciar Dock |
 | **Tarsila Store** | Loja local (web app) com catálogo curado de ~170 apps e jogos, instalação em 1 clique |
 | **Ajustes** | Painel de configuração simplificado (temas, wallpaper, rede, conta) |
@@ -48,9 +48,10 @@ arquitetura.
 
 ```
 overlay/   → copiado sobre o sistema (/usr/local/bin, /opt/tarsila-store,
-             /usr/share/tarsila, temas do Plank, ícones, plymouth, lightdm)
-skel/      → configurações por usuário (painel XFCE, dock, autostart,
-             devilspie2, gtk) + plank-dconf.ini (ordem da dock)
+             /usr/share/tarsila, ícones, plymouth, lightdm)
+skel/      → configurações por usuário (dock, autostart, devilspie2, gtk) +
+             plank-dconf.ini (ordem da dock — nome herdado do Plank; quem lê
+             hoje é o tarsila-dock-manager, não o Plank)
 install.sh → instalador (beta)
 ```
 

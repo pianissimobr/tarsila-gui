@@ -30,7 +30,7 @@ gera um `.deb` que funciona sozinho.
 ```
                         ┌──────────────────┐
                         │   tarsila-gui    │   a camada gráfica:
-                        │                  │   Openbox + Plank + picom,
+                        │                  │   Openbox + Dock/Barra GTK + picom,
                         │  overlay/        │   temas, Ajustes, Dock,
                         │  openbox/deploy/ │   OOBE, papel de parede
                         │  skel/           │
@@ -94,12 +94,15 @@ A separação resolve três coisas concretas:
 O `install.sh` roda como root sobre um Debian já instalado, em seis passos:
 
 1. **Dependências** — `apt-get install` do núcleo gráfico: `xorg openbox dunst
-   xsettingsd picom feh plank devilspie2 yad lightdm …`
+   xsettingsd picom feh devilspie2 yad lightdm …`. **Não inclui `plank` nem
+   `polybar`** — a Dock (`tarsila-dock`) e a barra (`tarsila-barra`) são GTK
+   próprias, substituíram os dois em 16–17/08/2026 (ver "Plank e polybar
+   saíram, mas o nome ficou" abaixo).
 2. **Apps Tarsila** — clona os cinco repositórios, roda o `build-deb.sh` de
    cada um e instala o `.deb` resultante. Se houver `.deb` em `pacotes/`, usa
    esses e nem toca na rede (modo offline).
 3. **Arquivos de sistema** — despeja `overlay/` e `openbox/deploy/` na raiz.
-4. **`skel/`** — configuração inicial do usuário (Openbox, Plank, devilspie2).
+4. **`skel/`** — configuração inicial do usuário (Openbox, Dock, devilspie2).
 5. **Provisionamento** — `tarsila-user-provision` monta o `~/.config` da conta.
 6. **OOBE** — primeiro uso.
 
@@ -119,6 +122,30 @@ onde. O `tarsila-dock-apply.sh` está num, o `tarsila-tela-estados` está no
 outro, sendo o mesmo subsistema. Conferido em 16/08: **não há colisão de
 arquivos** entre eles, então nada é sobrescrito em silêncio — é só arbitrário.
 Unificar em `overlay/` é dívida técnica conhecida.
+
+### Plank e polybar saíram, mas o nome ficou
+
+Em 16–17/08/2026 a Dock e a barra superior deixaram de ser o Plank e a
+polybar — hoje são duas janelas GTK próprias, `tarsila-dock` e
+`tarsila-barra` (ambas em `overlay/usr/local/bin/`), desenhadas em
+Cairo/GTK e movidas a evento (D-Bus, `pactl subscribe`), sem os processos
+externos. Nem `plank` nem `polybar` aparecem no `apt-get install` do
+`install.sh`. Confira rodando: `ps aux | grep -E 'tarsila-dock|tarsila-barra'`
+— nenhum `plank`/`polybar` deve aparecer.
+
+O que **não** mudou de nome, de propósito, é o formato de dados: a ordem e
+os `.dockitem` da Dock continuam em `~/.config/plank/dock1/launchers/`, a
+chave dconf continua `/net/launchpad/plank/docks/dock1/dock-items`, e o
+`skel/plank-dconf.ini` continua sendo carregado no primeiro provisionamento
+(`install.sh`, passo 4) para semear a ordem padrão dos 15 ícones. Esses três
+pontos são lidos e escritos por `tarsila-dock-manager` e
+`tarsila-dock-apply.sh` — a Dock em GTK propriamente dita não lê dconf
+nenhum, só a lista de itens vem de lá. Renomear esse caminho e essa chave é
+possível, mas não é dívida técnica: é só um nome herdado que ainda funciona.
+
+Se um `dpkg -l` numa máquina Tarsila mostrar `plank`/`polybar` instalados,
+são sobra de uma versão anterior (ambos ficaram sem nada que os inicie) —
+seguro remover com `apt purge plank polybar libplank1 libplank-common`.
 
 ## Aquisição dos pacotes: o furo da premissa
 
@@ -152,7 +179,6 @@ recursos, e não quebrar.
 |---|---|---|
 | `app-management` | `tarsila-pos-dock` (do `tarsila-gui`) | Janelas abrem centralizadas em vez de encostadas na Dock |
 | `app-management` | `tarsila-pkg` (da Store) | Remoção passa pelo `apt-get`, pedindo a senha |
-| `app-management` | `plank` | Não mexe em ícone de Dock |
 | `app-management` | `dconf` | Não reordena a Dock |
 | Store | `tarsila-motor` | Não se instala: é `Depends`, não detecção |
 | `tarsila-gui` | os cinco `.deb` | Desktop sobe sem os apps |
