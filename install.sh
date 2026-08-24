@@ -218,6 +218,46 @@ update-desktop-database /usr/share/applications 2>/dev/null || true
 gtk-update-icon-cache -q /usr/share/icons/Tarsila-icons 2>/dev/null || true
 systemctl enable lightdm NetworkManager >/dev/null 2>&1 || true
 
+# Serviços que o Debian liga sozinho e que esta TV box não usa. Medido em
+# 24/08/2026 numa sessão de 474 MB, na campanha para caber em ~300 MB:
+#
+#   unattended-upgrades  17,4 MB  fica de pé só para SEGURAR o desligamento
+#                                 enquanto um upgrade roda. Quem atualiza o
+#                                 Tarsila é o tarsila-atualizar.timer.
+#   cups-browsed          4,1 MB  descobre impressora REMOTA na rede.
+#   cups (daemon)         2,6 MB  o cups.socket FICA e sobe o daemon sozinho
+#                                 quando alguém plugar uma impressora --
+#                                 imprimir continua funcionando.
+#   avahi-daemon          ~1 MB   nesta instalação só o cups-browsed usava.
+#   bluetooth/blueman        0    a placa não tem rádio BT (/sys/class/
+#                                 bluetooth nem existe); só custava boot.
+#   openvpn                  0    /etc/openvpn vazio.
+#
+# Desligar, e não desinstalar, de propósito: quem precisar de algum destes
+# num aparelho diferente reativa com um systemctl enable --now.
+for _s in unattended-upgrades.service cups-browsed.service cups.service \
+          avahi-daemon.service avahi-daemon.socket bluetooth.service \
+          blueman-mechanism.service openvpn.service; do
+  systemctl disable --now "$_s" >/dev/null 2>&1 || true
+done
+# O socket e o path do CUPS continuam ligados: são eles que ressuscitam o
+# daemon sob demanda. Sem esta linha, uma reinstalação em cima de um sistema
+# onde alguém já os tinha desligado ficaria sem impressão nenhuma.
+systemctl enable cups.socket cups.path >/dev/null 2>&1 || true
+
+# Monitores de volume do gvfs que nada nesta TV box usa: câmera fotográfica
+# por PTP, iPhone/iPad por AFC e contas online do GNOME. São ~4 MB somados,
+# subidos por D-Bus junto com o gerenciador de arquivos. Os que FICAM são os
+# que trabalham de verdade aqui: udisks2 (pendrive, cartão) e mtp.
+#
+# Desativar é renomear o .monitor -- é assim que o gvfs os descobre. Um
+# upgrade do pacote gvfs traz o arquivo de volta; se isso incomodar, o jeito
+# definitivo é um dpkg-divert.
+for _m in gphoto2 afc goa; do
+  _f="/usr/share/gvfs/remote-volume-monitors/$_m.monitor"
+  [ -f "$_f" ] && mv -f "$_f" "$_f.desligado-pelo-tarsila"
+done 2>/dev/null || true
+
 if [ -z "$TARSILA_USER" ]; then
   echo "==> [6/6] Habilitando o primeiro boot (assistente OOBE)…"
   mkdir -p /var/lib/tarsila

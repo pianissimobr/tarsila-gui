@@ -240,6 +240,26 @@ def le_lancadores():
 class Dock(Gtk.Window):
     def __init__(self):
         super().__init__(type=Gtk.WindowType.TOPLEVEL)
+        # WM_CLASS explicito, e nao herdado do processo. Desde 24/08/2026 a
+        # Dock e a barra rodam no MESMO processo (tarsila-shell), e o GTK da
+        # a toda janela dele o mesmo WM_CLASS -- as duas viravam
+        # "tarsila-shell". Isso quebrava quem procura cada uma pelo nome: o
+        # tarsila-pos-dock (acha a Dock para encostar menus nela) e o
+        # tarsila-boot-cursor.sh (so tira a ampulheta quando ve as DUAS).
+        #
+        # NOME DA JANELA -- e por ele que os outros programas acham esta
+        # aqui. Desde 24/08/2026 a Dock e a barra dividem um processo
+        # (tarsila-shell), e o WM_CLASS deixou de servir para separar as
+        # duas: o GTK carimba nele o nome do PROCESSO, igual para as duas
+        # janelas. Tres becos andados antes de chegar no titulo:
+        # gtk_window_set_wmclass() nao faz mais nada desde o GTK 3.22 (falha
+        # calado), Gdk.property_change nem existe neste PyGObject, e
+        # Gdk.set_program_class e global do processo -- pegou numa janela e
+        # nao na outra. O titulo e por janela e nao tem esses poréns.
+        #
+        # Ninguem le este titulo na tela: a janela e do tipo DOCK, sem barra
+        # de titulo, e fora do alt-tab e do pager. Ele existe so como nome.
+        self.set_title("tarsila-dock")
         self.set_type_hint(Gdk.WindowTypeHint.DOCK)
         self.set_decorated(False)
         self.set_resizable(False)

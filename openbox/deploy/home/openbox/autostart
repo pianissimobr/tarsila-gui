@@ -17,11 +17,17 @@
 # impressora sao icones de BANDEJA, e esta sessao nao tem bandeja
 # (_NET_SYSTEM_TRAY_S0 nao existe). Subiriam invisiveis, so ocupando memoria.
 #
-# Sobe os componentes proprios (tarsila-dock, tarsila-barra, tarsila-estado,
-# devilspie2) e os substitutos leves do XFCE: xsettingsd no lugar do
-# xfsettingsd, dunst no lugar do xfce4-notifyd, wallpaper-apply no lugar do
-# xfdesktop. Nao ha substituto do xfce4-panel: a barra de cima e a
+# Sobe os componentes proprios (tarsila-shell -- Dock e barra no mesmo
+# processo --, tarsila-estado) e os substitutos leves do XFCE: xsettingsd no
+# lugar do xfsettingsd, dunst no lugar do xfce4-notifyd, wallpaper-apply no
+# lugar do xfdesktop. Nao ha substituto do xfce4-panel: a barra de cima e a
 # tarsila-barra, em GTK.
+#
+# CAMPANHA DE RAM, 24/08/2026 (meta: sessao grafica em ~300 MB). Sairam
+# daqui, cada um com o porque no lugar onde a linha estava: devilspie2
+# (29 MB), o agente do polkit (29 MB) e o qlipper (19 MB). A Dock e a barra
+# viraram um processo so, o tarsila-shell, poupando mais um runtime
+# Python+GTK inteiro (~28 MB). Medido antes: 474 MB de sessao.
 
 # marcador: identifica a sessao Openbox p/ os scripts compartilhados do XFCE
 # (guard robusto contra chamadas a xfce4-panel; nao depende de env)
@@ -61,22 +67,27 @@ dunst &
 #
 # Agora e uma janela so: o botao e parte do mesmo desenho, move junto e nao ha
 # o que sincronizar. Ver overlay/usr/local/bin/tarsila-dock.
-( /usr/local/bin/tarsila-dock-apply.sh 2>/dev/null; exec /usr/local/bin/tarsila-dock ) &
-
-# Barra de indicadores, canto superior direito: relogio, sistema, limpar, som,
-# rede, desligar. Sao os mesmos seis da polybar, na mesma ordem, chamando os
-# mesmos programas -- o que mudou foi o custo de descobrir o estado.
 #
-# A polybar perguntava o tempo todo: sound.sh a cada 3s e net.sh, que roda
-# nmcli, a cada 5s. Era o grosso dos 11 forks/s do sistema PARADO. A barra em
-# GTK escuta: volume pelo `pactl subscribe` (um processo dormindo) e rede por
-# sinal do NetworkManager no D-Bus (zero processo).
+# A BARRA DE CIMA SOBE JUNTO, no mesmo processo. Ate 24/08/2026 eram duas
+# linhas aqui, dois interpretadores Python+GTK -- e o runtime, sozinho, custa
+# ~28 MB antes de desenhar qualquer coisa. Pagavamos isso duas vezes (29 MB
+# da Dock + 33 MB da barra). O tarsila-shell instancia as duas janelas num
+# interpretador so, com um laco de eventos so. Os dois programas continuam
+# rodando sozinhos se chamados na mao, para depurar um deles isolado.
+#
+# A barra de indicadores e o canto superior direito: relogio, sistema,
+# dispositivos, limpar, som, rede, desligar. Sao os mesmos da polybar, na
+# mesma ordem, chamando os mesmos programas -- o que mudou foi o custo de
+# descobrir o estado. A polybar perguntava o tempo todo: sound.sh a cada 3s e
+# net.sh, que roda nmcli, a cada 5s. Era o grosso dos 11 forks/s do sistema
+# PARADO. A barra em GTK escuta: volume pelo `pactl subscribe` (um processo
+# dormindo) e rede por sinal do NetworkManager no D-Bus (zero processo).
 #
 # Ela NAO reserva espaco de tela (_NET_WM_STRUT). Fica por cima da janela
 # maximizada, no canto direito da barra de titulo, que esta vazio porque os
 # botoes da janela ficam a esquerda (titleLayout CML). Com strut o Openbox
 # reservaria a largura INTEIRA da tela por causa de uma barra de ~290px.
-/usr/local/bin/tarsila-barra &
+( /usr/local/bin/tarsila-dock-apply.sh 2>/dev/null; exec /usr/local/bin/tarsila-shell ) &
 
 # Aquece o cache de disco do navegador enquanto a area de trabalho sobe. Sem
 # isto o Chromium leva ~18s para abrir na primeira vez do dia e ~5s nas
@@ -87,13 +98,19 @@ dunst &
 # tela invisivel. Dentro da sessao ele abria janela de verdade na cara do
 # usuario (o Gnumeric era o mais visivel).
 
-# regras de janela (workspace lógico 2, unmaximize, exceções) — igual XFCE
 # Tamanho das janelas Abrir/Salvar como (chave unica do GTK, valida para
 # todos os aplicativos). Conserta no login um valor que tenha sido
 # esticado durante o uso.
 /usr/local/bin/tarsila-dialogos &
 
-devilspie2 &
+# devilspie2 SAIU em 24/08/2026, na campanha de RAM (meta: 300 MB de
+# sessao). Custava 29 MB de PSS -- o terceiro maior processo da sessao,
+# atras so do Xorg e da nossa propria barra -- para aplicar uma regra:
+# "janela nova nasce na area de trabalho 2 e nao maximizada". Agora a
+# janela nasce na area atual, no tamanho que o proprio aplicativo pedir.
+# O floating.lua fica no skel como registro do que a regra dizia; se um
+# dia voltar a fazer falta, o barato e um devilspie2 -- e nao reescrever
+# a regra a mao com wmctrl a cada janela.
 
 # FONTE DE VERDADE DO ESTADO DA TELA (substitui o par polybar-mode.sh +
 # title.sh). Responde "ha janela maximizada?" por evento do X, e cuida do
@@ -111,7 +128,17 @@ devilspie2 &
 # compositor xrender: cantos arredondados (janelas flutuantes) + Plank
 /usr/local/bin/tarsila-ob-picom.sh &
 # --- claws-mail-suite (nao editar esta secao) ---
-for a in /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 /usr/bin/lxpolkit /usr/lib/mate-polkit/polkit-mate-authentication-agent-1 /usr/lib/*/libexec/polkit-kde-authentication-agent-1; do [ -x "$a" ] && { "$a" & break; }; done
+# O agente grafico do polkit (lxpolkit) SAIU em 24/08/2026, na campanha de
+# RAM: 29 MB de PSS para uma caixa de senha que este sistema quase nunca
+# chega a pedir. Conferido antes de tirar:
+#   * montar pendrive/cartao NAO precisa dele -- a acao
+#     org.freedesktop.udisks2.filesystem-mount e allow_active=yes, e a
+#     sessao grafica e Active=yes/Remote=no no logind;
+#   * Ajustes e Loja nunca usaram polkit: vao por sudoers (tarsila-net-set,
+#     tarsila-pkg) -- o cabecalho do tarsila-net-set ja dizia, em 2026, que
+#     foi escrito assim "sem depender do polkit".
+# O unico caminho que perde funcao e o "Ver conexoes" (nm-connection-editor)
+# na janela de rede: da para ver, nao para editar. Editar rede e no Ajustes.
 # Area de transferencia. SEM isto, copiar num app e fechar o app PERDE o
 # conteudo -- comportamento normal do X11 (a selecao pertence ao processo, some
 # com ele) e incompreensivel para quem nao sabe disso.
@@ -129,10 +156,15 @@ for a in /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 /usr/bin
 #   gpaste-2   ~9 MB   grava historico mas nao reassume a selecao: o Ctrl+V
 #                      simples continua falhando. descartado
 #   qlipper    19 MB PSS  reassume de verdade. escolhido
-# O custo e real: ~19 MB de PSS numa sessao de ~173 MB. Se aparecer coisa mais
-# leve que REASSUMA a selecao, trocar -- o teste esta em docs/CHECKLIST-UX.md.
-command -v qlipper >/dev/null 2>&1 && qlipper &
-command -v tint2 >/dev/null 2>&1 && tint2 &
+#
+# E SAIU em 24/08/2026, na campanha de RAM: 19 MB e caro demais para o que
+# entrega. Volta o comportamento cru do X11 -- copiar num app e FECHAR o app
+# antes de colar perde o conteudo. Foi uma escolha consciente, nao um
+# esquecimento: se voltar a doer, o teste de qual gerenciador serve esta em
+# docs/CHECKLIST-UX.md, e o qlipper continua sendo a resposta certa.
+#
+# O "command -v tint2 && tint2" que ficava aqui saiu junto: o tint2 nunca
+# esteve instalado, entao a linha nunca fez nada -- so parecia que fazia.
 # 2026-07-26: REMOVIDO o disparo automatico do assistente de e-mail.
 # Ele abria o 'configurar-claws' 4 s apos TODO login enquanto nao houvesse
 # conta configurada -- ou seja, sempre, na cara do usuario. Configurar

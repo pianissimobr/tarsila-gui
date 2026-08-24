@@ -804,6 +804,12 @@ class Barra(Gtk.Window):
 
     def __init__(self):
         super().__init__(type=Gtk.WindowType.TOPLEVEL)
+        # Ver a nota inteira no tarsila-dock: com as duas janelas no mesmo
+        # processo o WM_CLASS ficou igual para ambas, e quem procura cada uma
+        # pelo nome passou a usar o TITULO. Sem isto o tarsila-boot-cursor.sh
+        # nunca tiraria a ampulheta do arranque -- ele so desiste quando
+        # enxerga a Dock E a barra.
+        self.set_title("tarsila-barra")
         self.set_name("tarsila-barra-janela")
         self.set_type_hint(Gdk.WindowTypeHint.DOCK)
         self.set_decorated(False)

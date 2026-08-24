@@ -16,9 +16,12 @@
 # Agora a pergunta e sobre o que se quer de fato saber: a janela apareceu na
 # tela? Um processo pode estar de pe sem ter pintado nada, e o nome do processo
 # muda a cada troca de componente. A janela e o fim da espera.
+# Pelo NOME da janela, nao pela classe: desde 24/08/2026 a Dock e a barra
+# dividem um processo (tarsila-shell), e o GTK carimba nas duas o WM_CLASS do
+# processo -- as duas viraram "Tarsila-shell". O titulo e por janela.
 pronto() {
-  [ -n "$(xdotool search --class tarsila-dock 2>/dev/null)" ] &&
-  [ -n "$(xdotool search --class tarsila-barra 2>/dev/null)" ]
+  [ -n "$(xdotool search --name '^tarsila-dock$' 2>/dev/null)" ] &&
+  [ -n "$(xdotool search --name '^tarsila-barra$' 2>/dev/null)" ]
 }
 
 xsetroot -cursor_name watch 2>/dev/null

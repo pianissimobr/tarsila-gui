@@ -23,6 +23,7 @@ udev com root. Assim ja tem o DBUS da sessao e nao precisa de permissao
 nenhuma: "udevadm monitor" funciona para usuario comum.
 """
 
+import atexit
 import hashlib
 import os
 import subprocess
@@ -164,14 +165,37 @@ def classificar(sub, prop):
     return None
 
 
+def _encerra_filho(p):
+    """Mata o udevadm quando este programa sai, para nao deixar orfao."""
+    if p.poll() is not None:
+        return
+    try:
+        p.terminate()
+        p.wait(timeout=3)
+    except Exception:
+        try:
+            p.kill()
+        except Exception:
+            pass
+
+
 def eventos():
-    """Le o fluxo do udev e devolve um dicionario por evento."""
+    """Le o fluxo do udev e devolve um dicionario por evento.
+
+    O "udevadm monitor" e um processo filho, e ate 24/08/2026 ele ficava orfao
+    quando este daemon morria -- achei dois acumulados na box, um por reinicio.
+    Em producao (sobe no login, morre no logout) so aparece um, entao nao era
+    vazamento de verdade; ainda assim, filho que sobrevive ao pai e sujeira.
+    O atexit cobre a saida normal e o SIGTERM; contra SIGKILL nao ha o que
+    fazer -- ninguem consegue rodar codigo depois dele.
+    """
     p = subprocess.Popen(
         ["udevadm", "monitor", "--udev", "--property",
          "--subsystem-match=usb", "--subsystem-match=video4linux",
          "--subsystem-match=sound", "--subsystem-match=block",
          "--subsystem-match=mmc"],
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
+    atexit.register(_encerra_filho, p)
     prop, cab = {}, None
     for linha in p.stdout:
         linha = linha.rstrip("\n")

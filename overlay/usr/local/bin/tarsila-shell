@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+"""Sobe a Dock e a barra de indicadores num processo só.
+
+POR QUE ISTO EXISTE. Um interpretador Python com GTK3 carregado custa ~28 MB
+de PSS antes de desenhar o primeiro pixel -- é o preço do runtime, não do
+nosso código. Rodando a Dock e a barra como dois programas separados, esse
+preço era pago DUAS vezes: 29 MB + 33 MB = 62 MB numa sessão de 474 MB.
+Aqui os dois objetos vivem no mesmo interpretador e dividem um laço de
+eventos só, e o segundo runtime some. Medido na campanha de RAM de
+24/08/2026 (meta: sessão gráfica em ~300 MB).
+
+Os dois arquivos continuam existindo e funcionando sozinhos -- dá para rodar
+`tarsila-dock` ou `tarsila-barra` na mão para depurar um dos dois isolado,
+que é como eles foram escritos e testados. Este lançador só os carrega como
+biblioteca (o `if __name__ == "__main__"` de cada um não dispara) e chama o
+Gtk.main() uma vez.
+
+CUIDADOS QUE JÁ ESTÃO RESOLVIDOS, para quem for mexer:
+
+  * WM_CLASS -- o GTK dá a toda janela de um processo o mesmo WM_CLASS. As
+    duas classes são procuradas por nome (tarsila-pos-dock acha a Dock;
+    tarsila-boot-cursor.sh espera as DUAS), então cada janela fixa a sua com
+    set_wmclass(). Ver a nota em cada arquivo.
+
+  * CSS -- os dois chamam add_provider_for_screen, que é global da tela. Os
+    seletores não se cruzam de propósito: a Dock só usa `.tarsila-icone`, e a
+    barra `#tarsila-barra-janela`, `#barra`, `.item` e `.sep`. Um seletor
+    genérico (`window {...}`) num dos dois vazaria para as janelas do outro
+    -- foi exatamente esse o bug do fundo preto das janelas suspensas, em
+    23/08. Se precisar de regra nova, prenda ela a um id ou classe própria.
+
+  * Se um dos dois estourar na hora de subir, o outro sobe assim mesmo: a
+    sessão fica com meia interface em vez de nenhuma, e o traceback vai para
+    o log da sessão.
+
+  * Cada janela ainda liga o próprio "destroy" ao Gtk.main_quit (é o que as
+    faz funcionar sozinhas). Juntas, isso quer dizer que destruir UMA derruba
+    o processo e leva a outra junto. Na prática não acontece: as duas são
+    mobília permanente, e o "Limpar a Área de Trabalho" pula janela do tipo
+    DOCK, que é o tipo das duas. Mas é bom saber antes de ligar um botão de
+    fechar em alguma delas.
+"""
+
+import importlib.machinery
+import importlib.util
+import os
+import signal
+import sys
+
+import gi
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk   # noqa: E402
+
+AQUI = os.path.dirname(os.path.abspath(__file__))
+
+
+def carrega(nome):
+    """Importa um dos programas da barra como módulo.
+
+    Eles moram em /usr/local/bin SEM extensão .py, então nem o import normal
+    os enxerga, nem o spec_from_file_location sozinho dá conta: sem extensão
+    conhecida ele não sabe escolher um leitor e devolve None. Por isso o
+    leitor de código-fonte vai dito na mão."""
+    caminho = os.path.join(AQUI, nome)
+    apelido = nome.replace("-", "_")
+    carregador = importlib.machinery.SourceFileLoader(apelido, caminho)
+    spec = importlib.util.spec_from_loader(apelido, carregador)
+    if spec is None:
+        raise ImportError("não consegui carregar %s" % caminho)
+    modulo = importlib.util.module_from_spec(spec)
+    carregador.exec_module(modulo)
+    return modulo
+
+
+def sobe(nome, classe):
+    """Instancia uma das janelas. Um erro aqui derruba só ela."""
+    try:
+        modulo = carrega(nome)
+        getattr(modulo, classe)()
+        return True
+    except Exception:
+        import traceback
+        print("tarsila-shell: %s não subiu:" % nome, file=sys.stderr)
+        traceback.print_exc()
+        return False
+
+
+def main():
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    dock = sobe("tarsila-dock", "Dock")
+    barra = sobe("tarsila-barra", "Barra")
+    if not (dock or barra):
+        print("tarsila-shell: nenhuma das duas subiu, saindo.", file=sys.stderr)
+        return 1
+    print("tarsila-shell: pronto (dock=%s barra=%s)" % (dock, barra),
+          file=sys.stderr)
+    Gtk.main()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

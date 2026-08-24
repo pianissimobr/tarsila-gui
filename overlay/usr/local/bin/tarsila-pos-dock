@@ -74,7 +74,11 @@ def dock():
     except (OSError, ValueError):
         return None
     try:
-        vivo = subprocess.run(["xdotool", "search", "--class", "tarsila-dock"],
+        # Procura pelo NOME da janela, nao pela classe: desde 24/08/2026 a
+        # Dock e a barra dividem um processo (tarsila-shell) e o WM_CLASS
+        # das duas e o mesmo. O titulo continua sendo de cada uma.
+        vivo = subprocess.run(["xdotool", "search", "--name",
+                               "^tarsila-dock$"],
                               capture_output=True, text=True, timeout=5).stdout.strip()
     except Exception:
         return None
