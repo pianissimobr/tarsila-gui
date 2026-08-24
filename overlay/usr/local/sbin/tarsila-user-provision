@@ -35,12 +35,12 @@ if [ -d /usr/share/tarsila/skel ]; then
     sudo -u "$NAME" dbus-run-session -- dconf load /net/launchpad/plank/ < /usr/share/tarsila/skel/plank-dconf.ini 2>/dev/null || true
   fi
   # Os atalhos da barra lateral do gerenciador de arquivos guardam caminho
-  # ABSOLUTO -- e no modelo eles vem escritos com "alan", o mesmo nome de
+  # ABSOLUTO -- e no modelo eles vem escritos com "tarsila", o mesmo nome de
   # exemplo usado no sudoers-template. Sem esta troca, todo usuario que nao
-  # se chamasse alan abria o Arquivos e via seis atalhos apontando para a
+  # se chamasse tarsila abria o Arquivos e via seis atalhos apontando para a
   # pasta pessoal de outra pessoa (achado na revisao de 24/08/2026).
   if [ -f "$HOME_DIR/.config/gtk-3.0/bookmarks" ]; then
-    sed -i "s|^file:///home/alan/|file://$HOME_DIR/|" \
+    sed -i "s|^file:///home/tarsila/|file://$HOME_DIR/|" \
       "$HOME_DIR/.config/gtk-3.0/bookmarks" 2>/dev/null || true
   fi
 fi
@@ -60,7 +60,7 @@ mkdir -p "$HOME_DIR/.config/tarsila"
 [ -f "$HOME_DIR/.config/tarsila/tema" ] || echo padrao > "$HOME_DIR/.config/tarsila/tema"
 
 if [ -f /usr/local/lib/tarsila/sudoers-template ]; then
-  sed "s/^alan /$NAME /" /usr/local/lib/tarsila/sudoers-template > "/etc/sudoers.d/tarsila-config-$NAME"
+  sed "s/^tarsila /$NAME /" /usr/local/lib/tarsila/sudoers-template > "/etc/sudoers.d/tarsila-config-$NAME"
   chmod 440 "/etc/sudoers.d/tarsila-config-$NAME"
   visudo -c >/dev/null 2>&1 || rm -f "/etc/sudoers.d/tarsila-config-$NAME"
 fi

@@ -192,13 +192,13 @@ if [ -d "$REPO_DIR/openbox/deploy/home" ]; then
 fi
 
 # Modelo de sudoers por usuário (as regras usam o usuário de referência
-# "alan"; o provisionador troca pelo nome real). Concatena os tarsila-*.
+# "tarsila"; o provisionador troca pelo nome real). Concatena os tarsila-*.
 mkdir -p /usr/local/lib/tarsila
 cat "$REPO_DIR"/overlay/etc/sudoers.d/tarsila-* > /usr/local/lib/tarsila/sudoers-template
 
 if [ -n "$TARSILA_USER" ]; then
   echo "==> [4/6] Configurando sudoers (usuário: $TARSILA_USER)…"
-  sed "s/^alan /$TARSILA_USER /" "$REPO_DIR/overlay/etc/sudoers.d/tarsila-config" > /etc/sudoers.d/tarsila-config
+  sed "s/^tarsila /$TARSILA_USER /" "$REPO_DIR/overlay/etc/sudoers.d/tarsila-config" > /etc/sudoers.d/tarsila-config
   chmod 440 /etc/sudoers.d/tarsila-config
   visudo -c >/dev/null || { echo "ERRO: sudoers inválido"; exit 1; }
   usermod -aG sudo "$TARSILA_USER"

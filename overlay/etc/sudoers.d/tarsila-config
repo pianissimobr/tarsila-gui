@@ -9,12 +9,12 @@
 # /etc/sudoers.d/tarsila-atualizar), que faz o apt-get update/upgrade num
 # unico lugar. As regras de apt-get daqui ficaram sem chamador e foram
 # removidas — menos privilegio concedido do que o painel usa.
-alan ALL=(root) NOPASSWD: /usr/bin/timedatectl set-ntp true
-alan ALL=(root) NOPASSWD: /usr/bin/timedatectl set-ntp false
-alan ALL=(root) NOPASSWD: /usr/bin/timedatectl set-time *
+tarsila ALL=(root) NOPASSWD: /usr/bin/timedatectl set-ntp true
+tarsila ALL=(root) NOPASSWD: /usr/bin/timedatectl set-ntp false
+tarsila ALL=(root) NOPASSWD: /usr/bin/timedatectl set-time *
 # O painel chama com argumentos (conexao + auto/manual [+ ip gw dns]). Sem o
 # "*" a regra nao casava e o "sudo -n" falhava pedindo senha (nao-interativo).
-alan ALL=(root) NOPASSWD: /usr/local/bin/tarsila-net-set *
+tarsila ALL=(root) NOPASSWD: /usr/local/bin/tarsila-net-set *
 # Qualquer fuso, nao so os cinco do Brasil: a tela passou a listar
 # todos. timedatectl valida o nome sozinho e recusa o que nao existir.
-alan ALL=(root) NOPASSWD: /usr/bin/timedatectl set-timezone *
+tarsila ALL=(root) NOPASSWD: /usr/bin/timedatectl set-timezone *

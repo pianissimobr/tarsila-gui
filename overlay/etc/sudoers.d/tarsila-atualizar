@@ -1,3 +1,3 @@
 # A tela de Ajustes chama este utilitario ao clicar em "Verificar e Instalar".
 # E um caminho absoluto e fixo, que faz apenas apt-get update/upgrade.
-alan ALL=(root) NOPASSWD: /usr/local/sbin/tarsila-atualizar
+tarsila ALL=(root) NOPASSWD: /usr/local/sbin/tarsila-atualizar

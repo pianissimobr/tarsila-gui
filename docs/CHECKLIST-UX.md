@@ -7,7 +7,7 @@ Cerca de um terço dos itens antigos verificava coisas que já não têm onde
 acontecer.
 
 Cada item abaixo foi **conferido na box de teste** em 17/08/2026 —
-`alan@10.42.0.106`, Amlogic s905w2, aarch64, kernel 6.18.38-meson64, 1366x768,
+`tarsila@10.42.0.106`, Amlogic s905w2, aarch64, kernel 6.18.38-meson64, 1366x768,
 1922 MB. O que está marcado como pronto foi medido, não presumido. Reproduza com
 `docs/conferir-ux.sh`, que é somente-leitura.
 
@@ -327,7 +327,7 @@ e ficam pendentes para um aparelho com Wi-Fi.
 | Item | Estado |
 |---|---|
 | Perfil comunidade sem bloqueio | **OK** — nenhum bloqueador instalado (`xscreensaver`, `light-locker`, `xss-lock` ausentes). O usuário não tem como se trancar fora |
-| Autologin | **OK** — `99-tarsila-autologin.conf`, `alan`, timeout 0 |
+| Autologin | **OK** — `99-tarsila-autologin.conf`, `tarsila`, timeout 0 |
 | LightDM com identidade Tarsila | **N/A na prática** — com autologin a tela não aparece. Continua valendo para o perfil escritório |
 | Usuário e senha documentados | **?** |
 | Recuperação por frase BIP39 | **?** — projeto separado |
@@ -688,8 +688,8 @@ Somente leitura: não instala, não escreve, não muda configuração. Foi ele q
 produziu as evidências desta página. Para rodar de fora:
 
 ```
-scp docs/conferir-ux.sh alan@10.42.0.106:/tmp/
-ssh alan@10.42.0.106 'DISPLAY=:0 bash /tmp/conferir-ux.sh'
+scp docs/conferir-ux.sh tarsila@10.42.0.106:/tmp/
+ssh tarsila@10.42.0.106 'DISPLAY=:0 bash /tmp/conferir-ux.sh'
 ```
 
 Regra que vale para tudo aqui: **item resolvido vira arquivo no repositório**,

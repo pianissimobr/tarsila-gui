@@ -3,7 +3,7 @@
 #
 # SOMENTE LEITURA. Nao instala, nao escreve, nao altera configuracao.
 # Rode na propria box:  DISPLAY=:0 bash conferir-ux.sh
-# Ou de fora:  ssh alan@IP "DISPLAY=:0 bash /tmp/conferir-ux.sh"
+# Ou de fora:  ssh tarsila@IP "DISPLAY=:0 bash /tmp/conferir-ux.sh"
 #
 # A saida e para leitura humana e comparacao com o checklist -- nao ha
 # codigo de saida significativo.

@@ -280,7 +280,7 @@ ativa). Ou seja, o trabalho já estava sendo feito — faltava só reaproveitá-
 
 De quebra o título passou a funcionar no Thunar: o `case` do monitor procurava
 a classe `Thunar.Thunar`, e o `wmctrl` imprime `thunar.Thunar`. Nunca casou.
-galculator e qpdfview funcionavam; o Thunar dizia "alan - Thunar" desde sempre.
+galculator e qpdfview funcionavam; o Thunar dizia "tarsila - Thunar" desde sempre.
 
 **Medido:** forks em repouso caíram de **35 para 12 a cada 20 s** — o monitor
 sozinho respondia por 1,2 dos 1,75 fork/s da sessão parada.

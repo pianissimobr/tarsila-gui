@@ -3,7 +3,7 @@
 # Roda como root na box. Ver README.md para o contexto de cada passo.
 set -e
 SRC="$(cd "$(dirname "$0")" && pwd)/deploy"
-U="${1:-alan}"; H="$(getent passwd "$U" | cut -d: -f6)"
+U="${1:-tarsila}"; H="$(getent passwd "$U" | cut -d: -f6)"
 [ -n "$H" ] || { echo "Usuário '$U' não existe. Uso: sudo ./deploy-install.sh <usuario>"; exit 1; }
 
 echo "==> deps"

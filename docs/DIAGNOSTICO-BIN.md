@@ -1,7 +1,7 @@
 # Diagnóstico de `/usr/local/bin` — 17/08/2026
 
 Levantamento dos 54 scripts `tarsila-*` instalados na box de teste
-(`alan@10.42.0.106`, Openbox, sessão de pé há 3 h). Três perguntas:
+(`tarsila@10.42.0.106`, Openbox, sessão de pé há 3 h). Três perguntas:
 
 1. o que cada script **é** de fato;
 2. quem ainda cita **Plank** ou **polybar**, e se a citação é código vivo ou história;
@@ -21,7 +21,7 @@ Duas armadilhas do próprio método, para quem repetir:
   `polybar/`, `polybar-shape/`, `bandeja-segundoplano/` e `backup-2026*` cheias de cópias
   antigas, e `~/.config/openbox/` tem três `autostart.bak-*`. O `tarsila-tela-estados`
   aparece com 29 referências e **nenhuma viva**. Conte só o que a sessão lê.
-- **`XDG_RUNTIME_DIR` aqui é `/run/user/1003`, não `/run/user/1000`.** O usuário `alan`
+- **`XDG_RUNTIME_DIR` aqui é `/run/user/1003`, não `/run/user/1000`.** O usuário `tarsila`
   tem uid 1003. Na primeira passada meia dúzia de arquivos de estado foi dada como
   inexistente por causa disso — todos existem.
 

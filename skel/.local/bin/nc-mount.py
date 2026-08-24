@@ -31,10 +31,10 @@ def _load_cfg():
 def _ensure_bookmark():
     """Garante um único atalho NextCloud → ~/Nextcloud (sem dav:// duplicado)."""
     BOOKMARKS.parent.mkdir(parents=True, exist_ok=True)
-    # O home de QUEM esta rodando, nao um nome fixo. Ate 24/08/2026 este
-    # caminho era "/home/alan/Nextcloud" cravado: como este arquivo e do
-    # modelo copiado para todo usuario novo, qualquer um que nao se chamasse
-    # alan ganhava um atalho apontando para a pasta de outra pessoa.
+    # O home de QUEM esta rodando, nao um nome fixo. Ate 24/08/2026 aqui
+    # havia o home de um usuario especifico, cravado: como este arquivo e do
+    # modelo copiado para todo usuario novo, qualquer outro nome ganhava um
+    # atalho apontando para a pasta pessoal de outra pessoa.
     wanted = "file://%s/Nextcloud NextCloud" % HOME
     lines = []
     if BOOKMARKS.exists():

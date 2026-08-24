@@ -1,3 +1,3 @@
 # A tela de Internet importa arquivos de VPN por este utilitario. Caminho fixo;
 # ele so chama "nmcli connection import" com o arquivo que o usuario escolheu.
-alan ALL=(root) NOPASSWD: /usr/local/sbin/tarsila-vpn-importar *
+tarsila ALL=(root) NOPASSWD: /usr/local/sbin/tarsila-vpn-importar *

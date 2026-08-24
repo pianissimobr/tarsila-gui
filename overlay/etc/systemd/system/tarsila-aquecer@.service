@@ -3,9 +3,9 @@
 # arranque do sistema -- antes de a area de trabalho do usuario subir.
 #
 # Unidade com "@": o usuario dono da area de trabalho vai no nome, porque ele
-# muda de aparelho para aparelho (alan nesta tv, tarsila na VM):
+# muda de aparelho para aparelho -- "tarsila" e o nome de referencia:
 #
-#     systemctl enable --now tarsila-aquecer@alan.service
+#     systemctl enable --now tarsila-aquecer@tarsila.service
 #
 # NAO ha "Before=lightdm.service" de proposito. Bloquear o gerenciador de
 # login deixaria a pessoa olhando para uma tela preta por um minuto e meio, e

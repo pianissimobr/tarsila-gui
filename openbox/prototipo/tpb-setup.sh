@@ -2,7 +2,7 @@
 # Cria o protótipo da top bar Tarsila em polybar (rodando sob Openbox),
 # reaproveitando os state files e os tarsila-goto*.sh existentes.
 set -e
-D=/home/alan/.config/tpb
+D=/home/tarsila/.config/tpb
 mkdir -p "$D"
 
 # ---------- config.ini ----------
@@ -31,17 +31,17 @@ enable-ipc = true
 
 [module/title]
 type = custom/script
-exec = /home/alan/.config/tpb/title.sh
+exec = /home/tarsila/.config/tpb/title.sh
 tail = true
 
 [module/buttons]
 type = custom/script
-exec = /home/alan/.config/tpb/buttons.sh
+exec = /home/tarsila/.config/tpb/buttons.sh
 tail = true
 
 [module/dots]
 type = custom/script
-exec = /home/alan/.config/tpb/dots.sh
+exec = /home/tarsila/.config/tpb/dots.sh
 tail = true
 
 [module/sound]
@@ -52,7 +52,7 @@ label-muted = %{T3}♪%{T-} —
 
 [module/netw]
 type = custom/script
-exec = /home/alan/.config/tpb/net.sh
+exec = /home/tarsila/.config/tpb/net.sh
 interval = 5
 click-left = nm-connection-editor
 
@@ -159,12 +159,12 @@ echo 2 > "$XDG_RUNTIME_DIR/tarsila-state"
 openbox & sleep 1.5
 nitrogen --restore >/dev/null 2>&1 &
 plank >/dev/null 2>&1 &
-polybar -c /home/alan/.config/tpb/config.ini tarsila >/tmp/polybar.log 2>&1 &
+polybar -c /home/tarsila/.config/tpb/config.ini tarsila >/tmp/polybar.log 2>&1 &
 sleep 2
 xterm -T "Bloco de Notas de Teste" -geometry 80x24+120+120 >/dev/null 2>&1 &
 wait
 SH
 
 chmod +x "$D"/*.sh
-chown -R alan:alan "$D"
+chown -R tarsila:tarsila "$D"
 echo "SETUP OK: $(ls "$D")"

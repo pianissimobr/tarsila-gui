@@ -67,7 +67,7 @@ maximizada() {   # <id> -> 0 se a janela esta maximizada
 # TITULO AMIGAVEL -- veio do tarsila-monitor.sh, que foi removido em 17/08/2026.
 #
 # Alguns aplicativos poem na barra de titulo uma informacao que nao diz nada ao
-# usuario leigo: "alan - Thunar" em vez de "Arquivos", "galculator" em vez de
+# usuario leigo: "tarsila - Thunar" em vez de "Arquivos", "galculator" em vez de
 # "Calculadora". Pior, eles trocam esse titulo sozinhos ao navegar, entao nao
 # basta acertar uma vez -- e o motivo de o monitor reaplicar isto.
 #
