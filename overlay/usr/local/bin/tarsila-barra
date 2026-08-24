@@ -804,6 +804,7 @@ class Barra(Gtk.Window):
 
     def __init__(self):
         super().__init__(type=Gtk.WindowType.TOPLEVEL)
+        self.set_name("tarsila-barra-janela")
         self.set_type_hint(Gdk.WindowTypeHint.DOCK)
         self.set_decorated(False)
         self.set_resizable(False)
@@ -885,7 +886,12 @@ class Barra(Gtk.Window):
     def _estilo(self):
         fundo, frente, dim = TEMAS[self.tema]
         css = ("""
-        window { background-color: transparent; }
+        /* Só a JANELA DA BARRA fica transparente (o fundo real é o #barra
+        logo abaixo, arredondado). Um seletor genérico "window" aqui vazava
+        pra QUALQUER Gtk.Window deste processo -- inclusive a Suspensa, sem
+        visual ARGB própria, que sem fundo nenhum pinta preto (achado ao
+        vivo em 23/08/2026, depois da fusão dos popups neste processo). */
+        #tarsila-barra-janela { background-color: transparent; }
         #barra {
           background-color: %(fundo)s;
           border-radius: 0 0 %(raio)dpx %(raio)dpx;
