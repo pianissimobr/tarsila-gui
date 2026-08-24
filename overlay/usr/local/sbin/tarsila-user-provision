@@ -34,6 +34,15 @@ if [ -d /usr/share/tarsila/skel ]; then
   if [ -f /usr/share/tarsila/skel/plank-dconf.ini ] && which dconf >/dev/null 2>&1; then
     sudo -u "$NAME" dbus-run-session -- dconf load /net/launchpad/plank/ < /usr/share/tarsila/skel/plank-dconf.ini 2>/dev/null || true
   fi
+  # Os atalhos da barra lateral do gerenciador de arquivos guardam caminho
+  # ABSOLUTO -- e no modelo eles vem escritos com "alan", o mesmo nome de
+  # exemplo usado no sudoers-template. Sem esta troca, todo usuario que nao
+  # se chamasse alan abria o Arquivos e via seis atalhos apontando para a
+  # pasta pessoal de outra pessoa (achado na revisao de 24/08/2026).
+  if [ -f "$HOME_DIR/.config/gtk-3.0/bookmarks" ]; then
+    sed -i "s|^file:///home/alan/|file://$HOME_DIR/|" \
+      "$HOME_DIR/.config/gtk-3.0/bookmarks" 2>/dev/null || true
+  fi
 fi
 
 if [ -d /usr/share/tarsila/openbox-home ]; then

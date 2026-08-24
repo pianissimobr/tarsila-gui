@@ -1,19 +1,3 @@
 {
-  "usage": {
-    "sistema": 38,
-    "movel": 3,
-    "rede": 6,
-    "personalizacao": 7,
-    "contas": 4,
-    "hora": 4,
-    "acessibilidade": 3,
-    "privacidade": 4,
-    "atualizacoes": 5,
-    "aplicativos": 5,
-    "jogos": 2,
-    "busca": 1,
-    "dispositivos": 2
-  },
-  "dev_unlocked": false,
-  "about_clicks": 1
+  "dev_unlocked": false
 }

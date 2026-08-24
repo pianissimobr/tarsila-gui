@@ -1,11 +1,17 @@
 __pycache__/
 *.pyc
 
-# Credenciais do app da Agenda no Google Cloud. So a versao cifrada
-# (credentials.json.gpg) entra no repositorio -- ver pacotes/segredo.sh.
-# O texto claro nunca, nem sendo o repositorio privado.
+# Credenciais do app da Agenda no Google Cloud. NENHUMA versao entra no
+# repositorio -- nem o texto claro, nem a cifrada. Ate 24/08/2026 a regra
+# era "so a cifrada entra", e o resultado foi um credentials.json.gpg
+# viajando dentro de TODO .deb da Agenda (o build-deb.sh copia src/ inteiro)
+# sem que nenhuma linha de codigo o decifrasse. Segredo simetrico publicado
+# vale o que valer a senha dele; melhor nao publicar.
+# Quem for gerar pacote poe o arquivo na maquina de build, fora do git.
 credentials.json
+credentials.json.gpg
 pacotes/**/credentials.json
+pacotes/**/credentials.json.gpg
 
 # Saidas de build
 *.deb

@@ -22,7 +22,7 @@ def setup():
     try:
         server = subprocess.check_output(
             ["zenity", "--entry", "--title=Nextcloud",
-             "--text=URL do Servidor (ex: http://100.98.224.35:8083)"],
+             "--text=URL do Servidor (ex: https://nuvem.suaempresa.com.br)"],
             text=True).strip()
         if not server:
             return

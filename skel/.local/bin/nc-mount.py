@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Monta o Nextcloud via GVFS e liga ~/Nextcloud ao ponto de montagem (opção B).
 
-Atalho do Thunar "NextCloud" → file:///home/alan/Nextcloud (symlink → gvfs).
+Atalho do Thunar "NextCloud" → ~/Nextcloud (symlink → gvfs).
 Pode ser chamado no login (autostart) ou pelo plugin/nc-setup.
 """
 from __future__ import annotations
@@ -31,7 +31,11 @@ def _load_cfg():
 def _ensure_bookmark():
     """Garante um único atalho NextCloud → ~/Nextcloud (sem dav:// duplicado)."""
     BOOKMARKS.parent.mkdir(parents=True, exist_ok=True)
-    wanted = "file:///home/alan/Nextcloud NextCloud"
+    # O home de QUEM esta rodando, nao um nome fixo. Ate 24/08/2026 este
+    # caminho era "/home/alan/Nextcloud" cravado: como este arquivo e do
+    # modelo copiado para todo usuario novo, qualquer um que nao se chamasse
+    # alan ganhava um atalho apontando para a pasta de outra pessoa.
+    wanted = "file://%s/Nextcloud NextCloud" % HOME
     lines = []
     if BOOKMARKS.exists():
         for line in BOOKMARKS.read_text().splitlines():
