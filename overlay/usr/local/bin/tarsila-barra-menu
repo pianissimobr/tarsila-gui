@@ -393,8 +393,43 @@ class Popup(Gtk.Window):
         largura, altura = self.get_size()
         # Coordenadas relativas a esta janela: fora dela, fecha.
         if not (0 <= ev.x <= largura and 0 <= ev.y <= altura):
-            Gtk.main_quit()
+            self._fecha_e_repassa(ev)
         return False
+
+    def _fecha_e_repassa(self, ev):
+        """Fecha e refaz o clique no que estava por baixo -- outro icone da
+        barra, a Dock, a area de trabalho.
+
+        O ponteiro agarrado (_agarrar_ponteiro) manda TODO clique pra cá
+        primeiro, mesmo o que caiu fora: sem isso o menu nao saberia que
+        devia fechar (janelas que nao aceitam foco, como a barra e a area
+        de trabalho, nao disparam "perdeu o foco"). Ate 23/08/2026 o clique
+        de fora so fechava o menu e morria aqui -- pra ativar o que estava
+        por baixo, a pessoa precisava clicar de novo. Largando o grab e
+        repetindo o mesmo clique (mesma posicao, mesmo botao) depois de
+        fechar, o segundo clique deixa de ser necessario."""
+        x_root, y_root, botao = int(ev.x_root), int(ev.y_root), ev.button
+        Gdk.Display.get_default().get_default_seat().ungrab()
+        self.destroy()
+        display = Gdk.Display.get_default()
+        # sync() espera o X confirmar que o ungrab e o destroy ja foram
+        # processados, nao so enviados -- flush() sozinho nao garante isso, e
+        # nesta caixa (ARM lento) o xdotool podia chegar primeiro e clicar
+        # ainda com o grab de pé, sem efeito nenhum.
+        if hasattr(display, "sync"):
+            display.sync()
+        else:
+            display.flush()
+        # SEM --sync: essa flag do "mousemove" trava esperando uma
+        # confirmacao de posicao que, depois de muito grab/ungrab em
+        # sequencia, deixa de chegar -- o processo fica pendurado pra
+        # sempre e o clique nunca sai. Sem ela, o mousemove e imediato.
+        subprocess.Popen(
+            ["xdotool", "mousemove", str(x_root), str(y_root),
+             "click", str(botao)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True)
+        Gtk.main_quit()
 
     @staticmethod
     def _tecla(_w, ev):
