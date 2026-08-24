@@ -385,7 +385,15 @@ class Popup(Gtk.Window):
         if janela is None:
             return False
         semente = Gdk.Display.get_default().get_default_seat()
-        semente.grab(janela, Gdk.SeatCapabilities.ALL_POINTING, True,
+        # owner_events=False: com True, um clique sobre uma janela que ja
+        # seleciona evento de botao -- como os icones da barra, que tem
+        # BUTTON_PRESS_MASK -- vai direto pro dono normal (a barra) em vez
+        # de passar pelo grab. Descoberto em 23/08/2026: o clique num icone
+        # com o popup aberto abria o novo por conta propria e so fechava o
+        # antigo de carona (perda de foco), sem passar pelo _fecha_e_repassa
+        # -- funcionava por acidente na maioria das vezes, nao sempre. Com
+        # False, o clique SEMPRE chega aqui primeiro, sem excecao.
+        semente.grab(janela, Gdk.SeatCapabilities.ALL_POINTING, False,
                      None, None, None, None)
         return False
 
