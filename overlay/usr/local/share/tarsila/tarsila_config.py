@@ -1128,21 +1128,47 @@ class TarsilaConfigWindow(Gtk.ApplicationWindow):
 
     @staticmethod
     def _read_ethernet_ipv4(dev):
+        """(método, ip, gateway, dns) da conexão, em DUAS chamadas.
+
+        Eram quatro, uma por campo. Cada nmcli custa ~69 ms nesta TV box
+        (medido), e como isto roda ao montar a página de Internet, eram
+        276 ms de janela congelada -- o laço do GTK fica parado esperando.
+        Os três campos de IP saem juntos de um `device show` só: 139 ms.
+
+        O método continua numa chamada à parte porque ele é do OBJETO
+        conexão, não do dispositivo -- é outro comando, não teimosia.
+
+        Formato NOMEADO (`-t -f`), não posicional (`-g`): quando um campo
+        não existe, o `-g` simplesmente não emite a linha e todos os
+        seguintes sobem uma posição. Medido numa interface sem DNS (a `lo`):
+        o `-g` devolve duas linhas para três campos pedidos, e o gateway
+        seria lido como DNS. O `-t -f` traz "CHAVE:valor", que não desalinha.
+        """
         method = "auto"
         ok, out, _ = run_ok(["nmcli", "-g", "ipv4.method", "connection", "show", dev])
         if ok and out.strip():
             method = out.strip()
-        ip = gw = dns = None
-        ok, out, _ = run_ok(["nmcli", "-g", "IP4.ADDRESS", "device", "show", dev])
-        if ok and out.strip():
-            ip = out.splitlines()[0].split("|")[0].strip()
-        ok, out, _ = run_ok(["nmcli", "-g", "IP4.GATEWAY", "device", "show", dev])
-        if ok and out.strip():
-            gw = out.strip()
-        ok, out, _ = run_ok(["nmcli", "-g", "IP4.DNS", "device", "show", dev])
-        if ok and out.strip():
-            dns = out.splitlines()[0].split("|")[0].strip()
-        return method, ip, gw, dns
+
+        campos = {}
+        ok, out, _ = run_ok(["nmcli", "-t", "-f",
+                             "IP4.ADDRESS,IP4.GATEWAY,IP4.DNS",
+                             "device", "show", dev])
+        if ok:
+            for linha in out.splitlines():
+                chave, sep, valor = linha.partition(":")
+                if not sep:
+                    continue
+                # "IP4.ADDRESS[1]" -> "IP4.ADDRESS": campo multivalorado vem
+                # numerado. Fica o primeiro de cada, que é o que a tela mostra.
+                chave = chave.split("[", 1)[0].strip()
+                valor = valor.strip()
+                if valor and chave not in campos:
+                    campos[chave] = valor
+
+        return (method,
+                campos.get("IP4.ADDRESS"),
+                campos.get("IP4.GATEWAY"),
+                campos.get("IP4.DNS"))
 
     def _on_importar_vpn(self, *_a):
         dlg = Gtk.FileChooserDialog(
