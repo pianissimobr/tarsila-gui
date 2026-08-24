@@ -27,12 +27,36 @@ ocupando a tela inteira e a barra passa por cima do canto direito da barra de
 título, que está vazio porque os botões da janela ficam à esquerda
 (`<titleLayout>CML</titleLayout>`). Assim não se perde pixel nenhum. Com strut
 o Openbox reserva a LARGURA INTEIRA da tela — 24 px em 1366 por causa de uma
-barra de ~250 px. Se um dia isso mudar, o aviso fica: propriedade de formato 32
+barra de ~290px. Se um dia isso mudar, o aviso fica: propriedade de formato 32
 no Xlib quer array de `long` NATIVO (8 bytes em aarch64). Fazer por
 `Gdk.property_change` falha calado, sem nem aparecer no `xprop`.
+
+JANELAS SUSPENSAS (som/rede/sistema/dispositivos/calendário): até 23/08/2026
+cada uma era um PROCESSO à parte (tarsila-barra-menu), com um grab manual do
+ponteiro pra saber quando fechar. Clicar em outro ícone da barra com uma
+janela aberta exigia dois cliques -- o primeiro só fechava a antiga, sem
+ativar o novo, porque o clique nunca chegava até este processo (o grab de
+outro processo o interceptava primeiro). Tentativas de "repassar" o clique
+via xdotool (ungrab + reinjetar o mesmo clique) se mostraram frágeis: o
+xdotool travava em certas sequências, e o comportamento variava com
+owner_events do grab. A causa de fundo é estrutural, não um bug pontual:
+dois processos não podem compartilhar um clique de forma confiável sem um
+protocolo de replay X11 de verdade.
+A solução foi trazer as janelas suspensas para DENTRO deste processo (classe
+Suspensa, abaixo). Gtk.Popover -- o widget pronto do GTK pra isto -- foi
+tentado primeiro e descartado: o posicionamento automático dele se mostrou
+não confiável nesta máquina, jogando a janela inteira por cima da tela
+mesmo com o cálculo de posição sobrescrito à mão depois de mapeada. A
+Suspensa é uma Gtk.Window comum, com posição sempre calculada e aplicada
+manualmente (o mesmo jeito que já funcionava antes da fusão). Clicar
+noutro ícone com uma suspensa aberta fecha a atual e abre a nova, num
+clique só: como as duas vivem no mesmo processo, a troca é uma chamada de
+método direta (Barra.ativa_item) contra a coordenada do clique -- sem
+grab entre janelas, sem replay, sem xdotool.
 """
 
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -64,13 +88,21 @@ IC_LIMPAR = ""   # magic
 IC_POWER  = ""   # power-off
 # "▼" não dizia nada sobre o que o clique mostra (CPU/memória/disco). Um
 # medidor é o ícone certo para "estado do sistema". 21/08/2026.
-IC_SISTEMA = "\uf0e4"   # tachometer
+IC_SISTEMA = ""   # tachometer
 # Webcam, impressora, pendrive etc. -- o mesmo conceito de "aparelho
 # plugado" que o tarsila-dispositivos anuncia ao conectar.
-IC_DISPOSITIVOS = "\uf287"   # usb
+IC_DISPOSITIVOS = ""   # usb
 
 RAIO = 8          # mesmo raio dos cantos da Dock
 MARGEM_DIR = 12   # mesma folga que a Dock usa nas laterais
+
+# Cores do diagnóstico (janela "sistema"). Tons escuros de propósito: o
+# fundo do popover é claro, e verde/amarelo vivos ficam ilegíveis nele.
+VERDE    = "#1e8e3e"
+AMARELO  = "#b06000"
+VERMELHO = "#c5221f"
+
+SINK = "@DEFAULT_AUDIO_SINK@"
 
 
 def tema_salvo():
@@ -102,14 +134,533 @@ def roda(cmd):
         print("tarsila-barra: falhou %r: %s" % (cmd, e), file=sys.stderr)
 
 
+def pergunta(*args, tempo=6):
+    """Roda e ESPERA a resposta -- ao contrário de roda(), que só dispara.
+    Usado pelos popovers pra ler o estado (volume, rede) antes de desenhar."""
+    try:
+        r = subprocess.run(args, capture_output=True, text=True, timeout=tempo)
+        return r.returncode == 0, r.stdout.strip()
+    except Exception:
+        return False, ""
+
+
+# ============================================================== popovers
+# Conteúdo das janelas suspensas dos indicadores. Cada função monta dentro
+# de "caixa" (um Gtk.Box vertical já com margem) e recebe "fecha", que
+# fecha o popover -- usado pelos botões de rodapé que abrem outra janela
+# (Mixer de áudio, Ver conexões).
+
+# ---------------------------------------------------------- diagnóstico
+# Tudo aqui é FOTO do instante: lê /proc uma vez (duas no caso da CPU, que
+# só existe como diferença entre dois momentos) e pronto.
+
+def uso_cpu(intervalo=0.25):
+    """Porcentagem de uso da CPU agora.
+
+    /proc/stat guarda tempo ACUMULADO desde o boot, então um número sozinho
+    não diz nada: a leitura tem de ser a diferença entre dois instantes. Um
+    quarto de segundo é curto para o usuário e longo o bastante para não dar
+    um valor ao acaso.
+    """
+    def ler():
+        with open("/proc/stat", encoding="utf-8") as f:
+            campos = f.readline().split()[1:9]
+        v = [int(x) for x in campos]
+        return sum(v), v[3] + v[4]      # (total, ocioso = idle + iowait)
+
+    try:
+        total1, ocioso1 = ler()
+        time.sleep(intervalo)
+        total2, ocioso2 = ler()
+    except (OSError, ValueError, IndexError):
+        return None
+    dt = total2 - total1
+    if dt <= 0:
+        return None
+    ocupado = dt - (ocioso2 - ocioso1)
+    return max(0, min(100, round(100 * ocupado / dt)))
+
+
+def uso_memoria():
+    """(bytes usados, bytes totais). MemAvailable é o que o kernel considera
+    realmente disponível -- cache reaproveitável não conta como usado."""
+    info = {}
+    try:
+        with open("/proc/meminfo", encoding="utf-8") as f:
+            for linha in f:
+                chave, _, valor = linha.partition(":")
+                info[chave] = int(valor.split()[0]) * 1024
+    except (OSError, ValueError, IndexError):
+        return None, None
+    total = info.get("MemTotal")
+    livre = info.get("MemAvailable", info.get("MemFree"))
+    if not total or livre is None:
+        return None, None
+    return total - livre, total
+
+
+def uso_disco(caminho="/"):
+    """(bytes usados, bytes totais) da raiz, pelo espaço visível ao usuário."""
+    try:
+        st = os.statvfs(caminho)
+    except OSError:
+        return None, None
+    total = st.f_blocks * st.f_frsize
+    livre = st.f_bavail * st.f_frsize      # f_bavail: sem o reservado do root
+    if total <= 0:
+        return None, None
+    return total - livre, total
+
+
+def tamanho_legivel(n):
+    """1,4 GB / 512 MB -- vírgula decimal, como se escreve em português."""
+    if n is None:
+        return "?"
+    if n >= 1024 ** 3:
+        return ("%.1f GB" % (n / 1024 ** 3)).replace(".", ",")
+    return "%d MB" % round(n / 1024 ** 2)
+
+
+def veredito(pct, limites, palavras):
+    """(texto, cor) a partir da porcentagem. limites = (ok, atenção)."""
+    if pct is None:
+        return "sem leitura", AMARELO
+    ok, atencao = limites
+    if pct < ok:
+        return palavras[0], VERDE
+    if pct < atencao:
+        return palavras[1], AMARELO
+    return palavras[2], VERMELHO
+
+
+# --------------------------------------------------------------- som
+def volume_atual():
+    """(porcentagem, mudo).
+
+    wpctl primeiro, pactl se ele não responder -- sem o plano B, o popover
+    podia mostrar um número diferente do que a barra já mostra."""
+    ok, saida = pergunta("wpctl", "get-volume", SINK)
+    if ok and "Volume:" in saida:
+        try:
+            pct = int(round(float(saida.split()[1]) * 100))
+        except (IndexError, ValueError):
+            pct = 0
+        return pct, "MUTED" in saida.upper()
+
+    ok, saida = pergunta("pactl", "get-sink-volume", "@DEFAULT_SINK@")
+    pct = 0
+    if ok:
+        achado = re.search(r"(\d+)%", saida)
+        if achado:
+            pct = int(achado.group(1))
+    ok2, mudo = pergunta("pactl", "get-sink-mute", "@DEFAULT_SINK@")
+    return pct, bool(ok2 and "yes" in mudo.lower())
+
+
+def aplica_volume(pct):
+    # O teto de 100% evita distorção: o PipeWire aceita passar disso, e o som
+    # satura sem o usuário entender por que "aumentar" piorou.
+    pct = max(0, min(100, int(pct)))
+    if not pergunta("wpctl", "set-volume", SINK, "%d%%" % pct)[0]:
+        pergunta("pactl", "set-sink-volume", "@DEFAULT_SINK@", "%d%%" % pct)
+    return pct
+
+
+def corta_som(ligar_mudo):
+    if not pergunta("wpctl", "set-mute", SINK, "1" if ligar_mudo else "0")[0]:
+        pergunta("pactl", "set-sink-mute", "@DEFAULT_SINK@",
+                 "1" if ligar_mudo else "0")
+
+
+def _monta_som(caixa, fecha):
+    """Barra deslizante em vez de + e -.
+
+    Apertar um botão várias vezes para chegar no volume desejado é o tipo
+    de coisa que cansa: são cinco toques para andar 25%. Arrastar mostra
+    onde se está e chega em qualquer ponto de uma vez -- é o gesto que a
+    pessoa já conhece da TV e do celular."""
+    pct, mudo = volume_atual()
+
+    lbl = Gtk.Label()
+
+    def mostra(pct, mudo):
+        lbl.set_markup(
+            "<b>Som desligado</b>" if mudo else "<b>Volume %d%%</b>" % pct)
+    mostra(pct, mudo)
+    caixa.pack_start(lbl, False, False, 0)
+
+    linha = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+    mudo_btn = Gtk.Button()
+    mudo_btn.set_relief(Gtk.ReliefStyle.NONE)
+
+    def icone_mudo(mudo):
+        nome = "audio-volume-muted" if mudo else "audio-speakers"
+        img = Gtk.Image.new_from_icon_name(nome, Gtk.IconSize.LARGE_TOOLBAR)
+        mudo_btn.set_image(img)
+        mudo_btn.set_tooltip_text("Ligar o som" if mudo else "Cortar o som")
+    icone_mudo(mudo)
+    mudo_btn.set_size_request(44, 44)
+    linha.pack_start(mudo_btn, False, False, 0)
+
+    escala = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
+    escala.set_draw_value(False)
+    escala.set_size_request(210, 44)
+    escala.set_value(pct)
+    # Marcas discretas: dão referência de onde está o meio e o topo.
+    for ponto in (0, 50, 100):
+        escala.add_mark(ponto, Gtk.PositionType.BOTTOM, None)
+
+    def arrastou(_esc):
+        novo = int(escala.get_value())
+        aplica_volume(novo)
+        # Mexer no volume tira do mudo: é o que a pessoa espera ao arrastar.
+        corta_som(False)
+        mostra(novo, False)
+        icone_mudo(False)
+    escala.connect("value-changed", arrastou)
+    linha.pack_start(escala, True, True, 0)
+    caixa.pack_start(linha, False, False, 0)
+
+    def corta(_b):
+        _, m = volume_atual()
+        corta_som(not m)
+        p2, m2 = volume_atual()
+        mostra(p2, m2)
+        icone_mudo(m2)
+    mudo_btn.connect("clicked", corta)
+
+    _rodape(caixa, "Mixer de áudio", ["pavucontrol"], fecha)
+
+
+# ---------------------------------------------------------- calendário
+def _monta_calendario(caixa, _fecha):
+    """Só o calendário do mês, sem nada em volta.
+
+    Quem clica no relógio quer ver "que dia é hoje" ou "em que dia da
+    semana cai o dia 20". Um seletor de mês e ano já bastaria confundir,
+    então ficam só as setas do próprio calendário."""
+    cal = Gtk.Calendar()
+    cal.set_display_options(Gtk.CalendarDisplayOptions.SHOW_HEADING
+                            | Gtk.CalendarDisplayOptions.SHOW_DAY_NAMES)
+
+    def hoje(*_a):
+        agora = GLib.DateTime.new_now_local()
+        cal.select_month(agora.get_month() - 1, agora.get_year())
+        cal.select_day(agora.get_day_of_month())
+    # Clicar num dia não faz nada -- não há para onde ir. Mas o duplo
+    # clique volta para o mês de hoje, útil depois de navegar.
+    cal.connect("day-selected-double-click", hoje)
+    caixa.pack_start(cal, False, False, 0)
+
+
+# --------------------------------------------------- diagnóstico do sistema
+def _monta_sistema(caixa, _fecha):
+    """Foto do sistema agora: processador, memória e armazenamento.
+
+    Uma linha por item: nome, quanto está em uso e um veredito curto em
+    verde/amarelo/vermelho -- para quem não sabe o que é "78% de 2 GB"
+    saber, mesmo assim, se está bem ou apertado."""
+    titulo = Gtk.Label(xalign=0)
+    titulo.set_markup("<b>Como está o sistema</b>")
+    caixa.pack_start(titulo, False, False, 0)
+
+    cpu = uso_cpu()
+    mem_uso, mem_total = uso_memoria()
+    dis_uso, dis_total = uso_disco()
+
+    mem_pct = round(100 * mem_uso / mem_total) if mem_total else None
+    dis_pct = round(100 * dis_uso / dis_total) if dis_total else None
+
+    linhas = (
+        ("Processador",
+         "%d%%" % cpu if cpu is not None else "?",
+         veredito(cpu, (50, 80),
+                  ("tranquilo", "trabalhando", "sobrecarregado"))),
+        ("Memória",
+         "%s de %s" % (tamanho_legivel(mem_uso), tamanho_legivel(mem_total)),
+         veredito(mem_pct, (70, 88),
+                  ("tranquila", "um pouco cheia", "quase no limite"))),
+        ("Armazenamento",
+         "%s de %s" % (tamanho_legivel(dis_uso), tamanho_legivel(dis_total)),
+         veredito(dis_pct, (75, 90),
+                  ("bastante espaço", "enchendo", "quase sem espaço"))),
+    )
+
+    # Grade para as três colunas ficarem alinhadas entre si.
+    grade = Gtk.Grid()
+    grade.set_column_spacing(12)
+    grade.set_row_spacing(4)
+    grade.set_margin_top(6)
+    for i, (nome, valor, (parecer, cor)) in enumerate(linhas):
+        rot = Gtk.Label(xalign=0)
+        rot.set_markup('<small><span alpha="70%%">%s</span></small>'
+                       % GLib.markup_escape_text(nome))
+        val = Gtk.Label(xalign=0)
+        val.set_markup("<small>%s</small>" % GLib.markup_escape_text(valor))
+        par = Gtk.Label(xalign=0)
+        par.set_markup('<small><span foreground="%s"><b>%s</b></span></small>'
+                       % (cor, GLib.markup_escape_text(parecer)))
+        grade.attach(rot, 0, i, 1, 1)
+        grade.attach(val, 1, i, 1, 1)
+        grade.attach(par, 2, i, 1, 1)
+    caixa.pack_start(grade, False, False, 0)
+
+    # Deixa claro que é uma foto, não um medidor que fica correndo.
+    nota = Gtk.Label(xalign=0)
+    nota.set_markup('<small><span alpha="55%%">Medido agora, ao abrir.'
+                    '</span></small>')
+    nota.set_margin_top(8)
+    caixa.pack_start(nota, False, False, 0)
+
+
+# ---------------------------------------------------- dispositivos plugados
+# Mesma classificação do tarsila-dispositivos (o daemon que avisa quando algo
+# é conectado): aqui é só uma foto do que o udev já sabe agora, lendo o banco
+# inteiro de uma vez em vez de escutar o fluxo de eventos.
+TIPOS_DISPOSITIVO = {
+    "webcam":     ("camera-web",                "Webcam"),
+    "impressora": ("printer",                   "Impressora"),
+    "microfone":  ("audio-input-microphone",    "Microfone"),
+    "midi":       ("audio-midi",                "Instrumento MIDI"),
+    "pendrive":   ("drive-removable-media-usb", "Pendrive"),
+    "disco":      ("drive-harddisk",            "HD externo"),
+    "cartao":     ("media-flash",               "Cartão de memória"),
+    "usb":        ("usb",                       "Dispositivo USB"),
+}
+
+
+def _classificar_dispositivo(sub, prop):
+    # /devices/virtual é infraestrutura do kernel sem aparelho nenhum atrás
+    # -- zram, o sequenciador/timer do ALSA etc. Nunca é algo que alguém
+    # plugou.
+    if (prop.get("DEVPATH") or "").startswith("/devices/virtual/"):
+        return None
+    if sub == "video4linux":
+        return "webcam"
+    if sub == "sound":
+        # SOUND_FORM_FACTOR=internal é o cartão de som embutido na placa --
+        # toda TV box tem um, e sem este filtro ele aparecia na lista como
+        # "Microfone" mesmo sem nenhum microfone plugado.
+        if prop.get("SOUND_FORM_FACTOR") == "internal":
+            return None
+        if "midi" in (prop.get("ID_ID", "") + prop.get("DEVPATH", "")).lower():
+            return "midi"
+        return "microfone"
+    if sub in ("block", "mmc"):
+        # MMC_TYPE=MMC é o eMMC interno (o disco de sistema) e MMC_TYPE=SDIO
+        # é o Wi-Fi embutido nesta placa -- os dois usam o mesmo barramento
+        # do cartão SD sem serem cartão nenhum. Só MMC_TYPE=SD, exato, é
+        # cartão removível de verdade.
+        if prop.get("MMC_TYPE") == "SD":
+            return "cartao"
+        if prop.get("ID_DRIVE_FLASH_SD"):
+            return "cartao"
+        if prop.get("ID_DRIVE_THUMB") or prop.get("ID_USB_DRIVER") == "usb-storage":
+            rot = prop.get("ID_ATA_ROTATION_RATE_RPM")
+            return "disco" if (rot and rot != "0") else "pendrive"
+        # Sem nenhum sinal de USB/flash real (zram, o próprio eMMC, loop,
+        # dm-*...) não é um aparelho que alguém plugou.
+        return None
+    if sub == "usb":
+        classe = prop.get("ID_USB_CLASS_FROM_DATABASE", "").lower()
+        if "printer" in classe:
+            return "impressora"
+    return None
+
+
+def _raiz_do_aparelho(caminho):
+    pedacos = caminho.rstrip("/").split("/")
+    if pedacos and ":" in pedacos[-1]:
+        pedacos.pop()
+        return "/".join(pedacos)
+    # Placa de som: controlC0, pcmC0D0p etc. são sub-nós do MESMO cartão
+    # (.../sound/card0/pcmC0D0p) -- corta em "cardN", senão cada um vira um
+    # "aparelho" à parte e nenhum carrega o SOUND_FORM_FACTOR do pai.
+    for i, p in enumerate(pedacos):
+        if re.fullmatch(r"card\d+", p):
+            return "/".join(pedacos[:i + 1])
+    return "/".join(pedacos)
+
+
+def _nome_do_aparelho(prop):
+    for chave in ("ID_MODEL_FROM_DATABASE", "ID_MODEL_ENC", "ID_MODEL",
+                  "ID_NAME", "ID_SERIAL"):
+        v = (prop.get(chave) or "").strip()
+        if v:
+            v = v.replace("\\x20", " ").replace("_", " ").strip()
+            if v:
+                return v
+    return ""
+
+
+def dispositivos_conectados():
+    """[(ícone, nome p/ mostrar)] dos aparelhos plugáveis ligados agora,
+    numa ordem estável (a de TIPOS_DISPOSITIVO) e sem repetir o mesmo
+    aparelho físico (a mesma raiz de dispositivo aparece uma vez por
+    interface -- usb, som, bloco --, aqui conta só uma)."""
+    try:
+        saida = subprocess.run(
+            ["udevadm", "info", "--export-db"],
+            capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+
+    # Um aparelho físico pode aparecer em vários blocos "P:" (uma placa de
+    # som tem um para o cartão e um para cada pcm/control dela). Primeiro
+    # junta TODAS as propriedades de cada raiz -- só depois classifica --
+    # senão um bloco filho sem SOUND_FORM_FACTOR próprio (só o cartão pai
+    # tem) passava pelo filtro do embutido.
+    por_raiz = {}   # raiz -> (subsistema, propriedades combinadas)
+    caminho, sub, prop = None, None, {}
+
+    def fecha():
+        if not (caminho and sub):
+            return
+        raiz = _raiz_do_aparelho(caminho)
+        sub_atual, props_atual = por_raiz.get(raiz, (None, {}))
+        props_atual = dict(props_atual)
+        props_atual.update(prop)
+        por_raiz[raiz] = (sub_atual or sub, props_atual)
+
+    for linha in saida.splitlines():
+        if linha.startswith("P: "):
+            fecha()
+            caminho, sub, prop = linha[3:], None, {}
+        elif linha.startswith("E: SUBSYSTEM="):
+            sub = linha.split("=", 1)[1]
+        elif linha.startswith("E: "):
+            k, _, v = linha[3:].partition("=")
+            prop[k] = v
+    fecha()
+
+    por_tipo = {}
+    for sub, prop in por_raiz.values():
+        tipo = _classificar_dispositivo(sub, prop)
+        if tipo:
+            por_tipo.setdefault(tipo, set()).add(_nome_do_aparelho(prop))
+
+    resultado = []
+    for tipo in TIPOS_DISPOSITIVO:
+        icone, rotulo = TIPOS_DISPOSITIVO[tipo]
+        for nome in sorted(por_tipo.get(tipo, ())):
+            resultado.append((icone, nome or rotulo))
+    return resultado
+
+
+def _monta_dispositivos(caixa, _fecha):
+    """Lista os aparelhos plugáveis conectados agora (webcam, impressora,
+    pendrive etc.) -- foto do udev ao abrir, igual ao "sistema"."""
+    titulo = Gtk.Label(xalign=0)
+    titulo.set_markup("<b>Dispositivos conectados</b>")
+    caixa.pack_start(titulo, False, False, 0)
+
+    aparelhos = dispositivos_conectados()
+    if not aparelhos:
+        vazio = Gtk.Label(xalign=0)
+        vazio.set_markup('<small><span alpha="70%">Nenhum dispositivo '
+                         'disponível</span></small>')
+        vazio.set_margin_top(6)
+        caixa.pack_start(vazio, False, False, 0)
+        return
+
+    grade = Gtk.Grid()
+    grade.set_column_spacing(10)
+    grade.set_row_spacing(6)
+    grade.set_margin_top(6)
+    for i, (icone, nome) in enumerate(aparelhos):
+        img = Gtk.Image.new_from_icon_name(icone, Gtk.IconSize.LARGE_TOOLBAR)
+        rot = Gtk.Label(xalign=0, label=nome)
+        grade.attach(img, 0, i, 1, 1)
+        grade.attach(rot, 1, i, 1, 1)
+    caixa.pack_start(grade, False, False, 0)
+
+
+# --------------------------------------------------------------- rede
+def estado_da_rede():
+    """(título, nome da rede, endereço IP) da conexão em uso."""
+    ok, saida = pergunta("nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION",
+                         "device", "status")
+    if not ok:
+        return "Sem conexão", "", ""
+    escolhido = None
+    for linha in saida.splitlines():
+        p = linha.split(":")
+        if len(p) >= 4 and p[2] == "connected" and p[1] in ("ethernet", "wifi"):
+            # Cabo ganha do Wi-Fi quando os dois estão ligados, que é por onde
+            # a máquina realmente sai.
+            if p[1] == "ethernet":
+                escolhido = p
+                break
+            escolhido = escolhido or p
+    if not escolhido:
+        return "Sem conexão", "", ""
+    titulo = ("Conexão por cabo" if escolhido[1] == "ethernet"
+              else "Conexão Wi-Fi")
+    ok, ip = pergunta("nmcli", "-g", "IP4.ADDRESS", "device", "show", escolhido[0])
+    ip = ip.splitlines()[0].split("/")[0].strip() if ok and ip.strip() else ""
+    return titulo, escolhido[3], ip
+
+
+def _monta_rede(caixa, fecha):
+    titulo, nome, ip = estado_da_rede()
+    t = Gtk.Label(xalign=0)
+    t.set_markup("<b>%s</b>" % GLib.markup_escape_text(titulo))
+    caixa.pack_start(t, False, False, 0)
+    for rotulo, valor in (("Rede", nome), ("Endereço IP", ip)):
+        if not valor:
+            continue
+        linha = Gtk.Label(xalign=0)
+        linha.set_markup(
+            '<small><span alpha="70%%">%s</span>  %s</small>'
+            % (GLib.markup_escape_text(rotulo),
+               GLib.markup_escape_text(valor)))
+        caixa.pack_start(linha, False, False, 0)
+    _rodape(caixa, "Ver conexões", ["nm-connection-editor"], fecha)
+
+
+def _rodape(caixa, rotulo, comando, fecha):
+    """Link discreto, alinhado à direita, para a janela completa."""
+    linha = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+    linha.set_halign(Gtk.Align.END)
+    btn = Gtk.Button(label=rotulo)
+    btn.set_relief(Gtk.ReliefStyle.NONE)
+
+    def clicado(_b):
+        roda(comando)
+        fecha()
+    btn.connect("clicked", clicado)
+    linha.pack_start(btn, False, False, 0)
+    caixa.pack_start(linha, False, False, 0)
+
+
+CONSTRUTORES = {
+    "calendario": _monta_calendario,
+    "sistema": _monta_sistema,
+    "dispositivos": _monta_dispositivos,
+    "som": _monta_som,
+    "rede": _monta_rede,
+}
+
+
+# ================================================================== barra
 class Item(Gtk.EventBox):
     """Um indicador clicável. EventBox sem janela própria para o fundo da barra
-    aparecer atrás; o realce do hover é do CSS."""
+    aparecer atrás; o realce do hover é do CSS.
 
-    def __init__(self, nome, texto, acao, fonte_icone=False):
+    "acao" (lista de comando) e "constroi" (função que monta um popover) são
+    mutuamente exclusivos: os itens de ação única (limpar, desligar) usam o
+    primeiro; os que abrem janela suspensa (data, sistema, dispositivos, som,
+    rede) usam o segundo."""
+
+    def __init__(self, barra, nome, texto, acao=None, fonte_icone=False,
+                 dica=None, constroi=None):
         super().__init__()
-        self.set_visible_window(False)
+        self.barra = barra
+        self.nome = nome
         self.acao = acao
+        self.constroi = constroi
+        self.suspensa = None
+        self.set_visible_window(False)
         self.rotulo = Gtk.Label(label=texto)
         self.rotulo.set_name(nome)
         ctx = self.rotulo.get_style_context()
@@ -117,6 +668,8 @@ class Item(Gtk.EventBox):
         if fonte_icone:
             ctx.add_class("icone")
         self.add(self.rotulo)
+        if dica:
+            self.set_tooltip_text(dica)
         self.connect("button-press-event", self._clique)
         self.connect("enter-notify-event", self._entra)
         self.connect("leave-notify-event", self._sai)
@@ -125,7 +678,11 @@ class Item(Gtk.EventBox):
                         | Gdk.EventMask.LEAVE_NOTIFY_MASK)
 
     def _clique(self, _w, ev):
-        if ev.button == 1:
+        if ev.button != 1:
+            return True
+        if self.constroi:
+            self.barra.alterna_popover(self)
+        elif self.acao:
             roda(self.acao)
         return True
 
@@ -140,6 +697,107 @@ class Item(Gtk.EventBox):
     def texto(self, t):
         if self.rotulo.get_text() != t:
             self.rotulo.set_text(t)
+
+
+class Suspensa(Gtk.Window):
+    """Janela suspensa de um indicador -- volume, rede, sistema, dispositivos
+    ou calendário.
+
+    É uma Gtk.Window comum, não um Gtk.Popover: o posicionamento automático
+    do Popover se mostrou não confiável nesta máquina (a janela saía inteira
+    por cima da tela, medido ao vivo em 23/08/2026, mesmo forçando a posição
+    à mão depois -- o próprio GTK insistia em reposicionar por conta
+    própria). Aqui a posição é sempre calculada e aplicada manualmente, do
+    jeito que já funcionava desde antes da fusão com a barra.
+
+    Fecha ao perder o foco, com Esc, ou ao clicar fora. Clicar fora e cair
+    em cima de OUTRO ícone da barra abre a janela dele -- sem repassar
+    clique nenhum: como a janela e a barra vivem no mesmo processo, é só
+    uma chamada de método direta (ver Barra.alterna_popover)."""
+
+    def __init__(self, barra, item):
+        super().__init__(type=Gtk.WindowType.TOPLEVEL)
+        self.barra = barra
+        self.item = item
+        self.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+        self.set_decorated(False)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_keep_above(True)
+        self.set_resizable(False)
+        self.set_border_width(0)
+
+        moldura = Gtk.Frame()
+        moldura.set_shadow_type(Gtk.ShadowType.OUT)
+        self.add(moldura)
+        caixa = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        caixa.set_margin_start(14)
+        caixa.set_margin_end(14)
+        caixa.set_margin_top(12)
+        caixa.set_margin_bottom(10)
+        moldura.add(caixa)
+        item.constroi(caixa, self.destroy)
+
+        self.connect("focus-out-event", lambda *_: self.destroy())
+        self.connect("button-press-event", self._clique)
+        self.connect("map-event", self._agarrar_ponteiro)
+        self.connect("key-press-event", self._tecla)
+        self.connect("destroy", self._ao_destruir)
+
+    def _agarrar_ponteiro(self, *_a):
+        janela = self.get_window()
+        if janela is None:
+            return False
+        semente = Gdk.Display.get_default().get_default_seat()
+        # owner_events=False: com True, um clique sobre uma janela que já
+        # seleciona evento de botão -- como os ícones da barra -- vai direto
+        # pro dono normal em vez de passar pelo grab, e a janela suspensa
+        # nunca saberia que devia fechar.
+        semente.grab(janela, Gdk.SeatCapabilities.ALL_POINTING, False,
+                     None, None, None, None)
+        return False
+
+    def _clique(self, _w, ev):
+        largura, altura = self.get_size()
+        # Coordenadas relativas a esta janela: dentro dela, é a própria
+        # janela suspensa quem trata (slider, calendário etc.).
+        if 0 <= ev.x <= largura and 0 <= ev.y <= altura:
+            return False
+        x_root, y_root = int(ev.x_root), int(ev.y_root)
+        # Descobre ANTES de destruir: depois de destruída, o item que a
+        # abriu já não tem mais "suspensa", e reabriria a mesma por engano
+        # se o clique tiver caído nele de novo (em vez de só fechar).
+        alvo = self.barra.item_em(x_root, y_root)
+        self.destroy()
+        if alvo is not None and alvo is not self.item:
+            self.barra.ativa_item(alvo)
+        return False
+
+    def _tecla(self, _w, ev):
+        if ev.keyval == Gdk.KEY_Escape:
+            self.destroy()
+        return False
+
+    def _ao_destruir(self, *_a):
+        Gdk.Display.get_default().get_default_seat().ungrab()
+        if self.barra.suspensa_aberta is self:
+            self.barra.suspensa_aberta = None
+        self.item.suspensa = None
+
+    def posiciona(self):
+        """Sempre abaixo do ícone que a abriu, centralizada nele, sem sair
+        da largura da tela."""
+        origem = self.item.get_window()
+        if origem is None:
+            return
+        _tela, x_item, y_item = origem.get_origin()
+        aloc = self.item.get_allocation()
+        largura, _altura = self.get_size()
+        tela_larg = self.get_screen().get_width()
+        x = x_item + aloc.x + aloc.width // 2 - largura // 2
+        x = max(4, min(x, tela_larg - largura - 4))
+        y = y_item + aloc.y + aloc.height + 2
+        self.move(x, y)
 
 
 class Barra(Gtk.Window):
@@ -171,6 +829,7 @@ class Barra(Gtk.Window):
         self.altura, self.corpo, self.corpo_icone = metricas(self.alt_tela)
 
         self.tema = tema_salvo()
+        self.suspensa_aberta = None
         self._monta()
         self._estilo()
 
@@ -198,28 +857,28 @@ class Barra(Gtk.Window):
         self.add(caixa)
 
         self.itens = {}
-        # "--abaixo-de <y>" diz ao menu para descer da barra. Sem isso ele cai
-        # no comportamento de quem e chamado pela Dock e abre encostado no
-        # RODAPE -- a 700 px do icone que o usuario clicou.
-        def menu(modo):
-            return ["/usr/local/bin/tarsila-barra-menu", modo,
-                    "--abaixo-de", str(self.altura)]
-
         ordem = [
-            ("data",    "--:--",    menu("calendario"),                     False),
-            ("sistema", IC_SISTEMA, menu("sistema"),                        True),
-            ("dispositivos", IC_DISPOSITIVOS, menu("dispositivos"),          True),
-            ("limpar",  IC_LIMPAR,  ["/usr/local/bin/tarsila-limpar.sh"],    True),
-            ("som",     IC_VOL,     menu("som"),                            True),
-            ("rede",    IC_SEMREDE, menu("rede"),                           True),
-            ("power",   IC_POWER,   ["/usr/local/bin/tarsila-ob-power.sh"],  True),
+            ("data",    "--:--",    None, False, "Calendário",
+             CONSTRUTORES["calendario"]),
+            ("sistema", IC_SISTEMA, None, True, "Estado do sistema",
+             CONSTRUTORES["sistema"]),
+            ("dispositivos", IC_DISPOSITIVOS, None, True,
+             "Dispositivos conectados", CONSTRUTORES["dispositivos"]),
+            ("limpar",  IC_LIMPAR,  ["/usr/local/bin/tarsila-limpar.sh"],
+             True, "Limpar área de trabalho", None),
+            ("som",     IC_VOL,     None, True, "Volume",
+             CONSTRUTORES["som"]),
+            ("rede",    IC_SEMREDE, None, True, "Rede",
+             CONSTRUTORES["rede"]),
+            ("power",   IC_POWER,   ["/usr/local/bin/tarsila-ob-power.sh"],
+             True, "Desligar", None),
         ]
-        for i, (nome, texto, acao, ic) in enumerate(ordem):
+        for i, (nome, texto, acao, ic, dica, constroi) in enumerate(ordem):
             if i:
                 sep = Gtk.Label(label="")
                 sep.get_style_context().add_class("sep")
                 caixa.pack_start(sep, False, False, 0)
-            it = Item(nome, texto, acao, ic)
+            it = Item(self, nome, texto, acao, ic, dica=dica, constroi=constroi)
             caixa.pack_start(it, False, False, 0)
             self.itens[nome] = it
 
@@ -262,6 +921,50 @@ class Barra(Gtk.Window):
         self.resize(larg, self.altura)
         self.move(self.larg_tela - larg - MARGEM_DIR, 0)
         return False
+
+    # --------------------------------------------------------- popovers
+
+    def alterna_popover(self, item):
+        """Clicar no ícone que já está com a janela suspensa aberta fecha
+        ela. Clicar em outro ícone fecha a que estiver aberta e abre a
+        nova -- num clique só (ver Suspensa._clique)."""
+        if item.suspensa is not None:
+            item.suspensa.destroy()
+            return
+        if self.suspensa_aberta is not None:
+            self.suspensa_aberta.destroy()
+        janela = Suspensa(self, item)
+        item.suspensa = janela
+        self.suspensa_aberta = janela
+        janela.show_all()
+        janela.posiciona()
+        janela.present()
+
+    def ativa_item(self, item):
+        """Chamado pela Suspensa quando um clique de fora dela cai em cima
+        de OUTRO ícone: reproduz o clique nesse ícone, sem processo nem
+        janela X nenhuma envolvida -- é o mesmo código que um clique de
+        verdade nele chamaria."""
+        if item.constroi:
+            self.alterna_popover(item)
+        elif item.acao:
+            roda(item.acao)
+
+    def item_em(self, x_root, y_root):
+        """O Item da barra sob o ponto (x_root, y_root) da tela, ou None.
+        Usado pela Suspensa para saber, ao fechar por um clique de fora, se
+        esse clique deve também ativar outro ícone."""
+        for item in self.itens.values():
+            janela = item.get_window()
+            if janela is None:
+                continue
+            _tela, x0, y0 = janela.get_origin()
+            aloc = item.get_allocation()
+            x_ini, y_ini = x0 + aloc.x, y0 + aloc.y
+            if (x_ini <= x_root < x_ini + aloc.width
+                    and y_ini <= y_root < y_ini + aloc.height):
+                return item
+        return None
 
     # ----------------------------------------------------------- indicadores
 
