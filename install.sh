@@ -125,19 +125,35 @@ instala_debs() {
 # formatacao, e ai o erro aparece como "nenhum .deb encontrado", que manda
 # procurar no lugar errado.
 urls_da_release() {
-  local repo="$1" api="https://api.github.com/repos/$GH_USER/$1/releases/latest"
+  # /releases (a LISTA), e nao /releases/latest.
+  #
+  # O "latest" do GitHub ignora pre-release por definicao: com todas as
+  # Releases marcadas como BETA, ele devolve 404 e o instalador concluiria
+  # que nao ha pacote nenhum. Foi exatamente o que aconteceu no primeiro
+  # teste de ponta a ponta, com os repositorios ja publicos.
+  #
+  # A lista vem em ordem decrescente de criacao, entao a primeira que tiver
+  # .deb e a mais recente -- valendo tanto para pre-release quanto para
+  # release estavel, que e o que se quer aqui.
+  local repo="$1" api="https://api.github.com/repos/$GH_USER/$1/releases?per_page=10"
   local json
   json=$(curl -fsSL -H "Accept: application/vnd.github+json" "$api" 2>/dev/null) || return 1
   printf '%s' "$json" | python3 -c '
 import json, sys
 try:
-    dados = json.load(sys.stdin)
+    lancamentos = json.load(sys.stdin)
 except Exception:
     sys.exit(1)
-for a in dados.get("assets", []):
-    nome = a.get("name", "")
-    if nome.endswith(".deb"):
-        print(a.get("browser_download_url", ""))
+if not isinstance(lancamentos, list):
+    sys.exit(1)
+for r in lancamentos:
+    if r.get("draft"):          # rascunho nao esta pronto para ninguem
+        continue
+    debs = [a.get("browser_download_url", "") for a in r.get("assets", [])
+            if a.get("name", "").endswith(".deb")]
+    if debs:
+        print("\n".join(debs))
+        break
 ' 2>/dev/null
 }
 
