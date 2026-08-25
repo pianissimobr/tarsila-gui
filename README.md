@@ -32,13 +32,33 @@ de RAM — então é leve por obrigação.
 Em um Debian 13 (trixie) com acesso root:
 
 ```bash
-git clone https://github.com/SEU_USUARIO/tarsila.git
-cd tarsila
+git clone https://github.com/pianissimobr/tarsila-gui.git
+cd tarsila-gui
 sudo ./install.sh <usuario>            # usuário leigo que vai usar a interface
 sudo ./install.sh <usuario> --with-plymouth   # com splash de boot
 ```
 
 Reinicie e faça login com o usuário indicado.
+
+### De onde vêm os programas
+
+Nada é embarcado neste repositório. O instalador busca tudo pronto:
+
+- **AbiWord, VLC, Thunar, Openbox e os demais** — do repositório oficial do
+  Debian, via `apt`.
+- **Os aplicativos Tarsila** (Loja, E-mail, Agenda, Chromium, gerenciador de
+  apps) — das *Releases* dos repositórios de cada um. Cada aplicativo tem seu
+  próprio repositório e sua própria versão.
+
+Se algum aplicativo ainda não tiver Release publicada, o instalador avisa e
+segue: a interface funciona sem eles.
+
+Dois modos existem para quem desenvolve:
+
+| situação | o que fazer |
+|---|---|
+| instalar offline, ou testar um `.deb` seu | ponha os `.deb` em `pacotes/` — têm prioridade sobre as Releases |
+| compilar os aplicativos na hora | defina `GITHUB_TOKEN`; é o caminho mais lento, usado só para o que faltar |
 
 **Requisitos:** Debian 13, ~1 GB de espaço para as dependências, X11 (não
 testado em Wayland). Alvo primário: ARM64; os scripts não dependem de

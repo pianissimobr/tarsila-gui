@@ -81,47 +81,121 @@ apt-get install -y --no-install-recommends \
   xarchiver p7zip-full unar 2>&1 | tail -3 || echo "  aviso: apps opcionais com erro (segue)"
 
 echo "==> [2/6] Instalando apps Tarsila…"
+# Os aplicativos do Tarsila (Loja, E-mail, Agenda, Chromium, gerenciador de
+# apps) NAO moram neste repositorio e nao sao versionados como .deb aqui --
+# cada um tem o proprio repositorio e o proprio numero de versao. Sao
+# buscados prontos, do mesmo jeito que o AbiWord e o Thunar vem do Debian.
+#
+# Tres modos, nesta ordem:
+#   1. .deb locais em pacotes/    -- offline e desenvolvimento; ganha de todos
+#      porque e uma escolha explicita de quem esta com o repositorio na mao
+#   2. GitHub Releases            -- o caminho de quem so quer instalar. Sem
+#      token, sem compilar nada no aparelho
+#   3. clonar e compilar          -- so com GITHUB_TOKEN. Ultimo recurso: numa
+#      TV box, compilar cinco repositorios e lento e exige ferramenta de build
 GH_USER="${GITHUB_USER:-pianissimobr}"
+APPS="tarsila-chromium tarsila-email tarsila-agenda tarsila-app-management tarsila-store"
 LOCAL_DEBS=$(ls "$REPO_DIR"/pacotes/*.deb 2>/dev/null || true)
 
+# Instala um conjunto de .deb DE UMA VEZ.
+#
+# De uma vez, e nao um a um, porque o tarsila-app-management gera dois pacotes
+# (tarsila-motor e a interface, que depende dele) e o apt so resolve
+# dependencia entre arquivos locais se todos forem passados na mesma chamada.
+instala_debs() {
+  local rotulo="$1"; shift
+  [ "$#" -gt 0 ] || { echo "      ERRO: $rotulo nao produziu nenhum .deb"; return 1; }
+  # Confere que sao pacotes validos antes de entregar ao apt: download
+  # truncado ou pagina de erro salva como .deb falha aqui, com mensagem
+  # clara, em vez de um erro obscuro do dpkg no meio da instalacao.
+  local d
+  for d in "$@"; do
+    dpkg-deb -I "$d" >/dev/null 2>&1 || {
+      echo "      ERRO: $d nao e um pacote Debian valido (download incompleto?)"
+      return 1
+    }
+  done
+  apt-get install -y "$@" || { echo "      ERRO: apt recusou os pacotes de $rotulo"; return 1; }
+}
+
+# Endereco dos .deb da ultima Release de um repositorio.
+#
+# Le a API publica do GitHub. python3 em vez de grep/sed porque isto e JSON:
+# casar chave por expressao regular quebra no dia em que a resposta mudar de
+# formatacao, e ai o erro aparece como "nenhum .deb encontrado", que manda
+# procurar no lugar errado.
+urls_da_release() {
+  local repo="$1" api="https://api.github.com/repos/$GH_USER/$1/releases/latest"
+  local json
+  json=$(curl -fsSL -H "Accept: application/vnd.github+json" "$api" 2>/dev/null) || return 1
+  printf '%s' "$json" | python3 -c '
+import json, sys
+try:
+    dados = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+for a in dados.get("assets", []):
+    nome = a.get("name", "")
+    if nome.endswith(".deb"):
+        print(a.get("browser_download_url", ""))
+' 2>/dev/null
+}
+
 if [ -n "$LOCAL_DEBS" ]; then
-  echo "    Modo offline — .deb locais encontrados"
-  apt-get install -y "$REPO_DIR"/pacotes/*.deb
-elif [ -n "${GITHUB_TOKEN:-}" ]; then
-  echo "    Modo git — clonando e buildando…"
-  GH_BASE="https://oauth2:${GITHUB_TOKEN}@github.com/$GH_USER"
-  for repo in tarsila-chromium tarsila-email tarsila-agenda tarsila-app-management tarsila-store; do
-    tmp="/tmp/tarsila-$repo"
-    echo "    $repo..."
-    rm -rf "$tmp"
-    if git clone --depth 1 "$GH_BASE/$repo.git" "$tmp" 2>/dev/null; then
-      # O "find" em vez de "./*_all.deb" não é preciosismo: o build da Store
-      # larga o pacote em dist/, e o glob procurava só na raiz do repositório.
-      # Sem casar nada, o bash entregava a string literal "./*_all.deb" para o
-      # apt-get, que errava -- ou seja, a Loja nunca chegou a ser instalada.
-      #
-      # E é preciso instalar TODOS os .deb do repositório de uma vez: o
-      # tarsila-app-management gera dois (tarsila-motor e a interface, que
-      # depende dele), e o apt só resolve a dependência entre arquivos locais
-      # se os dois forem passados na mesma chamada.
-      if ( cd "$tmp" && ./build-deb.sh ); then
-        mapfile -t debs < <(find "$tmp" -name '*_all.deb' -type f | sort)
-        if [ "${#debs[@]}" -gt 0 ]; then
-          apt-get install -y "${debs[@]}" \
-            || echo "      ERRO: apt recusou os pacotes de $repo"
-        else
-          echo "      ERRO: $repo não gerou nenhum .deb"
-        fi
-      else
-        echo "      ERRO: build-deb.sh de $repo falhou"
-      fi
+  echo "    Modo offline — .deb locais em pacotes/"
+  # shellcheck disable=SC2086
+  instala_debs "pacotes/" "$REPO_DIR"/pacotes/*.deb
+else
+  echo "    Baixando os aplicativos das Releases do GitHub ($GH_USER)…"
+  BAIXADOS=$(mktemp -d); trap 'rm -rf "$BAIXADOS"' EXIT
+  FALHOU=""
+  for repo in $APPS; do
+    printf "    %s… " "$repo"
+    urls=$(urls_da_release "$repo" || true)
+    if [ -z "$urls" ]; then
+      echo "sem Release publicada (ou repositório privado)"
+      FALHOU="$FALHOU $repo"; continue
+    fi
+    debs=""; ok=1
+    for u in $urls; do
+      alvo="$BAIXADOS/$(basename "$u")"
+      curl -fsSL -o "$alvo" "$u" || { ok=0; break; }
+      debs="$debs $alvo"
+    done
+    if [ "$ok" = 1 ] && [ -n "$debs" ]; then
+      echo "ok"
+      # shellcheck disable=SC2086
+      instala_debs "$repo" $debs || FALHOU="$FALHOU $repo"
     else
-      echo "      ERRO: clone falhou — verifique o token ou a internet"
+      echo "download falhou"
+      FALHOU="$FALHOU $repo"
     fi
   done
-else
-  echo "    AVISO: sem .deb locais e sem GITHUB_TOKEN"
-  echo "    Gere o release com ./build-release.sh ou defina GITHUB_TOKEN"
+
+  # So agora, e so para quem ficou faltando, o caminho caro de compilar.
+  if [ -n "$FALHOU" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
+    echo "    Tentando compilar os que faltaram:$FALHOU"
+    GH_BASE="https://oauth2:${GITHUB_TOKEN}@github.com/$GH_USER"
+    for repo in $FALHOU; do
+      tmp="/tmp/tarsila-$repo"; rm -rf "$tmp"
+      echo "    $repo (compilando)…"
+      if git clone --depth 1 "$GH_BASE/$repo.git" "$tmp" 2>/dev/null && ( cd "$tmp" && ./build-deb.sh ); then
+        # find, e nao "./*_all.deb": o build da Loja larga o pacote em dist/,
+        # e o glob procurava so na raiz -- entregando ao apt a string literal
+        # "./*_all.deb". A Loja nunca chegava a ser instalada.
+        mapfile -t debs < <(find "$tmp" -name '*_all.deb' -type f | sort)
+        instala_debs "$repo" "${debs[@]}" || true
+      else
+        echo "      ERRO: clone ou build de $repo falhou"
+      fi
+    done
+  elif [ -n "$FALHOU" ]; then
+    echo
+    echo "    AVISO: estes aplicativos nao foram instalados:$FALHOU"
+    echo "    A interface funciona sem eles, mas sem Loja/E-mail/Agenda."
+    echo "    Saidas: publicar a Release no GitHub, ou colocar os .deb em"
+    echo "    $REPO_DIR/pacotes/, ou definir GITHUB_TOKEN para compilar."
+  fi
 fi
 
 [ "$WITH_PLYMOUTH" = 1 ] && apt-get install -y plymouth plymouth-themes
