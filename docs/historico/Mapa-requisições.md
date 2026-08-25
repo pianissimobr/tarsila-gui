@@ -1,3 +1,17 @@
+> **⚠️ DOCUMENTO HISTÓRICO — pode divergir do código atual.**
+>
+> Duas ressalvas:
+>
+> 1. O cliente de e-mail **não vive mais neste repositório** — foi para
+>    `tarsila-email` na separação. Se estas rotas forem documentadas em
+>    algum lugar, o lugar é lá.
+> 2. As rotas mudaram em parte. Conferido em 25/08/2026: o backend tem hoje
+>    `/api/bootstrap`, `/api/accounts`, `/api/drafts` e `/api/sync/status`,
+>    que não constam abaixo. As principais (`/api/status`, `/api/folders`,
+>    `/api/messages`) continuam valendo.
+
+---
+
 # Mapa de Rotas e Requisições — Tarsila
 
 ## 1. Cliente de Email (`tarsila-email`)

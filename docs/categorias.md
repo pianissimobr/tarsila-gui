@@ -1,7 +1,7 @@
 # Categorias — Classificação do Código Tarsila OS
 
 Classificação funcional de todos os scripts e componentes documentados em
-`MAPA.md` e `Mapa-requisições.md`. Cada item recebe um **tipo**:
+`MAPA.md` e `historico/Mapa-requisições.md`. Cada item recebe um **tipo**:
 
 | Tag | Significado |
 |---|---|
@@ -238,7 +238,7 @@ Tela e Energia, Dispositivos, Acessibilidade e Avançado (oculto).
 
 ## Visão Transversal: Requisições de Rede
 
-As rotas documentadas em `Mapa-requisições.md`, agrupadas por natureza:
+As rotas documentadas em `historico/Mapa-requisições.md`, agrupadas por natureza:
 
 | Categoria | Origem | Destino | Intervalo/Evento |
 |---|---|---|---|

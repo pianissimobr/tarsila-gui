@@ -1,3 +1,17 @@
+> **⚠️ DOCUMENTO HISTÓRICO — este plano já foi executado.**
+>
+> O `Status: planejamento` abaixo é de antes da execução, em agosto de 2026.
+> A separação aconteceu, mas com um nome diferente do previsto: o repositório
+> que aqui se chama `tarsila-core` existe hoje como **`tarsila-gui`**.
+>
+> Os cinco repositórios de aplicativo saíram como planejado: `tarsila-store`,
+> `tarsila-email`, `tarsila-agenda`, `tarsila-chromium` e
+> `tarsila-app-management`.
+>
+> Para o estado atual, ver [`../MAPA.md`](../MAPA.md).
+
+---
+
 # Plano de Migração — Extração de Apps do Monorepo
 
 **Objetivo:** Extrair Tarsila Store, Email e Agenda para repositórios independentes,

@@ -3,7 +3,7 @@
 Alvo: TV Box ARM64. Nesse hardware, a percepção de velocidade do usuário vem
 de dois custos que dominam o desktop: **latência de rede** (round-trips) e
 **uso de CPU** (parsing de payload, trabalho repetido). Este documento registra
-o que foi identificado no `Mapa-requisições.md` e o que foi refatorado.
+o que foi identificado no `historico/Mapa-requisições.md` e o que foi refatorado.
 
 ## 1. Email — Avatar não bloqueia mais (`avatar.py`)
 

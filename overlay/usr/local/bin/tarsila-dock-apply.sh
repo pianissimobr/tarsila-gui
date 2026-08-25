@@ -76,4 +76,4 @@ dconf write /net/launchpad/plank/docks/dock1/dock-items "$items"
 # o tema no painel de Ajustes nao muda mais a cor da Dock. Ja nao mudava -- a
 # Dock nunca leu essa chave --, mas agora esta explicito. Para a cor voltar a
 # obedecer ao tema, quem tem de mudar e o tarsila-dock, lendo tema_salvo() como
-# a tarsila-barra faz. Ver docs/DIAGNOSTICO-BIN.md, defeito 5.
+# a tarsila-barra faz. Ver docs/historico/DIAGNOSTICO-BIN.md, defeito 5.

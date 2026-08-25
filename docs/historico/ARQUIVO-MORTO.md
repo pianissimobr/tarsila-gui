@@ -96,7 +96,7 @@ Scripts movidos do core para o repositório separado `tarsila-app-management`
 Mudança de comportamento: os desinstaladores agora funcionam **sem a Store**.
 Se a Store estiver instalada E o pacote estiver em sua whitelist, delegam
 para ela; se não, usam `apt-get remove` direto.
-Ver `PLANO-MIGRACAO.md` na raiz do repo.
+Ver `PLANO-MIGRACAO.md`, nesta mesma pasta.
 
 ---
 

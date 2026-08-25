@@ -64,6 +64,13 @@ Dois modos existem para quem desenvolve:
 testado em Wayland). Alvo primário: ARM64; os scripts não dependem de
 arquitetura.
 
+## Documentação
+
+A pasta [`docs/`](docs/) tem o inventário dos componentes, o roteiro de
+conferência da interface e as medidas que fundamentam a Dock. O
+[índice](docs/README.md) separa o que descreve o sistema atual do que é
+registro histórico — vale começar por ele.
+
 ## Estrutura do repositório
 
 ```
