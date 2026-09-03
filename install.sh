@@ -38,17 +38,38 @@ echo "==> [1/6] Instalando dependências (apt, sem recommends)…"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 # Núcleo gráfico mínimo + ferramentas da interface
+# NUCLEO do desktop — TEM de instalar (sem isto nao ha sessao usavel):
+#  - xfce4-terminal: o menu, a dock e o desktop chamam `xfce4-terminal`
+#    (openbox/deploy/home/openbox/menu.xml e
+#    overlay/.../applications/terminal-tarsila.desktop). Sem ele o lancador de
+#    terminal nao abre NADA — e nao havia terminal algum nesta lista.
+#  - xdg-user-dirs: cria ~/Documentos, ~/Musicas, ~/Downloads... Sem ele o
+#    ~/.config/user-dirs.dirs aponta para pastas inexistentes e a barra lateral
+#    do Thunar (e os dialogos Abrir/Salvar) quebram.
+#  - python3-xdg (PyXDG): tarsila-barra e tarsila-dock (apps GTK em Python) o
+#    importam; sem ele os paineis nem sobem.
+# (Todos os tres reprovados em campo no lake, 03/09/2026 — ver o commit.)
 apt-get install -y --no-install-recommends \
   xorg openbox dunst xsettingsd picom feh scrot \
   devilspie2 yad lightdm lightdm-gtk-greeter \
   papirus-icon-theme thunar gvfs gvfs-daemons \
-  python3-gi gir1.2-gtk-3.0 python3-gi-cairo \
+  xfce4-terminal xdg-user-dirs \
+  python3-gi gir1.2-gtk-3.0 python3-gi-cairo python3-xdg \
   network-manager wmctrl xdotool x11-xserver-utils x11-utils dconf-cli \
   lxpolkit sudo curl git \
   pavucontrol inotify-tools xclip qlipper \
-  file shared-mime-info desktop-file-utils \
+  file shared-mime-info desktop-file-utils
+
+# FONTES em transacao SEPARADA e best-effort, DE PROPOSITO. fonts-montserrat so
+# existe no trixie; num bookworm o apt recusa a TRANSACAO INTEIRA por causa de um
+# unico pacote ausente — derrubando junto o papirus/thunar/gvfs/terminal do bloco
+# acima. Foi exatamente isso que deixou o desktop do lake sem terminal, sem os
+# caminhos do Thunar e sem os icones do Papirus (03/09/2026). Isolada com
+# `|| true`, uma fonte indisponivel nunca mais sabota o nucleo do desktop.
+apt-get install -y --no-install-recommends \
   fonts-font-awesome fonts-noto-core \
-  fonts-roboto fonts-open-sans fonts-lato fonts-montserrat fonts-inter
+  fonts-roboto fonts-open-sans fonts-lato fonts-inter fonts-montserrat \
+  || echo "  aviso: alguma fonte indisponivel nesta suite do Debian (segue; nao e fatal)"
 
 # O pacote 'file' acima nao e opcional, por mais banal que pareca. O
 # /usr/bin/xdg-mime chama /usr/bin/file diretamente para descobrir o tipo de um
@@ -296,6 +317,25 @@ if [ -n "$TARSILA_USER" ]; then
   echo "==> [4/6] Configurações do usuário $TARSILA_USER…"
   tar -cf - -C "$REPO_DIR/skel" .config user-dirs.dirs user-dirs.locale 2>/dev/null | tar -xpf - -C "$HOME_DIR" || \
     cp -a "$REPO_DIR/skel/.config" "$HOME_DIR/"
+
+  # Pastas XDG do usuario (Documentos, Musicas, Downloads...). Sem elas, o
+  # ~/.config/user-dirs.dirs recem-copiado aponta para pastas que NAO existem e a
+  # barra lateral do Thunar (alem de Abrir/Salvar dos apps) fica quebrada — foi a
+  # queixa do lake (03/09/2026). Rodar como o usuario respeita o user-dirs.locale.
+  sudo -u "$TARSILA_USER" env HOME="$HOME_DIR" xdg-user-dirs-update --force 2>/dev/null || true
+  # Rede de seguranca: garante as pastas que o skel declara, haja locale gerado ou nao.
+  for _d in Desktop Downloads Documentos Musicas Pictures Videos; do
+    mkdir -p "$HOME_DIR/$_d"
+  done
+  # Atalhos da barra lateral do Thunar (GTK3 bookmarks), se ainda nao houver.
+  _bm="$HOME_DIR/.config/gtk-3.0/bookmarks"
+  if [ ! -s "$_bm" ]; then
+    mkdir -p "$HOME_DIR/.config/gtk-3.0"
+    for _d in Documentos Downloads Musicas Pictures Videos; do
+      printf 'file://%s/%s\n' "$HOME_DIR" "$_d"
+    done > "$_bm"
+  fi
+
   sudo -u "$TARSILA_USER" dbus-run-session -- dconf load /net/launchpad/plank/ < "$REPO_DIR/skel/plank-dconf.ini" || \
     echo "    AVISO: dconf load falhou — a ordem da dock será aplicada no primeiro login"
   chown -R "$TARSILA_USER:$TARSILA_USER" "$HOME_DIR"
