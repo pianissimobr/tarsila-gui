@@ -58,6 +58,7 @@ grab entre janelas, sem replay, sem xdotool.
 import os
 import re
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -576,24 +577,86 @@ def _monta_dispositivos(caixa, _fecha):
 
 
 # --------------------------------------------------------------- rede
+def _iface_do_ip(ip):
+    """Interface dona de um IPv4 local, sem `ip`/netifaces: SIOCGIFADDR em cada
+    nome de /sys/class/net. Best-effort — '' se não achar (ainda assim online)."""
+    if not ip:
+        return ""
+    try:
+        import fcntl
+        import struct
+        nomes = os.listdir("/sys/class/net")
+    except (ImportError, OSError):
+        return ""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        for nome in nomes:
+            try:
+                pack = struct.pack("256s", nome.encode()[:15])
+                addr = fcntl.ioctl(s.fileno(), 0x8915, pack)  # SIOCGIFADDR
+                if socket.inet_ntoa(addr[20:24]) == ip:
+                    return nome
+            except OSError:
+                continue
+    finally:
+        s.close()
+    return ""
+
+
+def _conectividade_sistema():
+    """Sonda de COMPORTAMENTO da rede, sem NetworkManager — o caso do
+    chroot-Android, onde o Android é dono das interfaces (wlan0/rmnet...) e o NM
+    não as gerencia. Em vez de perguntar "há NetworkManager?" (identidade),
+    pergunta "consigo sair?" (comportamento): abre um socket UDP para um IP
+    público — sem enviar pacote, só faz o kernel escolher rota e IP local de
+    saída. No Android o /proc/net/route vem VAZIO (roteamento por política/UID),
+    então este truque é o sinal confiável, não a tabela de rotas. Retorna
+    (tipo, iface, ip); tipo ∈ {'wireless','ethernet','outro',''} — '' = sem rede."""
+    ip = ""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(1)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+    except OSError:
+        pass
+    if not ip or ip.startswith("127."):
+        return "", "", ""
+    iface = _iface_do_ip(ip)
+    if iface.startswith(("wlan", "wlp", "wl")):
+        tipo = "wireless"
+    elif iface.startswith(("eth", "enp", "en", "usb", "rndis")):
+        tipo = "ethernet"
+    else:
+        tipo = "outro"          # rmnet/ccmni (dados móveis) ou iface desconhecida
+    return tipo, iface, ip
+
+
 def estado_da_rede():
     """(título, nome da rede, endereço IP) da conexão em uso."""
     ok, saida = pergunta("nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION",
                          "device", "status")
-    if not ok:
-        return "Sem conexão", "", ""
     escolhido = None
-    for linha in saida.splitlines():
-        p = linha.split(":")
-        if len(p) >= 4 and p[2] == "connected" and p[1] in ("ethernet", "wifi"):
-            # Cabo ganha do Wi-Fi quando os dois estão ligados, que é por onde
-            # a máquina realmente sai.
-            if p[1] == "ethernet":
-                escolhido = p
-                break
-            escolhido = escolhido or p
+    if ok:
+        for linha in saida.splitlines():
+            p = linha.split(":")
+            if len(p) >= 4 and p[2] == "connected" and p[1] in ("ethernet", "wifi"):
+                # Cabo ganha do Wi-Fi quando os dois estão ligados, que é por
+                # onde a máquina realmente sai.
+                if p[1] == "ethernet":
+                    escolhido = p
+                    break
+                escolhido = escolhido or p
     if not escolhido:
-        return "Sem conexão", "", ""
+        # Sem NetworkManager (chroot-Android): sonda o kernel. Se há rota
+        # default, há rede — mesmo sem o NM enxergar a interface do Android.
+        tipo, iface, ip = _conectividade_sistema()
+        if not tipo:
+            return "Sem conexão", "", ""
+        titulo = {"wireless": "Conexão Wi-Fi",
+                  "ethernet": "Conexão por cabo"}.get(tipo, "Conectado")
+        return titulo, iface, ip
     titulo = ("Conexão por cabo" if escolhido[1] == "ethernet"
               else "Conexão Wi-Fi")
     ok, ip = pergunta("nmcli", "-g", "IP4.ADDRESS", "device", "show", escolhido[0])
@@ -1116,7 +1179,15 @@ class Barra(Gtk.Window):
         elif "ethernet" in tipo:
             ic = IC_CABO
         else:
-            ic = IC_SEMREDE
+            # NM vazio/ausente (chroot-Android): sonda o kernel antes de dar
+            # "sem rede" — senão a barra mente com a internet funcionando.
+            tsys, _, _ = _conectividade_sistema()
+            if tsys == "ethernet":
+                ic = IC_CABO
+            elif tsys:            # wireless ou 'outro' (dados móveis) = online
+                ic = IC_WIFI
+            else:
+                ic = IC_SEMREDE
         self.itens["rede"].texto(ic)
         self._posiciona()
 
