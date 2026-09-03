@@ -321,9 +321,12 @@ if [ -n "$TARSILA_USER" ]; then
   # Pastas XDG do usuario (Documentos, Musicas, Downloads...). Sem elas, o
   # ~/.config/user-dirs.dirs recem-copiado aponta para pastas que NAO existem e a
   # barra lateral do Thunar (alem de Abrir/Salvar dos apps) fica quebrada — foi a
-  # queixa do lake (03/09/2026). Rodar como o usuario respeita o user-dirs.locale.
-  sudo -u "$TARSILA_USER" env HOME="$HOME_DIR" xdg-user-dirs-update --force 2>/dev/null || true
-  # Rede de seguranca: garante as pastas que o skel declara, haja locale gerado ou nao.
+  # queixa do lake (03/09/2026).
+  # NAO usar `xdg-user-dirs-update --force` aqui: sem locale pt_BR gerado na
+  # imagem, ele REESCREVE o user-dirs.dirs curado do skel para nomes em ingles
+  # (Documents/Music), que nao existem — trocando um problema por outro. O skel
+  # ja entrega o mapeamento pt_BR correto; so precisamos criar as pastas que ele
+  # declara.
   for _d in Desktop Downloads Documentos Musicas Pictures Videos; do
     mkdir -p "$HOME_DIR/$_d"
   done
