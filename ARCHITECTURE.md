@@ -55,12 +55,12 @@ gera um `.deb` que funciona sozinho.
 | Repositório | Pacote `.deb` | Versão | O que é |
 |---|---|---|---|
 | `tarsila-gui` | *(não é `.deb`)* | — | A camada gráfica. Instala por `install.sh`. |
-| `tarsila-store` | `tarsila-store` | 4.0.0 | Loja de apps de catálogo curado |
-| `tarsila-email` | `tarsila-email` | 2.1.0 | Cliente Gmail nativo em GTK3 |
-| `tarsila-agenda` | **`agenda-tarsila`** | 4.0.0 | Google Agenda nativo em GTK3 |
-| `tarsila-chromium` | `tarsila-chromium` | 2.0.0 | Chromium com flags e extensões |
+| `tarsila-store` | `tarsila-store` | 1.0.0 | Loja de apps de catálogo curado |
+| `tarsila-email` | `tarsila-email` | 1.0.0 | Cliente Gmail nativo em GTK3 |
+| `tarsila-agenda` | **`agenda-tarsila`** | 1.0.0 | Google Agenda nativo em GTK3 |
+| `tarsila-chromium` | `tarsila-chromium` | 1.0.0 | Chromium com flags e extensões |
 | `tarsila-app-management` | `tarsila-motor` | 1.0.0 | Criar e remover atalhos curados |
-| `tarsila-app-management` | `tarsila-app-management` | 2.0.0 | A interface: AppFinder e instalador |
+| `tarsila-app-management` | `tarsila-app-management` | 1.0.0 | A interface: AppFinder e instalador |
 
 **Seis repositórios, sete pacotes.** O `tarsila-app-management` gera dois: o
 motor e a interface. É a única exceção, e existe por um motivo concreto — ver

@@ -14,16 +14,14 @@ APPS="tarsila-chromium tarsila-email tarsila-agenda tarsila-app-management tarsi
 for app in $APPS; do
   echo "    $app..."
   if [ -d "$PARENT/$app" ]; then
-    ( cd "$PARENT/$app" && ./build-deb.sh )
-    cp "$PARENT/$app"/*.deb "$DEST/pacotes/"
+    ( cd "$PARENT/$app" && ./build-deb.sh "$DEST/pacotes" )
   elif [ -n "${GITHUB_TOKEN:-}" ]; then
     tmp="/tmp/tarsila-build-$app"
     rm -rf "$tmp"
     git clone --depth 1 "https://oauth2:${GITHUB_TOKEN}@github.com/$GH_USER/$app.git" "$tmp" 2>/dev/null || {
       echo "      ERRO: clone falhou"; continue
     }
-    ( cd "$tmp" && ./build-deb.sh )
-    cp "$tmp"/*.deb "$DEST/pacotes/"
+    ( cd "$tmp" && ./build-deb.sh "$DEST/pacotes" )
     rm -rf "$tmp"
   else
     echo "      NÃO ENCONTRADO — defina GITHUB_TOKEN ou clone o repo ao lado"
